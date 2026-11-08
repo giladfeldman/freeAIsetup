@@ -12,7 +12,9 @@ param(
   [string]$NewUser = '',            # create this account (student's password), log it in automatically, run the setup as it
   [switch]$NewUserAdmin,            # ... as a member of Administrators (typical own laptop)
   [string]$Locale = '',             # e.g. de-AT or zh-HK: system locale (non-Unicode programs) + the user's formats
-  [string]$UserPrep = ''            # PowerShell run as the test user (non-interactive) just before the setup
+  [string]$UserPrep = '',           # PowerShell run as the test user (non-interactive) just before the setup
+  [string]$Zip = 'metascience-setup.zip',   # which zip (course folder, or next to this script) the student downloads
+  [switch]$UpdateTest                # after the setup: fire the daily update task, check update + rollback
 )
 . "$PSScriptRoot\vmlib.ps1"
 $res = Join-Path $Results $Tag
@@ -47,11 +49,15 @@ $li = Wait-Login $User 900; Note "login $User : $li"
 if (-not $li) { Note 'BLOCKED: the test user never logged in; case skipped'; Shot "$Tag-blocked"; VM-Stop; exit 2 }
 Start-Sleep 20
 if ($Locale) { G "Set-Culture $Locale; (Get-Culture).Name; 1234.5.ToString()" $User | ForEach-Object { Note "  culture> $_" } }
-$cfg = @{ tag = $Tag; args = $SetupArgs; extract = $Extract; extractZip = (-not $NoExtract); cmdPath = $CmdPath; motw = [bool]$Motw } | ConvertTo-Json
+$cfg = @{ tag = $Tag; args = $SetupArgs; extract = $Extract; extractZip = (-not $NoExtract); cmdPath = $CmdPath; motw = [bool]$Motw; updateTest = [bool]$UpdateTest } | ConvertTo-Json
 $cf = Join-Path $env:TEMP 'case.json'; [IO.File]::WriteAllText($cf, $cfg)
 Copy-In $cf 'C:\Users\Public\mstest' | Out-Null
 Copy-In (Join-Path $PSScriptRoot 'runner.ps1') 'C:\Users\Public\mstest' | Out-Null
-Copy-In (Join-Path (Split-Path -Parent $Kit) 'metascience-setup.zip') 'C:\Users\Public\mstest' | Out-Null
+$zipSrc = @((Join-Path (Split-Path -Parent $Kit) $Zip), (Join-Path $PSScriptRoot $Zip)) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+if (-not $zipSrc) { Note "BLOCKED: zip $Zip not found"; VM-Stop; exit 2 }
+$zt = Join-Path $env:TEMP 'mstest-zip'; New-Item -ItemType Directory -Force $zt | Out-Null; Copy-Item -LiteralPath $zipSrc (Join-Path $zt 'metascience-setup.zip') -Force
+Note "zip: $(Split-Path -Leaf $zipSrc)"
+Copy-In (Join-Path $zt 'metascience-setup.zip') 'C:\Users\Public\mstest' | Out-Null
 if ($UserPrep) { G $UserPrep $User 600 | ForEach-Object { Note "  userprep> $_" } }
 # check in a NEW session: the session that changes culture or folders keeps showing the old values
 if ($Locale -or $UserPrep) { G "'culture ' + (Get-Culture).Name + ' ' + (1234.5).ToString() + ' | docs ' + [Environment]::GetFolderPath('MyDocuments')" $User 60 | ForEach-Object { Note "  verified> $_" } }
@@ -84,5 +90,6 @@ Copy-Out "C:\Users\Public\mstest\out\$Tag" $Results | Out-Null
 $rep = Join-Path $res 'setup-report.txt'
 if (Test-Path $rep) { Note 'report:'; Get-Content $rep | ForEach-Object { Note "  $_" } }
 Get-Content (Join-Path $res 'runner.txt') -ErrorAction SilentlyContinue | ForEach-Object { Note "  runner> $_" }
+Get-Content (Join-Path $res 'update-test.txt') -ErrorAction SilentlyContinue | ForEach-Object { Note "  update> $_" }
 Select-String -Path (Join-Path $res 'console.txt') -Pattern 'FAIL|WARN|All done|Something needs' -ErrorAction SilentlyContinue | ForEach-Object { Note "  console> $($_.Line.Trim())" }
 if (-not $KeepRunning) { VM-Stop }

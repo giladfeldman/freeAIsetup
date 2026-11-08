@@ -31,6 +31,9 @@ $all = [ordered]@{
   # internet drops for 4 minutes in the middle of the install; then the student runs the setup again
   'C1-network-drop' = @{ AdminPrep = "Add-LocalGroupMember -Group Administrators -Member student"; Reboot = $true; Motw = $true; KeepRunning = $true;
                         During = '& $VB controlvm $VM setlinkstate1 off; Start-Sleep 240; & $VB controlvm $VM setlinkstate1 on; "network off for 4 min, back on"'; DuringAfterMin = 5 }
+  # automatic update: install the previous release (admin account, as on most own laptops), then fire the
+  # daily update task: the pack must update itself from GitHub, re-run the setup, and roll back on request
+  'U1-auto-update' = @{ AdminPrep = "Add-LocalGroupMember -Group Administrators -Member student"; Reboot = $true; Motw = $true; Zip = 'metascience-setup-2026.11.8.1.zip'; UpdateTest = $true }
   'C2-rerun-after-drop' = @{ Snapshot = ''; Motw = $false; Extract = '%USERPROFILE%\Downloads\metascience-setup'; NoExtract = $true; CmdPath = '%USERPROFILE%\Downloads\metascience-setup\student-setup\install-windows.cmd' }
 }
 $Cases = @($Cases | ForEach-Object { $_ -split ',' } | Where-Object { $_ })   # -File passes "A,B" as one string

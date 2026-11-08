@@ -138,7 +138,7 @@ function Winget-Install($id) {
   $base = @('install', '--id', $id, '--exact', '--silent', '--no-upgrade', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity', '--source', 'winget')
   foreach ($scope in @(@('--scope', 'user'), @())) {     # first try an install just for this account (no admin needed)
     for ($try = 1; $try -le 4; $try++) {
-      $code = Run-Native 'winget' ($base + $scope)
+      $code = Run-Native 'winget' ($base + $scope) 3600   # RStudio alone is ~500 MB: on shared class Wi-Fi 30 min is not enough
       # winget updates itself in the background (Microsoft Store); while it does, it cannot be started for
       # a minute or two ("The file cannot be accessed by the system"). Wait and try again.
       if ($code -ne 126) { break }
