@@ -1,0 +1,8 @@
+dist/
+tests/vm/results/
+__pycache__/
+*.pyc
+*.log
+.venv/
+*.pem.private
+release-key.pem

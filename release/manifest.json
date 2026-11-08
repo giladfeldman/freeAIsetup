@@ -1,0 +1,31 @@
+{
+ "version": "2026.11.8.1",
+ "published": "2026-11-08T11:20:50Z",
+ "notes": "First signed release: automatic updates for the installed pack, GitHub-outage fallbacks (PyPI/npmmirror/quarto.org), Python check fix.",
+ "files": {
+  "VERSION": "5c2277cc231b5d30415406c2445e105198b394b3fe6dfa9089888810ff768cf1",
+  "course-kit/AGENTS.md": "aa54018a12db1ddcf208158d917c61114ab846a875ee7c96cca27241f5b3935c",
+  "course-kit/analysis/README.txt": "cbe12f2958efd7a8f3793f6fb77b058546b5a1264b92cc39c79f2c606ebf0a0d",
+  "course-kit/articles/README.txt": "b4f017153f086bffd5a1bf95ef16399f556d59c401ccc84c9121aa104546c8d9",
+  "course-kit/check/check-task.md": "dd5369d48d27a193f343449e09c88d5167ba8307f82ff75256e3de84a06f5a12",
+  "course-kit/check/check.R": "7cae86c484133760b50421fad21cc71043380ef442264efeb82b1fb02e228817",
+  "course-kit/check/check.py": "9c48cc2fc3377ea2a4eeb86fb608b7ab68b0e4dd0660fa6b54460c3cb88f454f",
+  "course-kit/check/report.qmd": "a7d481136ab0a143359667da0fdb3b9d3de5f4d694423b1539d3d2227fa82924",
+  "course-kit/check/sample-abstract.txt": "65b535f69ee9bdcb836d165f32c1172f8e7eec7cef02eca163d192053e6377db",
+  "course-kit/data/README.txt": "fbb4612a149fecc418ea5b0b76e447c08a7b241380a2f64e7b6846bff2dc00bd",
+  "course-kit/log/ai-log.md": "2235fbc681069590f46b84884378a7eb04731499f3d8ddd5c296691327fefa5e",
+  "course-kit/pyproject.toml": "0494da8467289c1ea788717a5de3eaa96efca3438d7c4ce882c6a33065d3cb87",
+  "doctor/AGENTS.md": "508e3b0ca07c4cff2b80aeb9a694c31a4b46f0b0c90a949b603e6467c2b5711c",
+  "guide/walkthrough.docx": "5b110adc9e3ed4b39400bb319f3a28de0c3b7273548f233b6af63b68b5982f45",
+  "guide/walkthrough.md": "8c86ae5d02033fe91b6650c4b1e43f5f96b979f63659df6ab713d333f9ee953b",
+  "install-windows.cmd": "ed9d64e9235fdc5b19ec99244d81a46c4fbea14775a8a23e9d3fb8a39ff47949",
+  "lib/course_setup.py": "1dba4868fa53e9d636c1c27d39efcd9f4e710990825c4c0350ef61b4062c5bf8",
+  "lib/fix_pandoc.R": "50a974630f74f4fdbd4de2418b96f94348f2bbc15cfd46b0e71309e14371769d",
+  "setup-mac.sh": "28e50fd42b3b24f63d3f70ad8268b27a78cd290955bf1a65b7483cdbfe1e22a7",
+  "setup-windows.ps1": "305f98770ed891b281acc8215c45e8475dadba7ced38fe539904786b140970cc",
+  "update/pubkey.pem": "3a1d217e36a632b71ffbe84419bb12263c194e92dd16176296c496971ed69f61",
+  "update/pubkey.xml": "b57c5144ff8b88bfde76bbf7b58e85423b7c9ba2cf2426a9863fbc2bd54a5f80",
+  "update/update.ps1": "c6c4a0c862ab34057f45924fad3d5d8647abaab74e108d966524eea07087e1e1",
+  "update/update.sh": "08739bf88d348ddbc2b89ff452b8854c2689adf92e7400ca8b8790b1e19d7e5e"
+ }
+}

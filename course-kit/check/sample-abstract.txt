@@ -1,0 +1,11 @@
+SAMPLE ARTICLE FOR THE SETUP CHECK (fictional, written for this course; not a real study)
+
+Title: Round-number anchors and retail investors' limit orders
+Authors: A. Example and B. Sample (2025), Journal of Illustrative Finance, 12(3), 45-67.
+
+Abstract. We tested whether round-number anchors shift the limit prices that retail investors
+set. In a preregistered online experiment (preregistration: https://osf.io/abc12), 412
+participants from Prolific were randomly assigned to see a round (EUR 50.00) or a precise
+(EUR 49.73) reference price. Participants in the round condition set limit prices closer to the
+anchor, t(410) = 2.15, p = .032, d = 0.21. Data and analysis code are openly available at
+https://osf.io/xyz34. Materials are available on request.

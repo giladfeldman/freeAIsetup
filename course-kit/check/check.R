@@ -1,0 +1,11 @@
+# Setup check, R part: reads the AI's extraction and re-checks the reported test with statcheck.
+suppressPackageStartupMessages({ library(readr); library(dplyr); library(statcheck) })
+args <- commandArgs(trailingOnly = FALSE)
+here <- dirname(normalizePath(sub("^--file=", "", args[grep("^--file=", args)])))
+ext <- readr::read_csv(file.path(here, "out", "extract.csv"), show_col_types = FALSE)
+stat <- ext %>% filter(field == "test_statistic") %>% pull(value)
+res <- statcheck::statcheck(stat, messages = FALSE)
+if (is.null(res) || nrow(res) != 1) stop("R CHECK: statcheck could not read the test statistic: ", stat)
+if (isTRUE(res$error)) stop("R CHECK: statcheck says the extracted test is inconsistent: ", stat)
+cat(sprintf("R CHECK: OK (statcheck read '%s' and found it consistent)\n", stat))
+writeLines("ok", file.path(here, "out", "r-ok.txt"))

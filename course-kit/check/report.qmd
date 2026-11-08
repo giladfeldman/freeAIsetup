@@ -1,0 +1,11 @@
+---
+title: "Setup check report"
+format: html
+---
+
+```{r}
+ext <- read.csv("out/extract.csv")
+knitr::kable(ext)
+```
+
+This report was rendered by Quarto with R, which shows that the reporting tools work.
