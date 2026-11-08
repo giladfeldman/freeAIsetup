@@ -181,6 +181,41 @@ function Install-QuartoDirect {
   }
   return $false
 }
+function Install-RStudioDirect {
+  # Second route for RStudio: Posit's official zip (no installer), unpacked into this account's own Programs
+  # folder, plus a Start-menu entry. Needs no admin and no winget (winget often cannot start for minutes on a
+  # fresh laptop, and RStudio's installer only installs for the whole computer).
+  $dest = Join-Path $env:LOCALAPPDATA 'Programs\RStudio'
+  $urls = @()
+  try {
+    $j = Invoke-RestMethod -Uri 'https://www.rstudio.com/wp-content/downloads.json' -UseBasicParsing -UserAgent 'MetaScience-setup' -TimeoutSec 30
+    $a = $j.rstudio.open_source.stable.desktop.archive.windows
+    if ($a.url) { $urls += $a.url }; if ($a.s3_url) { $urls += $a.s3_url }
+  } catch { Log "RStudio version lookup failed: $_" }
+  if (-not $urls.Count) { $urls = @('https://download1.rstudio.org/electron/windows/RStudio-2026.10.1-239.zip',
+                                    'https://s3.amazonaws.com/rstudio-desktop/electron/windows/RStudio-2026.10.1-239.zip') }
+  $zip = Join-Path $env:TEMP 'rstudio-win.zip'
+  Say '  Downloading RStudio for this account only (about 700 MB; on slow Wi-Fi this can take 20 minutes)...'
+  foreach ($u in $urls) {
+    if (-not (Download $u $zip)) { continue }
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
+    $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+    $code = if (Test-Path -LiteralPath $tar) { Run-Native $tar @('-xf', "`"$zip`"", '-C', "`"$dest`"") 1800 } else { 1 }
+    if ($code -ne 0 -or -not (Test-Path -LiteralPath (Join-Path $dest 'rstudio.exe'))) {
+      try { Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force } catch { Log "RStudio unpack failed: $_" }
+    }
+    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    $exe = Join-Path $dest 'rstudio.exe'
+    if (Test-Path -LiteralPath $exe) {
+      try {   # Start-menu entry for this account, so students find RStudio as usual
+        $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'RStudio.lnk'
+        $s = (New-Object -ComObject WScript.Shell).CreateShortcut($lnk); $s.TargetPath = $exe; $s.WorkingDirectory = $dest; $s.Save()
+      } catch { Log "RStudio shortcut failed: $_" }
+      return $true
+    }
+  }
+  return $false
+}
 function Install-GitDirect {
   # Second route for Git: "MinGit", the official small zip edition of Git for Windows (no installer, no admin).
   # It comes from GitHub, or from the npmmirror copy when GitHub is blocked (common in mainland China).
@@ -412,10 +447,11 @@ function Install-Tools {
     $wingetOk = (-not ($ghOnly -and $script:Blocked -contains 'github.com')) -and (Winget-Install $t.id)
     if ($wingetOk) { $found = Find-Tool $t }
     if ($wingetOk -and $found) { if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
-    elseif ($wingetOk -and $t.name -notin 'uv', 'Git', 'Quarto') { Fail $t.name "winget reported success but $($t.exe) was not found; see $LogFile" }
+    elseif ($wingetOk -and $t.name -notin 'uv', 'Git', 'Quarto', 'RStudio') { Fail $t.name "winget reported success but $($t.exe) was not found; see $LogFile" }
     # winget failed, or said "installed" but the program is missing: try the direct download
     elseif ($t.name -eq 'uv' -and (Install-UvDirect)) { Add-UserPath (Join-Path $env:USERPROFILE '.local\bin'); Ok 'uv' 'installed (direct download)' }
     elseif ($t.name -eq 'Git' -and (Install-GitDirect)) { Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\MinGit\cmd'); Ok 'Git' 'installed for this account (MinGit, direct download)' }
+    elseif ($t.name -eq 'RStudio' -and (Install-RStudioDirect)) { Ok 'RStudio' 'installed for this account (direct download; in the Start menu)' }
     elseif ($t.name -eq 'Quarto' -and (Install-QuartoDirect)) { Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\Quarto\bin'); Ok 'Quarto' 'installed for this account (direct download)' }
     else { Fail $t.name "winget could not install $($t.id); see $LogFile" }
   }
