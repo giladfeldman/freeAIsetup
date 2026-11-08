@@ -35,3 +35,9 @@ or anything confidential into them.**
 ## Status
 
 Under active development for courses starting November 2026. More documentation will follow.
+
+## License
+
+GNU Affero General Public License v3.0 (AGPL-3.0); see [LICENSE](LICENSE). You may use, change and share this kit; if you share a changed version, or run it as a service for others, you must publish your changes under the same license.
+
+Copyright (C) 2026 Gilad Feldman.
