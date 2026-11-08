@@ -367,6 +367,16 @@ function Find-Tool($t) {
       }
     }
   }
+  # winget "portable" packages (uv, Node.js for one account) are unpacked under WinGet\Packages\<id>_...; winget
+  # then links them into WinGet\Links, which fails for account names with non-English letters (e.g. "Jürgen").
+  # The program itself is there and works, so use its own folder.
+  if ($t.id) {
+    $wp = Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Packages'
+    foreach ($pkg in @(Get-ChildItem -LiteralPath $wp -Directory -Filter "$($t.id)_*" -ErrorAction SilentlyContinue)) {
+      $hit = @(Get-ChildItem -LiteralPath $pkg.FullName -Recurse -Depth 2 -File -Filter $t.exe -ErrorAction SilentlyContinue) | Select-Object -First 1
+      if ($hit) { return $hit.DirectoryName }
+    }
+  }
   if ($t.name -eq 'R') {   # R also records its location in the registry
     foreach ($k in 'HKLM:\SOFTWARE\R-core\R', 'HKCU:\SOFTWARE\R-core\R') {
       $p = (Get-ItemProperty -Path $k -ErrorAction SilentlyContinue).InstallPath
@@ -399,11 +409,12 @@ function Install-Tools {
     }
     if ($DryRun) { Say "  [dry-run] winget install $($t.id) (just for this account if possible)"; continue }
     $ghOnly = $t.name -in 'Git', 'Quarto', 'uv'   # winget fetches these from GitHub
-    if (-not ($ghOnly -and $script:Blocked -contains 'github.com') -and (Winget-Install $t.id)) {
-      $found = Find-Tool $t
-      if ($found) { if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
-      else { Fail $t.name "winget reported success but $($t.exe) was not found; see $LogFile" }
-    } elseif ($t.name -eq 'uv' -and (Install-UvDirect)) { Add-UserPath (Join-Path $env:USERPROFILE '.local\bin'); Ok 'uv' 'installed (direct download)' }
+    $wingetOk = (-not ($ghOnly -and $script:Blocked -contains 'github.com')) -and (Winget-Install $t.id)
+    if ($wingetOk) { $found = Find-Tool $t }
+    if ($wingetOk -and $found) { if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
+    elseif ($wingetOk -and $t.name -notin 'uv', 'Git', 'Quarto') { Fail $t.name "winget reported success but $($t.exe) was not found; see $LogFile" }
+    # winget failed, or said "installed" but the program is missing: try the direct download
+    elseif ($t.name -eq 'uv' -and (Install-UvDirect)) { Add-UserPath (Join-Path $env:USERPROFILE '.local\bin'); Ok 'uv' 'installed (direct download)' }
     elseif ($t.name -eq 'Git' -and (Install-GitDirect)) { Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\MinGit\cmd'); Ok 'Git' 'installed for this account (MinGit, direct download)' }
     elseif ($t.name -eq 'Quarto' -and (Install-QuartoDirect)) { Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\Quarto\bin'); Ok 'Quarto' 'installed for this account (direct download)' }
     else { Fail $t.name "winget could not install $($t.id); see $LogFile" }

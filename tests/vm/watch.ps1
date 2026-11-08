@@ -21,7 +21,7 @@ while ((Get-Date) -lt $end) {
   }
   $seen = $lines.Count
   if ($lines -match 'all done') { Write-Output 'EVENT queue all done'; break }
-  $alive = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match 'run-rest\.ps1|night\.ps1|run-case\.ps1' })
+  $alive = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match 'run-rest[-0-9]*.ps1|night.ps1|run-case.ps1|resume-case.ps1' })
   if (-not $alive.Count) { Write-Output 'ALARM WATCHER DEAD: no run-rest/night/run-case process is running'; break }
   $idle = [int]((Get-Date) - $lastChange).TotalMinutes
   $caseMin = [int]((Get-Date) - $caseStart).TotalMinutes

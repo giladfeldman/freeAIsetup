@@ -53,6 +53,8 @@ Copy-In $cf 'C:\Users\Public\mstest' | Out-Null
 Copy-In (Join-Path $PSScriptRoot 'runner.ps1') 'C:\Users\Public\mstest' | Out-Null
 Copy-In (Join-Path (Split-Path -Parent $Kit) 'metascience-setup.zip') 'C:\Users\Public\mstest' | Out-Null
 if ($UserPrep) { G $UserPrep $User 600 | ForEach-Object { Note "  userprep> $_" } }
+# check in a NEW session: the session that changes culture or folders keeps showing the old values
+if ($Locale -or $UserPrep) { G "'culture ' + (Get-Culture).Name + ' ' + (1234.5).ToString() + ' | docs ' + [Environment]::GetFolderPath('MyDocuments')" $User 60 | ForEach-Object { Note "  verified> $_" } }
 GA @"
 `$a = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -EncodedCommand $(Enc-Boot 'C:\Users\Public\mstest\runner.ps1')'
 `$pr = New-ScheduledTaskPrincipal -UserId '$User' -LogonType Interactive
@@ -66,7 +68,12 @@ while (((Get-Date) - $t0).TotalMinutes -lt $MaxMin) {
   if ((Get-PSDrive C).Free / 1GB -lt 4) { Note 'HOST DISK BELOW 4 GB - stopping the VM'; Shot "$Tag-diskstop"; break }
   $r = G "Test-Path 'C:\Users\Public\mstest\out\$Tag\DONE'" 'vmadmin' 60
   if ($r -match 'True') { $done = $true; break }
-  if ([int]((Get-Date) - $t0).TotalMinutes % 10 -eq 0) { Shot "$Tag-progress" }
+  if ([int]((Get-Date) - $t0).TotalMinutes % 10 -eq 0) {
+    Shot "$Tag-progress"
+    # progress line from the student's own setup log, so the watcher sees real progress (or a real stall)
+    $p = GA "`$f = Get-ChildItem 'C:\Users\*\AppData\Local\Temp\metascience-setup-*.log' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime | Select-Object -Last 1; if (`$f) { 'log ' + `$f.LastWriteTime.ToString('HH:mm') + ': ' + ((Get-Content `$f.FullName -Tail 1) -replace '\s+', ' ') }" 2>$null
+    $p | Where-Object { $_ -match '^log ' } | Select-Object -First 1 | ForEach-Object { Note "  progress> $_" }
+  }
 }
 Note "finished: $done after $([math]::Round(((Get-Date) - $t0).TotalMinutes,1)) min"
 Shot "$Tag-end"
