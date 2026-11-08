@@ -21,6 +21,7 @@ COURSE_DIR="${METASCIENCE_DIR:-$HOME/MetaScience}"
 KEY_DIR="$HOME/.config/metascience/keys"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 KIT_DIR="$SCRIPT_DIR/course-kit"
+export UV_HTTP_TIMEOUT=300 UV_CONCURRENT_DOWNLOADS=4 UV_HTTP_RETRIES=5   # slow or crowded Wi-Fi: wait longer, fewer at once
 SETUP_VERSION="$(head -1 "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '\r ')"; SETUP_VERSION="${SETUP_VERSION:-dev}"
 if [ "$(uname -s)" = Darwin ]; then PACK_DIR="$HOME/Library/Application Support/MetaScience/pack"
 else PACK_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/metascience/pack"; fi   # installed copy of this pack (kept up to date)

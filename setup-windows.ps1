@@ -24,6 +24,9 @@ param(
 )
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'      # makes downloads much faster in PowerShell 5.1
+# uv (Python packages) on slow or crowded Wi-Fi: wait longer per download, fewer at once, retry.
+# With uv's defaults (30 s, many parallel downloads) a 12 MB package timed out in the VM test.
+$env:UV_HTTP_TIMEOUT = '300'; $env:UV_CONCURRENT_DOWNLOADS = '4'; $env:UV_HTTP_RETRIES = '5'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 
@@ -578,7 +581,11 @@ function Setup-CourseFolder {
         $kitHashes | ConvertTo-Json | Set-Content -LiteralPath $kitHashFile -Encoding UTF8 } catch {}
   Ok 'Course folder' $CourseDir
   if (-not (Have 'uv')) { Fail 'Python environment' 'uv is not installed'; return }
-  $code = Run-Native 'uv' @('sync', '--directory', "`"$CourseDir`"", '--python', '3.12') 1800
+  for ($try = 1; $try -le 3; $try++) {   # a dropped download is resumed from uv's cache on the next try
+    $code = Run-Native 'uv' @('sync', '--directory', "`"$CourseDir`"", '--python', '3.12') 1800
+    if ($code -eq 0) { break }
+    Log "uv sync try $try failed (exit $code)"; Start-Sleep -Seconds 10
+  }
   if ($code -eq 0) { Ok 'Python environment' 'Python 3.12 + course packages' } else { Fail 'Python environment' "uv sync failed; see $LogFile" }
   if ((Py @('config')) -eq 0) { Ok 'OpenCode settings' 'free model as default, 6 MCP tools (off)' } else { Fail 'OpenCode settings' 'could not write opencode.json' }
 }
