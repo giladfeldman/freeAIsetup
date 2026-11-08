@@ -139,7 +139,11 @@ function Winget-Install($id) {
   # --no-upgrade: if winget sees ANY installed version (even one for another account), it must not touch it.
   # Without it, "winget install" silently upgrades: it UNINSTALLS the existing version first.
   $base = @('install', '--id', $id, '--exact', '--silent', '--no-upgrade', '--accept-package-agreements', '--accept-source-agreements', '--disable-interactivity', '--source', 'winget')
-  foreach ($scope in @(@('--scope', 'user'), @())) {     # first try an install just for this account (no admin needed)
+  $scopes = @(@('--scope', 'user'), @())   # first try an install just for this account (no admin needed)
+  # RStudio: winget's "--scope user" run never finishes (VM test: cut off after 60 min), while the normal run
+  # installs it for the current user anyway (/currentuser) without admin. So skip straight to the normal run.
+  if ($id -eq 'Posit.RStudio') { $scopes = @(, @()) }
+  foreach ($scope in $scopes) {
     for ($try = 1; $try -le 4; $try++) {
       $code = Run-Native 'winget' ($base + $scope) 3600   # RStudio alone is ~500 MB: on shared class Wi-Fi 30 min is not enough
       # winget updates itself in the background (Microsoft Store); while it does, it cannot be started for

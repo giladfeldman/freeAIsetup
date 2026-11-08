@@ -3,7 +3,7 @@
 # line age), a STALL alarm if the log has not changed for 25 min, a TOO LONG alarm past 160 min per case,
 # and WATCHER DEAD if the detached run-rest/night process is gone before "all done".
 param([string]$Log = "$PSScriptRoot\results\night-log-3.txt", [int]$Minutes = 29)
-$seen = 0; $end = (Get-Date).AddMinutes($Minutes); $lastBeat = Get-Date; $lastChange = Get-Date; $lastLen = -1
+$offCount = 0; $seen = 0; $end = (Get-Date).AddMinutes($Minutes); $lastBeat = Get-Date; $lastChange = Get-Date; $lastLen = -1
 $case = ''; $caseStart = Get-Date
 # start from now: remember the current case and its start time, do not replay old lines
 $init = @(Get-Content -LiteralPath $Log -ErrorAction SilentlyContinue | Where-Object { $_.Trim() })
@@ -23,6 +23,10 @@ while ((Get-Date) -lt $end) {
   if ($lines -match 'all done') { Write-Output 'EVENT queue all done'; break }
   $alive = @(Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -match 'run-rest[-0-9]*.ps1|night.ps1|run-case.ps1|resume-case.ps1' })
   if (-not $alive.Count) { Write-Output 'ALARM WATCHER DEAD: no run-rest/night/run-case process is running'; break }
+  # a case that is running needs the VM on (it is only off for a few seconds while restoring or rebooting)
+  $vmState = ((& 'C:\Program Files\Oracle\VirtualBox\VBoxManage.exe' showvminfo MS-Test-Win11 --machinereadable 2>$null) -match '^VMState=') -replace '^VMState="|"$', ''
+  if ($vmState -eq 'poweroff') { $offCount++ } else { $offCount = 0 }
+  if ($offCount -eq 4) { Write-Output "ALARM VM OFF: the test VM has been powered off for 4 min during case $case (failed start?)" }
   $idle = [int]((Get-Date) - $lastChange).TotalMinutes
   $caseMin = [int]((Get-Date) - $caseStart).TotalMinutes
   if ($idle -ge 25 -and $idle % 25 -eq 0) { Write-Output "ALARM STALL: log unchanged for $idle min (case $case, $caseMin min)" }
