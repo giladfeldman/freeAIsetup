@@ -183,7 +183,10 @@ precheck() {
     if [ "$major" -lt 12 ]; then fail "macOS version" "macOS 12 or newer is needed; you have $(sw_vers -productVersion)"; return 1; fi
   fi
   local free_gb; free_gb="$(df -Pk "$HOME" | awk 'NR==2 {print int($4/1048576)}')"
-  if [ "${free_gb:-0}" -lt 8 ]; then fail "Free disk space" "${free_gb} GB free, 8 GB needed"; return 1; else ok "Free disk space" "${free_gb} GB"; fi
+  # The course tools need about 4 GB; 8 GB leaves room for course work. A GitHub Codespace shows only ~7 GB free
+  # while it is still being built (20 GB a few minutes later; 2026-11-09), so there 4 GB is enough.
+  local need=8; [ -n "${CODESPACES:-}" ] && need=4
+  if [ "${free_gb:-0}" -lt "$need" ]; then fail "Free disk space" "${free_gb} GB free, $need GB needed"; return 1; else ok "Free disk space" "${free_gb} GB"; fi
   setup_proxy
   setup_network || return 1
   if [ -n "$SUDO" ] && [ "$DRY_RUN" = 0 ]; then
