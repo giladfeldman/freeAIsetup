@@ -66,8 +66,13 @@ def sh(cmd: list[str], cwd: pathlib.Path | None = None, timeout: int = 120) -> t
     found = exe(cmd[0])
     if not found:
         return 127, f"{cmd[0]} not found on PATH"
+    env = None
+    if cwd is not None:
+        # OpenCode takes its project folder from $PWD, not the real working folder; Popen(cwd=...) leaves $PWD
+        # pointing where the setup was started (Codemagic Mac 2026-11-09: the AI looked in the kit's own folder).
+        env = dict(os.environ, PWD=str(pathlib.Path(cwd).resolve()))
     try:
-        p = subprocess.Popen([found, *cmd[1:]], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        p = subprocess.Popen([found, *cmd[1:]], cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                              text=True, encoding="utf-8", errors="replace", stdin=subprocess.DEVNULL)
     except OSError as e:
         return 126, str(e)
