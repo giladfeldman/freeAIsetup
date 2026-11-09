@@ -1,0 +1,26 @@
+{
+  // MetaScience course in the browser (GitHub Codespaces), for students without a laptop (e.g. iPad only).
+  // It runs the SAME setup script as on a Mac or Linux laptop (setup-mac.sh), so tools, R and Python packages,
+  // course folder and AI settings match the other students. Usage is billed to the student's own free
+  // GitHub allowance, never to the owner of this repository.
+  "name": "MetaScience course",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": { "version": "lts" },
+    "ghcr.io/rocker-org/devcontainer-features/r-apt:latest": { "vscodeRSupport": "none", "installRMarkdown": false },
+    "ghcr.io/rocker-org/devcontainer-features/rstudio-server:latest": { "singleUser": true }
+  },
+  "hostRequirements": { "cpus": 2, "memory": "8gb" },
+  "containerEnv": { "METASCIENCE_DIR": "/workspaces/MetaScience" },
+  "postCreateCommand": "bash .devcontainer/create.sh",
+  "postStartCommand": "bash .devcontainer/start.sh",
+  "forwardPorts": [4096, 8787],
+  "portsAttributes": {
+    "4096": { "label": "OpenCode (AI assistant)", "onAutoForward": "openBrowser" },
+    "8787": { "label": "RStudio", "onAutoForward": "notify" }
+  },
+  "customizations": {
+    "codespaces": { "openFiles": [".devcontainer/START-HERE.md"] },
+    "vscode": { "settings": { "workbench.startupEditor": "none" } }
+  }
+}

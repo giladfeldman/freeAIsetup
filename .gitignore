@@ -6,3 +6,4 @@ __pycache__/
 .venv/
 *.pem.private
 release-key.pem
+/MetaScience
