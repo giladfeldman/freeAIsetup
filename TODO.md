@@ -12,3 +12,8 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 - [ ] [HIGH · soon · val:med · M · opus-medium] Quarto has no non-GitHub source when GitHub is blocked (quarto.org/download/latest redirects to GitHub; PyPI quarto-cli is an sdist that downloads from GitHub); try conda-forge mirror (Tsinghua) (src: VM case H1-github-blocked 2026-11-09) ^d-e4a52e
 - [ ] [HIGH · soon · val:med · M · opus-medium] pymupdf import fails (DLL load failed: _extra) in the GitHub-blocked VM case; find the missing runtime DLL (likely MSVC C++ runtime) and supply it without admin (src: VM case H1-github-blocked 2026-11-09) ^d-39f03c
 - [ ] [HIGH · soon · val:high · S · sonnet-medium] Add 'gh release create' with metascience-setup.zip to the release steps so releases/latest/download link stays current (src: first Release created by hand for v2026.11.8.6 on 2026-11-09) ^d-d2924e
+- [ ] [HIGH · soon · val:high · M · opus-medium] Windows: install current R next to an R older than 4.5 (winget --no-upgrade keeps the old R; packages then fail) (src: class 2026-11-09 Mac with R 4.0.0; same gap in setup-windows.ps1 Find-Tool R) ^d-872f0e
+
+## Codespaces
+
+- [ ] [HIGH · now · val:high · M · opus-medium] Verify a real GitHub Codespace finishes setup (15 min after create: OpenCode/RStudio not running, MetaScience empty; local devcontainer passed) (src: video filming 2026-11-09, codespace zany-space-carnival (deleted)) ^d-ad15b4

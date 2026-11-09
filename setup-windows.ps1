@@ -143,6 +143,9 @@ function Winget-Install($id) {
   # RStudio: winget's "--scope user" run never finishes (VM test: cut off after 60 min), while the normal run
   # installs it for the current user anyway (/currentuser) without admin. So skip straight to the normal run.
   if ($id -eq 'Posit.RStudio') { $scopes = @(, @()) }
+  # uv and Quarto: the all-users run pops up an admin prompt (VM test 2026-11-09, student account). Their direct
+  # download installs for this account with no prompt, so after the per-account try, go straight there.
+  if ($id -in 'astral-sh.uv', 'Posit.Quarto') { $scopes = @(, @('--scope', 'user')) }
   foreach ($scope in $scopes) {
     for ($try = 1; $try -le 4; $try++) {
       $code = Run-Native 'winget' ($base + $scope) 3600   # RStudio alone is ~500 MB: on shared class Wi-Fi 30 min is not enough
@@ -372,12 +375,53 @@ function Setup-Network {
   return $true
 }
 
+function Get-SacState {
+  # Smart App Control: 'On' blocks program files (.exe/.dll/.pyd) that Microsoft's cloud does not know, file by
+  # file. Measured 2026-11-09 on a Windows 11 test computer: with it On, every tool installs, but it blocks single
+  # files inside R and Python packages (R tzdb.dll -> readr; a pandas .pyd), so course work fails at random.
+  # Neither we nor the package authors can sign those files. 'Eval' (evaluation) only watches and blocks nothing.
+  $s = $null
+  try { $s = [string](Get-MpComputerStatus -ErrorAction Stop).SmartAppControlState } catch {}
+  if (-not $s) {
+    $v = (Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -ErrorAction SilentlyContinue).VerifiedAndReputablePolicyState
+    $s = switch ($v) { 0 { 'Off' } 1 { 'On' } 2 { 'Eval' } default { '' } }
+  }
+  return $s
+}
+function Check-SmartAppControl {
+  $s = Get-SacState
+  if ($s -ne 'On') {
+    if ($s -eq 'Eval') { Ok 'Smart App Control' 'evaluation mode (blocks nothing)' }
+    elseif ($s -eq 'Off') { Ok 'Smart App Control' 'off' }
+    return
+  }
+  Warn 'Smart App Control' 'is ON. It will block parts of R and Python that the course needs.'
+  Say ''
+  Say '  Smart App Control is a Windows protection that blocks any program file Microsoft does not yet know.'
+  Say '  The course tools install, but it then blocks single files inside the R and Python packages, so your'
+  Say '  analyses fail at random. Your normal virus protection (Microsoft Defender) stays on either way.'
+  Say ''
+  Say '  To use this computer for the course, switch Smart App Control off (your choice):'
+  Say '    1. Windows Security opens now (or: Start > Windows Security > App & browser control).'
+  Say '    2. Click "Smart App Control settings", choose "Off", and confirm.'
+  Say '    Note: Windows may not let you switch it back on later without resetting Windows.'
+  Say '  If you prefer not to, stop here and ask your teacher about the browser-only option (GitHub Codespaces).'
+  if ($Yes -or $DryRun) { return }
+  Start-Process 'windowsdefender://appbrowser' -ErrorAction SilentlyContinue
+  while ((Get-SacState) -eq 'On') {
+    $a = Read-Host '  When it shows Off, press Enter. To stop the setup, type Q. To continue anyway, type C'
+    if ($a -match '^[Qq]') { Say '  Setup stopped. Nothing was installed.'; exit 2 }
+    if ($a -match '^[Cc]') { Warn 'Smart App Control' 'still ON: expect the Python and R checks to fail'; return }
+  }
+  Ok 'Smart App Control' 'now off'
+}
 function Precheck {
   Step '1/9  Checking this computer'
   $os = Get-CimInstance Win32_OperatingSystem
   $arch = $env:PROCESSOR_ARCHITECTURE
   Ok 'System' "$($os.Caption) build $($os.BuildNumber), $arch"
   if ([int]$os.BuildNumber -lt 17763) { Fail 'Windows version' 'Windows 10 version 1809 or newer is needed'; return $false }
+  Check-SmartAppControl
   $drive = (Get-Item -LiteralPath $env:USERPROFILE).PSDrive
   $freeGb = [math]::Floor((Get-PSDrive $drive.Name).Free / 1GB)
   if ($freeGb -lt 8) { Fail 'Free disk space' "$freeGb GB free, 8 GB needed"; return $false } else { Ok 'Free disk space' "$freeGb GB" }
@@ -604,7 +648,7 @@ function Run-Check {
 # ---------- AI setup helper ------------------------------------------------------
 function Start-Doctor {
   # When something failed, OpenCode itself (free model) reads the log and guides the student.
-  # Every command it wants to run is shown to the student first ("permission": "ask").
+  # It runs fix commands by itself; deleting files and admin commands are denied (class 2026-11-09: the Allow prompt froze the keyboard).
   Step 'AI setup helper'
   if (-not (Have 'opencode')) { Say '  The AI helper needs OpenCode, which is not installed yet. Run the setup again, or show the teacher the log.'; return }
   $help = Join-Path $env:USERPROFILE 'MetaScience-help'
@@ -638,11 +682,11 @@ function Start-Doctor {
   $model = @('opencode/glm-5.3-flash-free', 'opencode/deepseek-v4.1-flash-free') | Where-Object { $models -contains $_ } | Select-Object -First 1
   if (-not $model) { $model = $models | Where-Object { $_ -like 'opencode/*-free' -and $_ -notmatch 'inkling|crouton' } | Select-Object -First 1 }
   $cfg = '{ "$schema": "https://opencode.ai/config.json", "share": "disabled", "autoupdate": false, ' +
-         '"permission": { "edit": "ask", "bash": "ask" }' + $(if ($model) { ", `"model`": `"$model`"" } else { '' }) + ' }'
+         '"permission": { "edit": "allow", "webfetch": "allow", "external_directory": "allow", "bash": { "*": "allow", "rm *": "deny", "*rm -rf*": "deny", "sudo *": "deny", "chmod *": "deny", "chown *": "deny", "dd *": "deny", "mkfs*": "deny", "diskutil *": "deny", "Remove-Item*": "deny", "del *": "deny", "rd *": "deny", "rmdir *": "deny", "format *": "deny", "reg *": "deny", "Set-ExecutionPolicy*": "deny" } }' + $(if ($model) { ", `"model`": `"$model`"" } else { '' }) + ' }'
   [IO.File]::WriteAllText((Join-Path $help 'opencode.json'), $cfg, (New-Object Text.UTF8Encoding($false)))
   Say ''
   Say '  The AI helper starts now. It has read nothing on your laptop except the setup log.'
-  Say '  Before it runs any command, it shows you the command: choose Allow only if its explanation makes sense.'
+  Say '  It runs its fix commands by itself (it is not allowed to delete files or use admin rights) and explains each one.'
   Say '  To stop the helper: type /exit and press Enter (or press Ctrl+C twice).'
   if (-not $Yes) { Read-Host '  Press Enter to start' | Out-Null }
   & opencode $help --prompt 'Please read AGENTS.md, SETUP-INFO.txt, setup-report.txt and setup-log.txt in this folder. Then explain in simple words what went wrong in my course setup, and help me fix it step by step.'
@@ -735,7 +779,7 @@ else {
   Summary
 }
 if ($script:Failed -gt 0 -and -not $DryRun -and -not $Yes -and -not $FromUpdate) {
-  $a = Read-Host 'Some steps failed. Start the AI setup helper? It reads the setup log and guides you to a fix; you approve every command. [Y/n]'
+  $a = Read-Host 'Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n]'
   if ($a -notmatch '^(n|no)$') { Start-Doctor }
 }
 if ($script:Failed -eq 0) { exit 0 } else { exit 1 }

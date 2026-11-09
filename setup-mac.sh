@@ -228,7 +228,16 @@ install_tools() {
       if have "$f"; then ok "$f" "already installed"; elif retry brew install "$f"; then ok "$f" "installed"
       elif [ "$f" = uv ] && uv_from_pypi; then ok "uv" "installed (direct download)"; else fail "$f" "brew install $f failed"; fi
     done
-    have R       && ok "R" "already installed"       || { retry brew install --cask r       && ok "R" "installed"       || fail "R" "brew install --cask r failed"; }
+    # R older than 4.5: the course packages no longer come ready-built for it, so all of them fail (class 2026-11-09:
+    # a MacBook with R 4.0.0 from 2020). The R installer keeps the old version in R.framework/Versions; the new one
+    # becomes the default. This is the one exception to "never upgrade": nothing is removed.
+    local rv=""; have R && rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
+    if [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
+    else
+      [ -n "$rv" ] && say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays; macOS may ask for your password)."
+      local rcmd="install"; [ -n "$rv" ] && brew list --cask r >/dev/null 2>&1 && rcmd="upgrade"   # an old R that brew itself installed
+      retry brew $rcmd --cask r && ok "R" "installed$([ -n "$rv" ] && echo " (current R; old R $rv kept)")" || fail "R" "brew install --cask r failed"
+    fi
     have quarto  && ok "Quarto" "already installed"  || { retry brew install --cask quarto  && ok "Quarto" "installed"  || fail "Quarto" "brew install --cask quarto failed"; }
     if [ "$SKIP_GUI" = 0 ]; then
       if [ -d "/Applications/RStudio.app" ]; then ok "RStudio" "already installed"
@@ -398,11 +407,11 @@ Commands that need the computer password (sudo) cannot be typed into the AI: ask
 EOF
   model="$(opencode models opencode 2>/dev/null | grep -E '^opencode/(glm-5.3-flash-free|deepseek-v4.1-flash-free)$' | head -1)"
   [ -z "$model" ] && model="$(opencode models opencode 2>/dev/null | grep -E '^opencode/.*-free$' | grep -vE 'inkling|crouton' | head -1)"
-  printf '{ "$schema": "https://opencode.ai/config.json", "share": "disabled", "autoupdate": false, "permission": { "edit": "ask", "bash": "ask" }%s }\n' \
+  printf '{ "$schema": "https://opencode.ai/config.json", "share": "disabled", "autoupdate": false, "permission": { "edit": "allow", "webfetch": "allow", "external_directory": "allow", "bash": { "*": "allow", "rm *": "deny", "*rm -rf*": "deny", "sudo *": "deny", "chmod *": "deny", "chown *": "deny", "dd *": "deny", "mkfs*": "deny", "diskutil *": "deny", "Remove-Item*": "deny", "del *": "deny", "rd *": "deny", "rmdir *": "deny", "format *": "deny", "reg *": "deny", "Set-ExecutionPolicy*": "deny" } }%s }\n' \
     "${model:+, \"model\": \"$model\"}" > "$help/opencode.json"
   say ""
   say "  The AI helper starts now. It has read nothing on your computer except the setup log."
-  say "  Before it runs any command, it shows you the command: choose Allow only if its explanation makes sense."
+  say "  It runs its fix commands by itself (it is not allowed to delete files or use admin rights) and explains each one."
   say "  To stop the helper: type /exit and press Enter (or press Ctrl+C twice)."
   [ "$ASSUME_YES" = 1 ] || { printf '  Press Enter to start '; read -r _ || true; }
   opencode "$help" --prompt "Please read AGENTS.md, SETUP-INFO.txt, setup-report.txt and setup-log.txt in this folder. Then explain in simple words what went wrong in my course setup, and help me fix it step by step." </dev/tty
@@ -490,7 +499,7 @@ case "$MODE" in
 esac
 if [ "$FAILED" != 0 ] && [ "$DRY_RUN" = 0 ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
   printf '
-  Some steps failed. Start the AI setup helper? It reads the setup log and guides you to a fix; you approve every command. [Y/n] '
+  Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n] '
   read -r a || a="n"; case "$a" in n|N|no) ;; *) start_doctor ;; esac
 fi
 [ "$FAILED" = 0 ]

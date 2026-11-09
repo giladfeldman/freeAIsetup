@@ -35,7 +35,8 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
 
 3. **Right-click** inside the PowerShell window (this pastes the line), then press **Enter**.
 4. It says *"downloading the setup files"*, then *"downloaded and checked. Starting the setup"*, and shows the steps. Leave the window open.
-   - ✋ Several times Windows asks *"Do you want to allow this app to make changes to your device?"* Click **Yes** each time. These prompts are for R, Git and the other tools.
+   - ✋ **If it says *"Smart App Control is ON"*:** this Windows protection blocks parts of R and Python that the course needs. Windows Security opens by itself. Click **Smart App Control settings**, choose **Off**, confirm, then go back to the PowerShell window and press **Enter**. Your normal virus protection stays on. Windows may not let you switch it back on later without a reset; if you do not want that, type **Q** and ask your teacher about the browser-only option.
+   - ✋ Windows may ask *"Do you want to allow this app to make changes to your device?"* If you know your computer's admin password, click **Yes**. If you do not, click **No**: the setup then installs that tool just for your account.
 5. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
 6. ✋ Near the end it asks *"Add optional free AI keys now?"* Type **n** and press Enter. You can add keys later (Part 3).
 
@@ -108,7 +109,8 @@ To re-run only the check:
 
 | The setup says | What it means | What to do |
 |---|---|---|
-| *"Smart App Control blocked …"* or *"Windows protected your PC"* | You double-clicked a downloaded setup file. | Close it and use the one-line method in Part 1 instead. Do not switch off Smart App Control. |
+| *"Smart App Control blocked …"* or *"Windows protected your PC"* | You double-clicked a downloaded setup file. | Close it and use the one-line method in Part 1 instead. The setup then tells you whether Smart App Control needs to be switched off. |
+| *"An Application Control policy has blocked this file"* in R or Python | Smart App Control is on and blocks a package file. | Switch it off (Windows Security > App & browser control > Smart App Control settings > Off), then run the setup line again. |
 | *"This computer is managed by an organisation …"* | A school or company laptop that blocks scripts. | Use your own laptop, or ask the teacher. Do not try to get around the block. |
 | *"Blocked site — github.com cannot be reached from this network"* (or another site) | Your network blocks that site. This is common in China and on some school or hotel Wi-Fi. | The setup switches to mirror sites where it can (Python, R packages, OpenCode). For the rest, connect to a phone hotspot or your VPN and run the setup again. |
 | *"Proxy — Windows is set to send internet traffic through …, but nothing answers there"* | Windows/Mac is told to use a VPN or proxy app that is not running. | Start your VPN app (for example Clash or v2rayN) and run the setup again, or switch off *"Use a proxy server"* in the Windows proxy settings. |
