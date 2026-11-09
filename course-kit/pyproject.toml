@@ -20,3 +20,11 @@ dependencies = [
 
 [tool.uv]
 package = false
+# Intel Macs (x86_64): the newest releases of these ship no Intel-Mac build and fail to build from source there
+# (emulator, macOS 15.8.2 Intel, 2026-11-09). The limits apply only on Intel Macs.
+constraint-dependencies = [
+  "onnxruntime<1.24; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "cryptography<49; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+  "pymupdf<2; sys_platform == 'darwin' and platform_machine == 'x86_64'",
+]
+required-environments = ["sys_platform == 'darwin' and platform_machine == 'x86_64'"]

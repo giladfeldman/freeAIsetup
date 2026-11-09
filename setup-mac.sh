@@ -236,7 +236,7 @@ install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the ma
   if xcode-select -p >/dev/null 2>&1 || { have git && [ "$(command -v git)" != /usr/bin/git ]; }; then ok "git" "already installed"
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Apple command line tools (git)"
   else
-    say "  Installing Apple's command line tools (they include git; 5-15 minutes)..."
+    say "  Installing Apple's command line tools (they include git; 10-40 minutes, the screen may look still)..."
     local flag=/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress label
     touch "$flag"
     label="$(softwareupdate -l 2>>"$LOG_FILE" | sed -n 's/^[[:space:]]*\* Label: \(Command Line Tools.*\)$/\1/p' | tail -1)"
@@ -594,6 +594,6 @@ fi
 if [ "$FAILED" != 0 ] && [ "$DRY_RUN" = 0 ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
   printf '
   Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n] '
-  read -r a || a="n"; case "$a" in n|N|no) ;; *) start_doctor ;; esac
+  read -r a || a="n"; case "$a" in [nN]*) ;; *) start_doctor ;; esac
 fi
 [ "$FAILED" = 0 ]
