@@ -18,34 +18,48 @@ The setup takes **20-40 minutes**, most of it waiting. You only need to do somet
 2. Have 8 GB of free disk space.
 3. Know your laptop password (the one you use to log in).
 
-# Part 1 — Get the setup files
+# Part 1 — Run the setup
 
-1. Download the file **`metascience-setup.zip`** from the course page.
-2. Unzip it:
-   - **Windows:** right-click the file → **Extract All…** → **Extract**.
-   - **Mac:** double-click the file.
-3. You now have a folder called **`student-setup`**.
+You copy **one line** into a window and press Enter. Nothing to download or unzip first.
 
-# Part 2 — Run the setup
+*Why not a downloaded file?* Windows (Smart App Control) and macOS (Gatekeeper) block setup files that a web browser downloaded. The line below downloads the setup files itself, checks that they are the genuine, signed course files, and starts the setup.
 
 ## Windows
 
-1. Open the `student-setup` folder.
-2. Double-click **`install-windows.cmd`**.
-   - ✋ If a blue box says *"Windows protected your PC"*, click **More info** → **Run anyway**. This appears because the file came from the internet.
-3. A black window opens and shows the steps. Leave it open.
+1. Click **Start**, type `PowerShell`, and click **Windows PowerShell**. (Not "Run as administrator".) A blue or black window opens.
+2. Copy this line (select it, then Ctrl+C):
+
+   ```
+   irm https://raw.githubusercontent.com/giladfeldman/freeAIsetup/main/install.ps1 | iex
+   ```
+
+3. **Right-click** inside the PowerShell window (this pastes the line), then press **Enter**.
+4. It says *"downloading the setup files"*, then *"downloaded and checked. Starting the setup"*, and shows the steps. Leave the window open.
    - ✋ Several times Windows asks *"Do you want to allow this app to make changes to your device?"* Click **Yes** each time. These prompts are for R, Git and the other tools.
-4. Near the end it asks *"Add optional free AI keys now?"* Type **n** and press Enter. You can add keys later (Part 4).
+5. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
+6. ✋ Near the end it asks *"Add optional free AI keys now?"* Type **n** and press Enter. You can add keys later (Part 3).
 
 ## Mac
 
-1. Open **Terminal**: press **⌘ + Space**, type `Terminal`, press Enter.
-2. Type `bash ` (with a space after it). **Do not press Enter yet.**
-3. Drag the file **`setup-mac.sh`** from the `student-setup` folder into the Terminal window. Its location appears after `bash `.
-4. Press **Enter**.
-5. ✋ When asked for a **Password**, type your laptop password and press Enter. **Nothing appears while you type**, which is normal.
-6. ✋ If a window asks to install *"command line developer tools"*, click **Install**. This alone can take 10 minutes.
-7. Near the end it asks *"Add optional free AI keys now?"* Type **n** and press Enter.
+1. Open **Terminal**: press **⌘ + Space**, type `Terminal`, press Enter. A white or black window with a blinking cursor opens.
+2. Copy this line (select it, then ⌘ + C):
+
+   ```
+   curl -fsSL https://raw.githubusercontent.com/giladfeldman/freeAIsetup/main/install.sh | bash
+   ```
+
+3. Click in the Terminal window, paste with **⌘ + V**, and press **Enter**.
+4. ✋ When asked for a **Password**, type your Mac login password and press Enter. **Nothing appears while you type**, which is normal.
+5. ✋ If a window asks to install *"command line developer tools"*, click **Install**, then **Agree**. This alone can take 10 minutes; the setup continues by itself afterwards.
+6. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
+7. ✋ Near the end it asks *"Add optional free AI keys now?"* Type **n** and press Enter.
+
+## If GitHub is blocked (for example in mainland China)
+
+Use these lines instead. They fetch the same signed files from jsDelivr, a public mirror:
+
+- **Windows:** `irm https://cdn.jsdelivr.net/gh/giladfeldman/freeAIsetup@main/install.ps1 | iex`
+- **Mac:** `curl -fsSL https://cdn.jsdelivr.net/gh/giladfeldman/freeAIsetup@main/install.sh | bash`
 
 ## What success looks like
 
@@ -70,7 +84,7 @@ This check gave the AI a real (fictional) article abstract. The AI extracted fou
 
 ## If something says FAIL
 
-1. **Run the setup again.** It skips everything that already works and repairs the rest. Most problems (slow Wi-Fi, a busy server) go away on the second run.
+1. **Run the setup again** (paste the same line again). It skips everything that already works and repairs the rest. Most problems (slow Wi-Fi, a busy server) go away on the second run.
 2. **Let the AI setup helper look at it.** When something fails, the setup asks *"Start the AI setup helper?"* Press Enter. OpenCode starts in the same window with a free AI model. It reads the setup log, explains in plain words what went wrong, and suggests fixes one step at a time.
    - ✋ Before the helper runs any command, it shows you the command and asks. Choose **Allow** only if its explanation makes sense to you. If you are unsure, choose **Reject** and ask the teacher.
    - The helper never removes or upgrades software you already have, never changes security settings, and never asks for passwords or accounts.
@@ -80,21 +94,21 @@ This check gave the AI a real (fictional) article abstract. The AI extracted fou
 
 To start the AI helper again later:
 
-- **Windows:** in the `student-setup` folder, click in the address bar, type `cmd`, press Enter, then type: `install-windows.cmd -Fix`
-- **Mac:** `bash ` + drag `setup-mac.sh` + type ` --fix` + Enter.
+- **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Fix`
+- **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --fix`
 
 **Software you already have is safe.** If R, Git or another tool is already on the computer (also when another user account installed it), the setup uses it as it is. It never upgrades or removes it.
 
 To re-run only the check:
 
-- **Windows:** open the `student-setup` folder, click in the address bar, type `cmd` and press Enter. Then type: `install-windows.cmd -Check`
-- **Mac:** `bash ` + drag `setup-mac.sh` + type ` --check` + Enter.
+- **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Check`
+- **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --check`
 
 ## Messages you may see, and what to do
 
 | The setup says | What it means | What to do |
 |---|---|---|
-| *"The setup files are still inside the zip file"* | You opened the file without unzipping it first. | Close the window, right-click the zip → **Extract All…**, then run `install-windows.cmd` from the new folder. |
+| *"Smart App Control blocked …"* or *"Windows protected your PC"* | You double-clicked a downloaded setup file. | Close it and use the one-line method in Part 1 instead. Do not switch off Smart App Control. |
 | *"This computer is managed by an organisation …"* | A school or company laptop that blocks scripts. | Use your own laptop, or ask the teacher. Do not try to get around the block. |
 | *"Blocked site — github.com cannot be reached from this network"* (or another site) | Your network blocks that site. This is common in China and on some school or hotel Wi-Fi. | The setup switches to mirror sites where it can (Python, R packages, OpenCode). For the rest, connect to a phone hotspot or your VPN and run the setup again. |
 | *"Proxy — Windows is set to send internet traffic through …, but nothing answers there"* | Windows/Mac is told to use a VPN or proxy app that is not running. | Start your VPN app (for example Clash or v2rayN) and run the setup again, or switch off *"Use a proxy server"* in the Windows proxy settings. |
@@ -103,7 +117,7 @@ To re-run only the check:
 
 **Using a VPN:** if your VPN app has a *TUN* or *global* mode, turn it on during the setup. Then every program uses the VPN, not only the web browser.
 
-# Part 3 — First steps in OpenCode
+# Part 2 — First steps in OpenCode
 
 1. Open **OpenCode** from the Start menu (Windows) or the Applications folder (Mac).
 2. ✋ Mac only, the first time: if macOS says the app *"is downloaded from the internet"*, click **Open**.
@@ -121,7 +135,7 @@ To re-run only the check:
 
 **Rules the AI follows** are in `AGENTS.md`. Read them. They match the course rules: never invent numbers or citations, quote the source, log what it did in `log/ai-log.md`.
 
-# Part 4 — Optional: more free AI services
+# Part 3 — Optional: more free AI services
 
 The built-in free models are enough for the course. If they are busy, you can add more free services. Each one needs a free sign-up. **Use your university email address.**
 
@@ -135,14 +149,14 @@ The built-in free models are enough for the course. If they are busy, you can ad
 
 To add keys:
 
-- **Windows:** `install-windows.cmd -Keys`
-- **Mac:** `bash setup-mac.sh --keys`
+- **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Keys`
+- **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --keys`
 
 For each service, the setup opens the sign-up page and waits. Create a key, copy it, paste it into the window (it stays hidden), and press Enter. Press Enter without pasting to skip a service. The setup then tests each key.
 
 Keys are saved only on your laptop, in your user folder (`.config/metascience/keys`). They are never inside the course folder, so you will not share them by accident.
 
-# Part 5 — Optional: MCP tools (extra abilities for the AI)
+# Part 4 — Optional: MCP tools (extra abilities for the AI)
 
 MCP tools give the AI extra abilities. They are installed in the course settings but **switched off**, so the AI does not use them unless you decide it should. The list is in `MCP-TOOLS.txt` in your course folder.
 

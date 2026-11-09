@@ -235,8 +235,12 @@ install_tools() {
       else retry brew install --cask rstudio && ok "RStudio" "installed" || fail "RStudio" "brew install --cask rstudio failed"; fi
     fi
   else
-    retry $SUDO apt-get install -y --no-install-recommends git curl ca-certificates unzip nodejs npm r-base r-base-dev python3 \
-      && ok "Git, Node.js, R" "installed with apt" || fail "apt packages" "see $LOG_FILE"
+    # only what is missing (a course Codespace already brings current Node.js and R; never replace them)
+    local want="curl ca-certificates unzip python3"
+    have git || want="$want git"; have node || want="$want nodejs npm"; have R || want="$want r-base r-base-dev"
+    retry $SUDO apt-get install -y --no-install-recommends $want \
+      && ok "Git, Node.js, R" "ready (git $(git --version 2>/dev/null | cut -d' ' -f3), node $(node --version 2>/dev/null), R $(R --version 2>/dev/null | head -1 | cut -d' ' -f3))" \
+      || fail "apt packages" "see $LOG_FILE"
     if have uv; then ok "uv" "already installed"
     elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install uv"
     else curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >> "$LOG_FILE" 2>&1; add_path "$HOME/.local/bin"

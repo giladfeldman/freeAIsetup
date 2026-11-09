@@ -5,8 +5,10 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Guide
 
 - [ ] [HIGH · now · val:high · S · sonnet-medium] Document OpenCode free-model usage limits and a fallback order (GLM/DeepSeek/MiMo hit 'Free usage limit reached'; Nemotron still worked) (src: hackathon-2 test 2026-11-08: 12 parallel opencode runs exhausted free limit) ^d-98e4c9
+- [ ] [MED · soon · val:med · S · sonnet-medium] Update guide Part 3 to OpenCode desktop 2.2.6 UI: 'Add project' (not 'Open folder'), models show a 'Free' tag (not '-free'), auto-accept switch in Settings > Preferences (src: Lectures/03-Hackathon-2-Build-simulations/TEST-RESULTS.md section 5) ^d-db5234
 
 ## Windows setup
 
 - [ ] [HIGH · soon · val:med · M · opus-medium] Quarto has no non-GitHub source when GitHub is blocked (quarto.org/download/latest redirects to GitHub; PyPI quarto-cli is an sdist that downloads from GitHub); try conda-forge mirror (Tsinghua) (src: VM case H1-github-blocked 2026-11-09) ^d-e4a52e
 - [ ] [HIGH · soon · val:med · M · opus-medium] pymupdf import fails (DLL load failed: _extra) in the GitHub-blocked VM case; find the missing runtime DLL (likely MSVC C++ runtime) and supply it without admin (src: VM case H1-github-blocked 2026-11-09) ^d-39f03c
+- [ ] [HIGH · soon · val:high · S · sonnet-medium] Add 'gh release create' with metascience-setup.zip to the release steps so releases/latest/download link stays current (src: first Release created by hand for v2026.11.8.6 on 2026-11-09) ^d-d2924e
