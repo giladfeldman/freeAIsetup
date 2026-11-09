@@ -1,9 +1,9 @@
 {
- "version": "2026.11.8.5",
- "published": "2026-11-08T22:00:53Z",
- "notes": "Windows: RStudio no longer waits up to an hour on a winget mode that never finishes; it installs for the current user directly.",
+ "version": "2026.11.8.6",
+ "published": "2026-11-09T05:11:03Z",
+ "notes": "Windows: the daily update check is registered with schtasks and a time limit (the PowerShell task commands hung on a Hong Kong (Chinese) Windows account).",
  "files": {
-  "VERSION": "5278812b484f5d80de436ad4a25d62289a26659752672aadeabd8d35c421836c",
+  "VERSION": "2b1cb12b4bd58d9f5c9963e53b277a8f3afa5b462fd152a6d68fe00b0cedf891",
   "course-kit/AGENTS.md": "aa54018a12db1ddcf208158d917c61114ab846a875ee7c96cca27241f5b3935c",
   "course-kit/analysis/README.txt": "cbe12f2958efd7a8f3793f6fb77b058546b5a1264b92cc39c79f2c606ebf0a0d",
   "course-kit/articles/README.txt": "b4f017153f086bffd5a1bf95ef16399f556d59c401ccc84c9121aa104546c8d9",
@@ -22,7 +22,7 @@
   "lib/course_setup.py": "1dba4868fa53e9d636c1c27d39efcd9f4e710990825c4c0350ef61b4062c5bf8",
   "lib/fix_pandoc.R": "50a974630f74f4fdbd4de2418b96f94348f2bbc15cfd46b0e71309e14371769d",
   "setup-mac.sh": "8f456ecf776b63ddc5c060d2e0b3f9124dc700d64cac695b71c9dc8ef9d72d2e",
-  "setup-windows.ps1": "cdba4e3f40c242b223fcf502762ba98ccce462b1f424b804c13aba1700b6774b",
+  "setup-windows.ps1": "db33800b0f522ea917eb19ca85413ce06703cdb50d2eab90cb294a40af43f6fc",
   "update/pubkey.pem": "3a1d217e36a632b71ffbe84419bb12263c194e92dd16176296c496971ed69f61",
   "update/pubkey.xml": "b57c5144ff8b88bfde76bbf7b58e85423b7c9ba2cf2426a9863fbc2bd54a5f80",
   "update/update.ps1": "c6c4a0c862ab34057f45924fad3d5d8647abaab74e108d966524eea07087e1e1",

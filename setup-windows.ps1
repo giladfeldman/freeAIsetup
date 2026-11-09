@@ -668,21 +668,32 @@ function Install-Pack {
   $updater = Join-Path $PackDir 'update\update.ps1'
   if (-not (Test-Path -LiteralPath $updater)) { Warn 'Automatic updates' 'this copy of the pack has no updater'; return }
   if ($NoAutoUpdate) {
-    Unregister-ScheduledTask -TaskName $UpdateTask -Confirm:$false -ErrorAction SilentlyContinue
+    $null = Run-Native 'schtasks.exe' @('/delete', '/tn', "`"$UpdateTask`"", '/f') 120
     Ok 'Automatic updates' 'off (you can update by hand: install-windows.cmd -Update)'; return
   }
-  if (-not $Yes -and -not (Get-ScheduledTask -TaskName $UpdateTask -ErrorAction SilentlyContinue)) {
+  if (-not $Yes -and (Run-Native 'schtasks.exe' @('/query', '/tn', "`"$UpdateTask`"") 120) -ne 0) {
     $a = Read-Host 'Keep this course pack up to date automatically (a short daily check)? Recommended. [Y/n]'
     if ($a -match '^(n|no)$') { Ok 'Automatic updates' 'off (you can update by hand: install-windows.cmd -Update)'; return }
   }
-  try {
-    $act = New-ScheduledTaskAction -Execute 'powershell.exe' -WorkingDirectory $env:TEMP `
-      -Argument "-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$updater`" -Auto"
-    $trg = New-ScheduledTaskTrigger -Daily -At '12:30'
-    $set = New-ScheduledTaskSettingsSet -StartWhenAvailable -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit (New-TimeSpan -Hours 2)
-    Register-ScheduledTask -TaskName $UpdateTask -Action $act -Trigger $trg -Settings $set -Description 'Checks for a newer version of the MetaScience course pack (freeAIsetup) and installs it.' -Force | Out-Null
-    Ok 'Automatic updates' 'on: a short check once a day (turn off: install-windows.cmd -NoAutoUpdate)'
-  } catch { Warn 'Automatic updates' "could not add the daily check ($($_.Exception.Message)); update by hand: install-windows.cmd -Update" }
+  # Register with schtasks.exe and a time limit: the PowerShell task cmdlets (Register-ScheduledTask) hung for
+  # 10+ minutes in the Hong Kong VM test, and this optional step must never hold up the setup.
+  $esc = [Security.SecurityElement]::Escape($updater); $tmpDir = [Security.SecurityElement]::Escape($env:TEMP)
+  $xml = @"
+<?xml version="1.0" encoding="UTF-16"?>
+<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
+  <RegistrationInfo><Description>Checks for a newer version of the MetaScience course pack (freeAIsetup) and installs it.</Description></RegistrationInfo>
+  <Triggers><CalendarTrigger><StartBoundary>2026-01-01T12:30:00</StartBoundary><Enabled>true</Enabled><ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay></CalendarTrigger></Triggers>
+  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Settings><StartWhenAvailable>true</StartWhenAvailable><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT2H</ExecutionTimeLimit><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><Enabled>true</Enabled></Settings>
+  <Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$esc" -Auto</Arguments><WorkingDirectory>$tmpDir</WorkingDirectory></Exec></Actions>
+</Task>
+"@
+  $xf = Join-Path $env:TEMP 'metascience-update-task.xml'
+  try { [IO.File]::WriteAllText($xf, $xml, [Text.Encoding]::Unicode) } catch { Warn 'Automatic updates' "could not prepare the daily check ($_); update by hand: install-windows.cmd -Update"; return }
+  $code = Run-Native 'schtasks.exe' @('/create', '/tn', "`"$UpdateTask`"", '/xml', "`"$xf`"", '/f') 300
+  Remove-Item -LiteralPath $xf -Force -ErrorAction SilentlyContinue
+  if ($code -eq 0) { Ok 'Automatic updates' 'on: a short check once a day (turn off: install-windows.cmd -NoAutoUpdate)' }
+  else { Warn 'Automatic updates' "could not add the daily check (schtasks exit $code); update by hand: install-windows.cmd -Update" }
 }
 
 function Summary {
