@@ -12,10 +12,29 @@ The setup never upgrades or removes software you already have, and never changes
 
 ## Quick start
 
-1. Download `metascience-setup.zip` from the [latest release](https://github.com/giladfeldman/freeAIsetup/releases/latest) and unzip it.
-2. **Windows:** double-click `install-windows.cmd`.
-   **Mac:** in Terminal, type `bash `, drag `setup-mac.sh` into the window, and press Enter.
-3. Follow the student guide: `guide/walkthrough.docx`.
+**Windows:** open PowerShell (Start menu, type `PowerShell`, press Enter), paste this line, press Enter:
+
+```powershell
+irm https://raw.githubusercontent.com/giladfeldman/freeAIsetup/main/install.ps1 | iex
+```
+
+**Mac:** open Terminal (press ⌘ Space, type `Terminal`, press Enter), paste this line, press Enter:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/giladfeldman/freeAIsetup/main/install.sh | bash
+```
+
+**iPad, Chromebook, or any computer where you cannot install programs:** sign in to your own free
+GitHub account, then press this button and then **Create codespace**. Everything runs in your browser.
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/giladfeldman/freeAIsetup?quickstart=1)
+
+The Codespace is a small cloud computer that GitHub builds in **your** account from the recipe in this
+repository. It is free for about 60 hours a month, switches off after 30 minutes without use, and is
+deleted if not opened for 30 days, so download what you hand in. Nobody else can see it.
+
+Then follow the student guide: `guide/walkthrough.docx`. The same files are also in
+`metascience-setup.zip` on the [latest release](https://github.com/giladfeldman/freeAIsetup/releases/latest).
 
 ## Updates
 
