@@ -173,25 +173,138 @@ def write_config(course: pathlib.Path, log=print) -> pathlib.Path:
 
 
 # ----------------------------------------------------------------------------- keys
-def key_wizard(course: pathlib.Path) -> None:
-    print("\nOpenCode already works with its built-in free models (no account needed).")
-    print("You can add more free AI services. For each one a web page opens:")
-    print("  1. sign up with your UNIVERSITY email,  2. create a key,  3. copy it,  4. paste it here.")
-    print("The key is hidden while you paste. Press Enter without pasting to skip a service.\n")
+def save_key(pid: str, key: str) -> None:
     KEY_DIR.mkdir(parents=True, exist_ok=True)
-    for pid, name, url, _hints in PROVIDERS:
-        have = key_path(pid).is_file()
-        print(f"--- {name}: {url}" + ("   (a key is already saved; Enter keeps it)" if have else ""))
+    key_path(pid).write_text(key, encoding="utf-8")
+    if not IS_WIN:
+        os.chmod(key_path(pid), 0o600)
+
+
+def clean_key(raw: str) -> str:
+    # a paste can carry spaces, line breaks or a stray control character (Ctrl+V in some Windows consoles)
+    return "".join(ch for ch in raw if ch.isprintable() and not ch.isspace())
+
+
+def ask(prompt: str) -> str:
+    # the prompt on its own line: on Windows the setup shows the helper's output line by line, so a prompt
+    # without a line end would stay invisible while it waits
+    print(prompt, flush=True)
+    try:
+        return input()
+    except EOFError:
+        return ""
+
+
+def headless() -> bool:
+    """True when a browser on THIS computer cannot reach a local address (Codespace, SSH, no screen)."""
+    if os.environ.get("CODESPACES") or os.environ.get("SSH_CONNECTION"):
+        return True
+    return sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY"))
+
+
+OPENROUTER_AUTH = "https://openrouter.ai/auth"
+OPENROUTER_EXCHANGE = "https://openrouter.ai/api/v1/auth/keys"
+
+
+def openrouter_exchange(code: str, verifier: str) -> str:
+    import urllib.request
+    body = json.dumps({"code": code, "code_verifier": verifier, "code_challenge_method": "S256"}).encode()
+    req = urllib.request.Request(OPENROUTER_EXCHANGE, data=body, method="POST",
+                                 headers={"Content-Type": "application/json", "User-Agent": "MetaScience-setup"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return str(json.load(r).get("key") or "")
+
+
+def openrouter_connect(wait_s: int = 600) -> str:
+    """OpenRouter's official "connect an app" sign-in (OAuth PKCE): the student signs in and presses Allow, and the
+    key comes back here by itself. Returns the key, or "" when it did not work (the caller then offers pasting)."""
+    import base64, hashlib, secrets, urllib.parse
+    verifier = secrets.token_urlsafe(64)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
+    params = {"code_challenge": challenge, "code_challenge_method": "S256", "key_label": "MetaScience course"}
+    code = ""
+    if headless():
+        # no local address the browser can reach: OpenRouter shows a code to copy instead
+        url = OPENROUTER_AUTH + "?" + urllib.parse.urlencode(params)
+        print("  1. Open this address in your browser (in a Codespace: Ctrl/Cmd + click it):")
+        print(f"     {url}")
+        print("  2. Sign in (Google or GitHub is quickest) and press Allow / Authorize.")
+        print("  3. OpenRouter shows a code. Copy it and paste it here.")
+        code = clean_key(ask("  Code (Enter to skip):"))
+    else:
+        import http.server
+        got: dict = {}
+
+        class H(http.server.BaseHTTPRequestHandler):
+            def do_GET(self):  # noqa: N802
+                q = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+                if q.get("code"):
+                    got["code"] = q["code"][0]
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.end_headers()
+                self.wfile.write("<h2>Done. You can close this tab and go back to the setup window.</h2>".encode())
+
+            def log_message(self, *a):
+                pass
+
+        srv = http.server.HTTPServer(("127.0.0.1", 0), H)
+        srv.timeout = 1
+        params["callback_url"] = f"http://localhost:{srv.server_port}/callback"
+        url = OPENROUTER_AUTH + "?" + urllib.parse.urlencode(params)
+        print("  A browser page opens. Sign in (Google or GitHub is quickest) and press Allow / Authorize.")
+        print(f"  If no page opens, copy this address into your browser:\n     {url}")
         try:
             webbrowser.open(url)
         except Exception:
             pass
-        key = getpass.getpass(f"Paste the {name} key, then press Enter: ").strip()
+        import time
+        end = time.monotonic() + wait_s
+        print(f"  Waiting for you to press Allow (up to {wait_s // 60} minutes)...", flush=True)
+        while "code" not in got and time.monotonic() < end:
+            srv.handle_request()
+        srv.server_close()
+        code = got.get("code", "")
+    if not code:
+        return ""
+    try:
+        return openrouter_exchange(code, verifier)
+    except Exception as e:
+        print(f"  OpenRouter did not hand over the key ({e}).")
+        return ""
+
+
+def key_wizard(course: pathlib.Path) -> None:
+    print("\nOpenCode already works with its built-in free models (no account needed), but they are sometimes busy")
+    print("or refuse a network. A free OpenRouter account is the backup: no payment, about 2 minutes.\n")
+    KEY_DIR.mkdir(parents=True, exist_ok=True)
+    have = key_path("openrouter").is_file()
+    ans = ask("--- OpenRouter: connect now? " + ("(a key is already saved) [y/N]" if have else "[Y/n]")).strip().lower()
+    if (ans in ("y", "yes")) or (not have and ans == ""):
+        key = openrouter_connect()
+        if not key:
+            print("  No key arrived. You can also make one by hand at https://openrouter.ai/keys and paste it.")
+            key = clean_key(getpass.getpass("  Paste the OpenRouter key (hidden), or press Enter to skip: "))
         if key:
-            key_path(pid).write_text(key, encoding="utf-8")
-            if not IS_WIN:
-                os.chmod(key_path(pid), 0o600)
-            print(f"    saved {name} key")
+            save_key("openrouter", key)
+            print("  saved the OpenRouter key")
+    more = ask("\nAdd keys for other free services too (Groq, Google, NVIDIA, Mistral)? Most students skip this. [y/N]")
+    if more.strip().lower() in ("y", "yes"):
+        print("For each one a web page opens: 1. sign up with your UNIVERSITY email,  2. create a key,")
+        print("3. copy it,  4. paste it here (it stays hidden). Press Enter without pasting to skip a service.\n")
+        for pid, name, url, _hints in PROVIDERS:
+            if pid == "openrouter":
+                continue
+            have = key_path(pid).is_file()
+            print(f"--- {name}: {url}" + ("   (a key is already saved; Enter keeps it)" if have else ""))
+            try:
+                webbrowser.open(url)
+            except Exception:
+                pass
+            key = clean_key(getpass.getpass(f"Paste the {name} key, then press Enter: "))
+            if key:
+                save_key(pid, key)
+                print(f"    saved {name} key")
     write_config(course)
 
 
@@ -337,8 +450,18 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
             continue
         code, out = sh(["opencode", "run", "-m", model, "Reply with exactly the word PONG"], cwd=course, timeout=180)
         record(f"key {pid}", code, out)
-        t.add("OK" if "PONG" in out else "FAIL", f"Key: {name}",
-              f"answered ({model})" if "PONG" in out else "saved but did not answer; run the key step again")
+        # optional keys never turn the setup red: a key that does not answer is a warning (class 2026-11-09)
+        if "PONG" in out:
+            t.add("OK", f"Key: {name}", f"answered ({model})")
+        else:
+            low = out.lower()
+            if pid == "openrouter" and ("data policy" in low or "no endpoints found" in low):
+                why = "OpenRouter blocks free models for this account: open https://openrouter.ai/settings/privacy and allow free models"
+            elif "401" in out or "invalid" in low or "unauthorized" in low or "user not found" in low:
+                why = "the key was not accepted; run the key step again and connect or paste a new key"
+            else:
+                why = "saved but did not answer (the service may be busy); see the log"
+            t.add("WARN", f"Key: {name}", why)
 
     code, out = sh(["opencode", "mcp", "list"], cwd=course, timeout=60)
     record("mcp list", code, out)

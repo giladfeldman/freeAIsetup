@@ -38,7 +38,7 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
    - ✋ **If it says *"Smart App Control is ON"*:** this Windows protection blocks parts of R and Python that the course needs. Windows Security opens by itself. Click **Smart App Control settings**, choose **Off**, confirm, then go back to the PowerShell window and press **Enter**. Your normal virus protection stays on. Windows may not let you switch it back on later without a reset; if you do not want that, type **Q** and ask your teacher about the browser-only option.
    - ✋ Windows may ask *"Do you want to allow this app to make changes to your device?"* If you know your computer's admin password, click **Yes**. If you do not, click **No**: the setup then installs that tool just for your account.
 5. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
-6. ✋ Near the end it asks *"Add optional free AI keys now?"* Type **n** and press Enter. You can add keys later (Part 3).
+6. ✋ Near the end it asks *"Connect a free OpenRouter account as a backup for the AI?"* Type **y** and press Enter (or **n** to do it later, Part 3). Press Enter again at *"connect now?"*. A browser page opens: sign in with Google or GitHub and press **Allow**. The setup receives the key by itself; nothing to copy. At *"other free services too?"* press Enter (no).
 
 ## Mac
 
@@ -53,7 +53,7 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
 4. ✋ When asked for a **Password**, type your Mac login password and press Enter. **Nothing appears while you type**, which is normal.
 5. ✋ If a window asks to install *"command line developer tools"*, click **Install**, then **Agree**. This alone can take 10 minutes; the setup continues by itself afterwards.
 6. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
-7. ✋ Near the end it asks *"Add optional free AI keys now?"* Type **n** and press Enter.
+7. ✋ Near the end it asks *"Connect a free OpenRouter account as a backup for the AI?"* Type **y** and press Enter (or **n** to do it later, Part 3). Press Enter again at *"connect now?"*. A browser page opens: sign in with Google or GitHub and press **Allow**. The setup receives the key by itself; nothing to copy. At *"other free services too?"* press Enter (no).
 
 ## If GitHub is blocked (for example in mainland China)
 
@@ -154,7 +154,11 @@ To add keys:
 - **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Keys`
 - **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --keys`
 
-For each service, the setup opens the sign-up page and waits. Create a key, copy it, paste it into the window (it stays hidden), and press Enter. Press Enter without pasting to skip a service. The setup then tests each key.
+**OpenRouter (recommended, one click):** the setup opens OpenRouter's page. Sign in with Google or GitHub and press **Allow**; the key arrives by itself. In a Codespace, OpenRouter shows a short code instead: copy it and paste it into the terminal. If OpenRouter later says it blocks free models for your account, open https://openrouter.ai/settings/privacy and allow free models.
+
+**Other services (optional):** answer **y** to *"other free services too?"*. For each one the setup opens the sign-up page and waits. Create a key, copy it, paste it into the window (it stays hidden), and press Enter. Press Enter without pasting to skip a service.
+
+The setup then tests each key. A key that does not answer is shown as a WARN, never as a failure of the setup.
 
 Keys are saved only on your laptop, in your user folder (`.config/metascience/keys`). They are never inside the course folder, so you will not share them by accident.
 

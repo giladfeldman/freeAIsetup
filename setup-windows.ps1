@@ -772,7 +772,7 @@ else {
   if (-not $FromUpdate) { Install-Pack }
   if (-not $DryRun -and -not $FromUpdate) {
     if (-not $Yes) {
-      $a = Read-Host 'Add optional free AI keys now? You can also do it later with install-windows.cmd -Keys [y/N]'
+      $a = Read-Host 'Connect a free OpenRouter account as a backup for the AI (about 2 minutes, opens your browser)? You can also do it later with install-windows.cmd -Keys [y/N]'
       if ($a -match '^(y|yes)$') { Py @('keys') | Out-Null }
     }
     Run-Check

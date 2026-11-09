@@ -566,7 +566,7 @@ case "$MODE" in
          [ "$FROM_UPDATE" = 1 ] || install_pack
          if [ "$DRY_RUN" = 0 ] && [ "$FROM_UPDATE" = 0 ]; then
            if [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
-             printf '\n  Add optional free AI keys now? You can also do it later with --keys. [y/N] '; read -r a || a=""
+             printf '\n  Connect a free OpenRouter account as a backup for the AI (about 2 minutes, opens your browser)? You can also do it later with --keys. [y/N] '; read -r a || a=""
              case "$a" in y|Y|yes) key_wizard ;; esac
            fi
            run_check
