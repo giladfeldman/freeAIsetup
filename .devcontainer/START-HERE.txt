@@ -10,6 +10,13 @@ shows the final summary. Its result is also saved in /workspaces/MetaScience/set
 Everything is then installed: OpenCode with free AI models, R, RStudio, Python, Quarto, Git and Node.js.
 Your course folder is /workspaces/MetaScience
 
+FREE AI KEY (needed in most Codespaces)
+  OpenCode's built-in free models usually refuse Codespaces ("Free usage limit reached"; the setup
+  report then says so). Add your own free key once, in the TERMINAL panel at the bottom:
+      bash setup-mac.sh --keys
+  It shows where to get a free key (for example OpenRouter or Groq, about 2 minutes, no payment)
+  and then checks that the AI works.
+
 OPEN THE PROGRAMS
   Tap PORTS at the bottom of this screen, then the globe icon next to a name:
   - OpenCode (AI assistant): port 4096. Choose the folder /workspaces/MetaScience

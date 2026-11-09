@@ -267,7 +267,7 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
                 m = pick(list_models(pid, course), hints)
                 if m:
                     tries.append(m)
-        done, out, limited = None, "", False
+        done, out, limited, ran = None, "", False, 0
         for attempt, model in enumerate(tries, 1):
             if limited and (model is None or model.startswith("opencode/")):
                 continue                # the free models already refused this computer; only saved keys are worth trying
@@ -281,6 +281,7 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
             # OpenCode does not exit after "Free usage limit reached" (Codespace 2026-11-09: it then waits the full
             # 420 s, three times); stop it as soon as that line appears
             code, out = sh(cmd, cwd=course, timeout=420, stop_on=(FREE_LIMIT,))
+            ran += 1
             record(f"opencode run attempt {attempt} ({model})", code, out)
             if FREE_LIMIT in out.lower() and (model is None or model.startswith("opencode/")):
                 limited = True
@@ -308,7 +309,7 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
                         "then try the check again")
             else:
                 hint = "see log; try the check again later"
-            t.add("FAIL", "AI step", f"no extract.csv after {len(tries)} tries ({hint})")
+            t.add("FAIL", "AI step", f"no extract.csv after {ran} {'try' if ran == 1 else 'tries'} ({hint})")
             sample_answer()   # still test Python, R and Quarto, so one AI outage does not hide other problems
 
     if extract.is_file():
