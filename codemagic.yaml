@@ -1,0 +1,37 @@
+# Codemagic (codemagic.io) runs these on real Apple-silicon Macs: 500 free minutes a month on a personal
+# account. Started by hand from the Codemagic website; nothing runs automatically (no triggers below).
+# Note: Codemagic Macs come with developer tools preinstalled (Xcode, Homebrew, Node, Git), so the setup
+# finds those "already installed". R, RStudio, Quarto, uv, OpenCode and the course packages are tested fresh.
+workflows:
+  mac-setup-test:
+    name: Mac setup test (unattended)
+    instance_type: mac_mini_m2
+    max_build_duration: 90
+    scripts:
+      - name: Course setup, exactly as students run it (one-line installer, from this commit's files)
+        script: |
+          sw_vers; uname -m
+          bash setup-mac.sh --yes --no-auto-update 2>&1 | tee setup-output.txt
+          cp "$HOME/MetaScience/setup-report.txt" . 2>/dev/null || true
+          cp "${TMPDIR:-/tmp}"/metascience-setup-*.log . 2>/dev/null || true
+          grep -q "ALL CHECKS PASSED" setup-output.txt
+      - name: Run the setup a second time (must skip what works and still pass)
+        script: |
+          bash setup-mac.sh --yes --no-auto-update 2>&1 | tee setup-output-2.txt
+          grep -q "ALL CHECKS PASSED" setup-output-2.txt
+    artifacts:
+      - setup-output*.txt
+      - setup-report.txt
+      - metascience-setup-*.log
+
+  mac-remote-desktop:
+    name: Mac remote desktop (for walkthrough recording)
+    # Start it with "Enable SSH/VNC access" ticked, then connect with a VNC viewer.
+    # The machine stays up for up to 2 hours, then is wiped.
+    instance_type: mac_mini_m2
+    max_build_duration: 120
+    scripts:
+      - name: Keep the Mac available for the remote session
+        script: |
+          sw_vers; echo "Connect with VNC now. This step ends after 115 minutes."
+          sleep 6900 || true
