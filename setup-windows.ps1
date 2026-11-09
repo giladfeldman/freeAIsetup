@@ -45,7 +45,8 @@ $script:Failed = 0
 if ($FromUpdate) { $Yes = $true }
 
 # ---------- output helpers ---------------------------------------------------
-function Log($t)  { Add-Content -LiteralPath $LogFile -Value $t -Encoding UTF8 }
+# another program reading the log (antivirus, an editor) can lock it for a moment: retry, never stop the setup
+function Log($t)  { for ($i = 0; $i -lt 5; $i++) { try { Add-Content -LiteralPath $LogFile -Value $t -Encoding UTF8 -ErrorAction Stop; return } catch { Start-Sleep -Milliseconds 200 } } }
 function Say($t)  { Write-Host $t; Log $t }
 function Step($t) { Say ''; Write-Host "== $t ==" -ForegroundColor Cyan; Log "== $t ==" }
 function Ok($i, $d = '')   { Write-Host '  OK    ' -ForegroundColor Green -NoNewline; Write-Host "$i  $d"; Log "OK $i $d" }
