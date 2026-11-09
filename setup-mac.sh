@@ -70,6 +70,10 @@ OS="$(uname -s)"; ARCH="$(uname -m)"
 case "$OS" in Darwin) PLATFORM="mac" ;; Linux) PLATFORM="linux" ;; *) echo "This script is for macOS (or Linux). On Windows use install-windows.cmd."; exit 2 ;; esac
 case "$ARCH" in arm64|aarch64) ARCH_ID="arm64" ;; x86_64|amd64) ARCH_ID="x64" ;; *) echo "Unsupported processor: $ARCH"; exit 2 ;; esac
 SUDO=""; if [ "$(id -u)" != 0 ]; then SUDO="sudo"; fi
+# Intel Macs: Homebrew's installer refuses them since 2026 ("only supported on Apple Silicon processors"; emulator
+# test 2026-11-09, macOS 15.8.2 x86_64). There every tool comes straight from its maker's own download instead.
+NO_BREW=0; [ "$PLATFORM" = mac ] && [ "$ARCH_ID" = x64 ] && NO_BREW=1
+QUARTO_VERSION="1.8.25"
 
 add_path() { # add a directory to PATH now and in the shell start-up files (once)
   case ":$PATH:" in *":$1:"*) ;; *) export PATH="$1:$PATH" ;; esac
@@ -199,6 +203,7 @@ precheck() {
 # ---------- 2. package manager ----------------------------------------------
 pkg_manager() {
   step "2/9  Package manager"
+  if [ "$NO_BREW" = 1 ]; then ok "Homebrew" "not used on Intel Macs: each tool is downloaded from its maker"; return 0; fi
   if [ "$PLATFORM" = mac ]; then
     if ! have brew; then
       for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$p" ] && eval "$("$p" shellenv)"; done
@@ -219,6 +224,73 @@ pkg_manager() {
 }
 
 # ---------- 3. core tools ----------------------------------------------------
+mac_pkg() { # $1 = official installer package address: download it and install it for this Mac (needs the password)
+  local d f rc; d="$(mktemp -d)"; f="$d/$(basename "$1")"
+  retry curl -fL -m 900 -A "MetaScience-setup" -o "$f" "$1" && run $SUDO installer -pkg "$f" -target /
+  rc=$?; rm -rf "$d"; return $rc
+}
+install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the makers' own download pages
+  local t; t="$(mktemp -d)"
+  # Git comes with Apple's command line tools. /usr/bin/git exists without them (it only opens Apple's install
+  # window), so check for the tools themselves; softwareupdate installs them without that window.
+  if xcode-select -p >/dev/null 2>&1 || { have git && [ "$(command -v git)" != /usr/bin/git ]; }; then ok "git" "already installed"
+  elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Apple command line tools (git)"
+  else
+    say "  Installing Apple's command line tools (they include git; 5-15 minutes)..."
+    local flag=/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress label
+    touch "$flag"
+    label="$(softwareupdate -l 2>>"$LOG_FILE" | sed -n 's/^[[:space:]]*\* Label: \(Command Line Tools.*\)$/\1/p' | tail -1)"
+    if [ -n "$label" ] && run $SUDO softwareupdate -i "$label" && xcode-select -p >/dev/null 2>&1; then ok "git" "installed (Apple command line tools)"
+    else fail "git" "Apple command line tools did not install: run  xcode-select --install  then run the setup again"; fi
+    rm -f "$flag"
+  fi
+  # Node.js: the official current 22.x build, unpacked into your own folder (no password needed)
+  if have node; then ok "node" "already installed"
+  elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Node.js"
+  else
+    local nb="https://nodejs.org/dist/latest-v22.x" sums nf
+    sums="$(curl -fsSL -m 60 "$nb/SHASUMS256.txt" 2>>"$LOG_FILE")"
+    nf="$(printf '%s\n' "$sums" | awk '/darwin-x64\.tar\.gz$/ {print $2; exit}')"
+    if [ -n "$nf" ] && retry curl -fL -m 900 -o "$t/$nf" "$nb/$nf" \
+       && [ "$(shasum -a 256 "$t/$nf" | cut -d' ' -f1)" = "$(printf '%s\n' "$sums" | awk -v f="$nf" '$2 == f {print $1}')" ]; then
+      mkdir -p "$HOME/.local/share" && tar -xzf "$t/$nf" -C "$HOME/.local/share" \
+        && ln -sfn "$HOME/.local/share/${nf%.tar.gz}" "$HOME/.local/share/node" && add_path "$HOME/.local/share/node/bin"
+      have node && ok "node" "installed ($(node --version))" || fail "node" "could not unpack $nf"
+    else fail "node" "download from nodejs.org failed or did not match its checksum"; fi
+  fi
+  if have uv; then ok "uv" "already installed"
+  elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install uv"
+  else curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >> "$LOG_FILE" 2>&1; add_path "$HOME/.local/bin"
+    if have uv; then ok "uv" "installed"; elif uv_from_pypi; then ok "uv" "installed (direct download)"; else fail "uv" "installer failed"; fi; fi
+  # R: the newest Intel build on CRAN (same "older than 4.5" rule as with Homebrew; the old R stays)
+  local rv=""; have R && rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
+  if [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
+  elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install R"
+  else
+    [ -n "$rv" ] && say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays)."
+    local rb="$CRAN/bin/macosx/big-sur-x86_64/base" rver
+    rver="$(curl -fsSL -m 60 "$rb/" 2>>"$LOG_FILE" | grep -oE 'R-[0-9]+\.[0-9]+\.[0-9]+-x86_64\.pkg' | sed 's/^R-//; s/-x86_64\.pkg$//' | sort -u -t. -k1,1n -k2,2n -k3,3n | tail -1)"
+    if [ -n "$rver" ] && mac_pkg "$rb/R-$rver-x86_64.pkg"; then add_path /Library/Frameworks/R.framework/Resources/bin
+      ok "R" "installed (R $rver$([ -n "$rv" ] && echo "; old R $rv kept"))"
+    else fail "R" "download or install of R from CRAN failed"; fi
+  fi
+  if have quarto; then ok "Quarto" "already installed"
+  elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Quarto"
+  elif mac_pkg "https://github.com/quarto-dev/quarto-cli/releases/download/v$QUARTO_VERSION/quarto-$QUARTO_VERSION-macos.pkg"; then
+    add_path /Applications/quarto/bin; ok "Quarto" "installed"
+  else fail "Quarto" "download or install failed"; fi
+  if [ "$SKIP_GUI" = 0 ]; then
+    if [ -d "/Applications/RStudio.app" ] || [ -d "$HOME/Applications/RStudio.app" ]; then ok "RStudio" "already installed"
+    elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install RStudio"
+    elif retry curl -fL -m 900 -o "$t/RStudio.dmg" "https://rstudio.org/download/latest/stable/desktop/mac/RStudio-latest.dmg" \
+         && run hdiutil attach -nobrowse -readonly -mountpoint "$t/mnt" "$t/RStudio.dmg"; then
+      run $SUDO ditto "$t/mnt/RStudio.app" /Applications/RStudio.app
+      run hdiutil detach "$t/mnt" -quiet
+      [ -d /Applications/RStudio.app ] && ok "RStudio" "installed" || fail "RStudio" "could not copy RStudio into Applications"
+    else fail "RStudio" "download from Posit failed"; fi
+  fi
+  rm -rf "$t"
+}
 install_tools() {
   step "3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio"
   say "  Rule: this setup never upgrades or removes software that is already on this computer."
@@ -227,6 +299,7 @@ install_tools() {
     local d; for d in /Library/Frameworks/R.framework/Resources/bin /Applications/quarto/bin /opt/homebrew/bin /usr/local/bin; do
       [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) { [ -x "$d/Rscript" ] || [ -x "$d/quarto" ] || [ -x "$d/git" ]; } && add_path "$d" ;; esac
     done
+    if [ "$NO_BREW" = 1 ]; then install_tools_direct; add_path "$HOME/.local/bin"; return 0; fi
     local f; for f in git node uv; do
       if have "$f"; then ok "$f" "already installed"; elif retry brew install "$f"; then ok "$f" "installed"
       elif [ "$f" = uv ] && uv_from_pypi; then ok "uv" "installed (direct download)"; else fail "$f" "brew install $f failed"; fi
@@ -260,7 +333,7 @@ install_tools() {
     if have quarto; then ok "Quarto" "already installed"
     elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Quarto"
     else
-      local qv="1.8.25" qa; [ "$ARCH_ID" = arm64 ] && qa=arm64 || qa=amd64
+      local qv="$QUARTO_VERSION" qa; [ "$ARCH_ID" = arm64 ] && qa=arm64 || qa=amd64
       retry curl -fsSL -o /tmp/quarto.deb "https://github.com/quarto-dev/quarto-cli/releases/download/v$qv/quarto-$qv-linux-$qa.deb" \
         && run $SUDO apt-get install -y /tmp/quarto.deb && ok "Quarto" "installed" || fail "Quarto" "download or install failed"
     fi

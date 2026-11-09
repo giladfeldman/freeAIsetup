@@ -248,7 +248,9 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
                 print("  (the free AI models were busy; trying once more in 30 seconds)", flush=True)
                 import time
                 time.sleep(30)
-            cmd = ["opencode", "run", "--auto", msg] + (["-m", model] if model else [])
+            # warnings and errors go into the log, so a hang shows its reason (Codespace 2026-11-09: three silent
+            # 420 s time-outs with only the model name printed)
+            cmd = ["opencode", "run", "--auto", "--print-logs", "--log-level", "WARN", msg] + (["-m", model] if model else [])
             code, out = sh(cmd, cwd=course, timeout=420)
             record(f"opencode run attempt {attempt} ({model})", code, out)
             if extract.is_file() and extract.stat().st_size > 0:

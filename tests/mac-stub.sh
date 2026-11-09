@@ -14,7 +14,7 @@ case "$*" in "install --cask r") printf "#!/bin/bash\necho R\n" > '"$STUB"'/Rscr
  "install uv") printf "#!/bin/bash\nexit 0\n" > '"$STUB"'/uv; chmod +x '"$STUB"'/uv;; esac; exit 0'
 mk ditto 'mkdir -p "$4/OpenCode.app"'
 mk open 'exit 0'
-mk curl 'for a in "$@"; do case "$prev" in -o) out="$a";; esac; prev="$a"; done; [ -n "${out:-}" ] && { case "$out" in *.zip) (cd /tmp && rm -rf zz && mkdir zz && printf "#!/bin/bash\necho 1.19.5\n" > zz/opencode && chmod +x zz/opencode && python3 -c "import zipfile,sys;z=zipfile.ZipFile(sys.argv[1],\"w\");z.write(\"zz/opencode\",\"opencode\")" "$out");; *) : > "$out";; esac; }; exit 0'
+mk curl 'case " $* " in *" -w "*) echo 200; exit 0;; esac; for a in "$@"; do case "$prev" in -o) out="$a";; esac; prev="$a"; done; [ -n "${out:-}" ] && { case "$out" in *.zip) (cd /tmp && rm -rf zz && mkdir zz && printf "#!/bin/bash\necho 1.19.5\n" > zz/opencode && chmod +x zz/opencode && python3 -c "import zipfile,sys;z=zipfile.ZipFile(sys.argv[1],\"w\");z.write(\"zz/opencode\",\"opencode\")" "$out");; *) : > "$out";; esac; }; exit 0'
 mk unzip 'python3 -c "import zipfile,sys,os;z=zipfile.ZipFile(sys.argv[1]);z.extractall(sys.argv[2]);[os.chmod(os.path.join(sys.argv[2],n),0o755) for n in z.namelist()]" "$3" "$5"'
 mk df 'echo "Filesystem 1024-blocks Used Available"; echo "disk 1 1 52428800"'
 export PATH="$STUB:$PATH" HOME=/tmp/fakehome; mkdir -p "$HOME"

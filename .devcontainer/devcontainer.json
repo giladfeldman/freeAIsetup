@@ -20,12 +20,12 @@
     "8787": { "label": "RStudio", "onAutoForward": "notify" }
   },
   "customizations": {
-    "codespaces": { "openFiles": [".devcontainer/START-HERE.md"] },
+    "codespaces": { "openFiles": [".devcontainer/START-HERE.txt"] },
     "vscode": {
-      // no "Do you trust the authors" dialog; START-HERE opens formatted; no R editor extension (it pops up errors,
-      // and students use RStudio in the browser instead)
-      "settings": { "workbench.startupEditor": "none", "security.workspace.trust.enabled": false,
-                    "workbench.editorAssociations": { "*.md": "vscode.markdown.preview.editor" } },
+      // no R editor extension (it pops up errors, and students use RStudio in the browser instead).
+      // The "Do you trust the authors" box and Markdown preview cannot be set from here in the browser editor
+      // (real Codespace 2026-11-09), so START-HERE is plain text and explains the trust box.
+      "settings": { "workbench.startupEditor": "none" },
       "extensions": ["-REditorSupport.r"]
     }
   }
