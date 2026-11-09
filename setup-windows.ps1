@@ -778,7 +778,27 @@ else {
   }
   Summary
 }
+function Send-Log {
+  # With the student's yes: send the log to the teacher's private log box (write-only address, kept 180 days).
+  try {
+    $rep = Join-Path $CourseDir 'setup-report.txt'
+    $txt = "== setup-report.txt ==`n" + $(if (Test-Path -LiteralPath $rep) { [IO.File]::ReadAllText($rep) } else { '' }) +
+           "`n== setup log ==`n" + [IO.File]::ReadAllText($LogFile)
+    $txt = $txt -replace [regex]::Escape($env:USERPROFILE), '~'
+    foreach ($w in @($env:USERNAME, $env:COMPUTERNAME)) { if ($w -and $w.Length -ge 4) { $txt = $txt -replace [regex]::Escape($w), '<name>' } }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $url = "https://freeaisetup-logs.giladfel.workers.dev/upload?platform=windows&version=$SetupVersion&result=failed"
+    $r = Invoke-WebRequest -Uri $url -Method Post -UseBasicParsing -TimeoutSec 60 -Headers @{ 'x-freeaisetup' = '1' } `
+         -ContentType 'text/plain; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($txt))
+    $id = ([string]$r.Content).Trim()
+    if ($id) { Write-Host '  Sent. ' -ForegroundColor Green -NoNewline; Say "Your code is $id. Tell your teacher this code."; return }
+  } catch { Log "upload failed: $($_.Exception.Message)" }
+  Say "  Could not send it (no internet?). Show your teacher this file instead: $(Join-Path $CourseDir 'setup-report.txt')"
+}
 if ($script:Failed -gt 0 -and -not $DryRun -and -not $Yes -and -not $FromUpdate) {
+  Say ''
+  $a = Read-Host '  Send this setup report to your teacher, so they can see what went wrong? It contains no passwords and no course work; your user name is removed. [Y/n]'
+  if ($a -notmatch '^(n|no)$') { Send-Log }
   $a = Read-Host 'Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n]'
   if ($a -notmatch '^(n|no)$') { Start-Doctor }
 }

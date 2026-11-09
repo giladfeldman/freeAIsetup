@@ -497,6 +497,24 @@ case "$MODE" in
          fi
          summary ;;
 esac
+upload_log() { # with the student's yes: send the log to the teacher's private log box (kept 180 days, write-only address)
+  local plat="$PLATFORM" body id; [ -n "${CODESPACES:-}" ] && plat=codespace
+  have curl || return 0
+  body="$( { echo "== setup-report.txt =="; cat "$COURSE_DIR/setup-report.txt" 2>/dev/null; echo; echo "== setup log =="; cat "$LOG_FILE"; }           | sed -e "s#$HOME#~#g" )"
+  local w; for w in "$(id -un)" "$(hostname -s 2>/dev/null)"; do   # short names would hit ordinary words: only 4+ letters
+    [ "${#w}" -ge 4 ] && case "$w" in *[!A-Za-z0-9._-]*) ;; *) body="$(printf '%s' "$body" | sed "s#$w#<name>#g")" ;; esac
+  done
+  id="$(printf '%s' "$body" | curl -fsS --max-time 60 -X POST -H 'x-freeaisetup: 1' --data-binary @-         "https://freeaisetup-logs.giladfel.workers.dev/upload?platform=$plat&version=$SETUP_VERSION&result=failed" 2>/dev/null | tr -d '
+ ')"
+  if [ -n "$id" ]; then say "  ${G}Sent.${N} Your code is ${B}$id${N}. Tell your teacher this code."
+  else say "  Could not send it (no internet?). Show your teacher this file instead: $COURSE_DIR/setup-report.txt"; fi
+}
+if [ "$FAILED" != 0 ] && [ "$DRY_RUN" = 0 ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
+  printf '
+  Send this setup report to your teacher, so they can see what went wrong?
+  It contains no passwords and no course work; your user name is removed. [Y/n] '
+  read -r a || a="n"; case "$a" in n|N|no) ;; *) upload_log ;; esac
+fi
 if [ "$FAILED" != 0 ] && [ "$DRY_RUN" = 0 ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
   printf '
   Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n] '

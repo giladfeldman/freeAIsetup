@@ -1,0 +1,9 @@
+name = "freeaisetup-logs"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+# Free plan only: Workers 100k requests/day, KV 1,000 writes/day. Over the limit, uploads fail; nothing is billed.
+
+[[kv_namespaces]]
+binding = "LOGS"
+id = "68e18a10d41843828b574d19f2cc4320"

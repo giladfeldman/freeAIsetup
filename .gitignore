@@ -7,3 +7,6 @@ __pycache__/
 *.pem.private
 release-key.pem
 /MetaScience
+
+logs-worker/.wrangler/
+logs-worker/node_modules/

@@ -48,6 +48,10 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 
 ## Privacy
 
+If the setup fails, it asks whether to send the setup report to the teacher. Only on yes, the report and
+log go to the teacher's private log box (user name, computer name and home folder removed; deleted after
+180 days). See `logs-worker/README.md`.
+
 The free AI models may use what you type to train their models. **Never paste identifiable participant data
 or anything confidential into them.**
 
