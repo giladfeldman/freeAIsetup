@@ -21,3 +21,7 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Setup scripts
 
 - [ ] [HIGH · now · val:high · M · opus-medium] Mac setup fails on Intel Macs: Homebrew installer now aborts on x86_64 (Apple Silicon only); add a non-Homebrew path or a clear early message (src: QEMU macOS 15.8.2 x86_64 run 2026-11-09; student-setup/tests/mac/04-log-apple-silicon-only.png; Homebrew install.sh lines 170-172) ^d-cce4b1
+
+## Mac setup
+
+- [ ] [LOW · later · val:med · S · sonnet-medium] Step 5 R packages: check each package loads (requireNamespace), not only that its folder exists (src: emulator run 2 2026-11-09 (cli/vroom missing after VM reset)) ^d-3d6237
