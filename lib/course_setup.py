@@ -61,8 +61,13 @@ def exe(name: str) -> str | None:
     return shutil.which(name)
 
 
-def sh(cmd: list[str], cwd: pathlib.Path | None = None, timeout: int = 120) -> tuple[int, str]:
-    """Run a command, return (exit code, combined output). Never raises."""
+FREE_LIMIT = "free usage limit reached"   # OpenCode's free models refusing this internet address
+
+
+def sh(cmd: list[str], cwd: pathlib.Path | None = None, timeout: int = 120,
+       stop_on: tuple[str, ...] = ()) -> tuple[int, str]:
+    """Run a command, return (exit code, combined output). Never raises.
+    stop_on: lower-case phrases; when an output line contains one, the command is stopped (exit 125)."""
     found = exe(cmd[0])
     if not found:
         return 127, f"{cmd[0]} not found on PATH"
@@ -79,20 +84,34 @@ def sh(cmd: list[str], cwd: pathlib.Path | None = None, timeout: int = 120) -> t
     # Read output on a thread and go by the command's own exit: a leftover child process (seen with
     # `uv run` on a fresh Windows account) can hold the output pipe open long after the command ended.
     chunks: list[str] = []
-    reader = threading.Thread(target=lambda: chunks.extend(iter(p.stdout.readline, "")), daemon=True)
-    reader.start()
-    try:
-        p.wait(timeout=timeout)
-        reader.join(10)
-        return p.returncode, "".join(chunks)
-    except subprocess.TimeoutExpired:
-        # kill the whole process tree, not just the parent
+    hit = threading.Event()
+
+    def read() -> None:
+        for line in iter(p.stdout.readline, ""):
+            chunks.append(line)
+            if stop_on and any(s in line.lower() for s in stop_on):
+                hit.set()
+
+    def kill() -> None:  # the whole process tree, not just the parent
         if os.name == "nt":
             subprocess.run(["taskkill", "/T", "/F", "/PID", str(p.pid)], capture_output=True)
         else:
             p.kill()
-        reader.join(5)
-        return 124, f"timed out after {timeout}s. {''.join(chunks)}"
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    import time
+    end = time.monotonic() + timeout
+    while p.poll() is None and not hit.is_set() and time.monotonic() < end:
+        time.sleep(0.5)
+    if p.poll() is not None:
+        reader.join(10)
+        return p.returncode, "".join(chunks)
+    kill()
+    reader.join(5)
+    if hit.is_set():
+        return 125, "".join(chunks)
+    return 124, f"timed out after {timeout}s. {''.join(chunks)}"
 
 
 def list_models(provider: str, cwd: pathlib.Path) -> list[str]:
@@ -242,17 +261,29 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
         free = list_models("opencode", course)
         tries = ([m for m in DEFAULT_MODEL_PREFERENCE if m in free] or [None])[:2]
         tries.append(tries[0])          # a third try with the first model, after a pause (free models are often briefly busy)
-        done, out = None, ""
+        # a free key the student saved is the way round "Free usage limit reached" (one per provider, after the free models)
+        for pid, _name, _url, hints in PROVIDERS:
+            if key_path(pid).is_file():
+                m = pick(list_models(pid, course), hints)
+                if m:
+                    tries.append(m)
+        done, out, limited = None, "", False
         for attempt, model in enumerate(tries, 1):
-            if attempt == 3:
+            if limited and (model is None or model.startswith("opencode/")):
+                continue                # the free models already refused this computer; only saved keys are worth trying
+            if attempt == 3 and not limited:
                 print("  (the free AI models were busy; trying once more in 30 seconds)", flush=True)
                 import time
                 time.sleep(30)
             # warnings and errors go into the log, so a hang shows its reason (Codespace 2026-11-09: three silent
             # 420 s time-outs with only the model name printed)
             cmd = ["opencode", "run", "--auto", "--print-logs", "--log-level", "WARN", msg] + (["-m", model] if model else [])
-            code, out = sh(cmd, cwd=course, timeout=420)
+            # OpenCode does not exit after "Free usage limit reached" (Codespace 2026-11-09: it then waits the full
+            # 420 s, three times); stop it as soon as that line appears
+            code, out = sh(cmd, cwd=course, timeout=420, stop_on=(FREE_LIMIT,))
             record(f"opencode run attempt {attempt} ({model})", code, out)
+            if FREE_LIMIT in out.lower() and (model is None or model.startswith("opencode/")):
+                limited = True
             if extract.is_file() and extract.stat().st_size > 0:
                 done = (attempt, model)
                 break
@@ -261,7 +292,12 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
             t.add("OK", "AI step", f"free model {done[1]} read the article and wrote extract.csv{note}")
         else:
             low = out.lower()
-            if "429" in out or "rate limit" in low or "too many" in low:
+            if limited:
+                keys_cmd = ("install-windows.cmd -Keys" if os.name == "nt" else "bash setup-mac.sh --keys")
+                hint = ("OpenCode's free models refuse this computer's internet address today (\"Free usage limit "
+                        "reached\"; common in a Codespace and on busy shared Wi-Fi). Add a free key, then the check "
+                        f"runs again: {keys_cmd}")
+            elif "429" in out or "rate limit" in low or "too many" in low:
                 hint = "the free models are busy or rate-limited; try the check again in a few minutes"
             elif any(w in low for w in ("region", "country", "not available in your", "unsupported location", "403", "forbidden")):
                 hint = ("the free models refuse this network or region; try another network or a VPN, "
