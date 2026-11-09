@@ -636,6 +636,13 @@ function Setup-CourseFolder {
     Log "uv sync try $try failed (exit $code)"; Start-Sleep -Seconds 10
   }
   if ($code -eq 0) { Ok 'Python environment' 'Python 3.12 + course packages' } else { Fail 'Python environment' "uv sync failed; see $LogFile" }
+  # pymupdf needs MSVCP140.dll, which Python does not bring and a fresh Windows lacks (VM 2026-11-09: "DLL load failed
+  # while importing _extra"). msvc-runtime puts it in the .venv folder, where Windows does not look when Python loads
+  # pymupdf; it is found only next to pymupdf's own files.
+  $venv = Join-Path $CourseDir '.venv'; $pm = Join-Path $venv 'Lib\site-packages\pymupdf'; $dll = Join-Path $venv 'msvcp140.dll'
+  if ((Test-Path -LiteralPath $pm) -and (Test-Path -LiteralPath $dll) -and -not (Test-Path -LiteralPath (Join-Path $pm 'msvcp140.dll'))) {
+    try { Copy-Item -LiteralPath $dll -Destination $pm -ErrorAction Stop; Log 'copied msvcp140.dll next to pymupdf' } catch { Log "msvcp140 copy failed: $_" }
+  }
   if ((Py @('config')) -eq 0) { Ok 'OpenCode settings' 'free model as default, 6 MCP tools (off)' } else { Fail 'OpenCode settings' 'could not write opencode.json' }
 }
 

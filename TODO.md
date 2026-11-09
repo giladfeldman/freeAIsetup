@@ -17,3 +17,7 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Codespaces
 
 - [ ] [HIGH · now · val:high · M · opus-medium] Verify a real GitHub Codespace finishes setup (15 min after create: OpenCode/RStudio not running, MetaScience empty; local devcontainer passed) (src: video filming 2026-11-09, codespace zany-space-carnival (deleted)) ^d-ad15b4
+
+## Setup scripts
+
+- [ ] [HIGH · now · val:high · M · opus-medium] Mac setup fails on Intel Macs: Homebrew installer now aborts on x86_64 (Apple Silicon only); add a non-Homebrew path or a clear early message (src: QEMU macOS 15.8.2 x86_64 run 2026-11-09; student-setup/tests/mac/04-log-apple-silicon-only.png; Homebrew install.sh lines 170-172) ^d-cce4b1
