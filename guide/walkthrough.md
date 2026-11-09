@@ -51,7 +51,9 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
 
 3. Click in the Terminal window, paste with **⌘ + V**, and press **Enter**.
 4. ✋ When asked for a **Password**, type your Mac login password and press Enter. **Nothing appears while you type**, which is normal.
-5. ✋ If a window asks to install *"command line developer tools"*, click **Install**, then **Agree**. This alone can take 10 minutes; the setup continues by itself afterwards.
+5. ✋ If a window asks to install *"command line developer tools"*, click **Install**, then **Agree**. This alone can take 10–40 minutes; the setup continues by itself afterwards. If the screen goes dark or locks meanwhile, log in again: the setup keeps running underneath.
+   - ✋ If macOS asks whether *"Terminal"* may access your **Downloads** folder, click **Allow**.
+   - A notice *"Background Items Added: bash"* may appear. That is the daily update check; you can ignore it.
 6. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
 7. ✋ Near the end it asks *"Connect a free OpenRouter account as a backup for the AI?"* Type **y** and press Enter (or **n** to do it later, Part 3). Press Enter again at *"connect now?"*. A browser page opens: sign in with Google or GitHub and press **Allow**. The setup receives the key by itself; nothing to copy. At *"other free services too?"* press Enter (no).
 
