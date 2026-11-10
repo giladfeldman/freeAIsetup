@@ -31,3 +31,8 @@ GOOD TO KNOW
   - The Codespace switches off by itself after 30 minutes without use. Nothing is lost; open it again
     from github.com/codespaces
   - It is deleted if you do not open it for 30 days, so download what you hand in.
+
+MONEY: ALL FREE
+  Never add a credit card or payment method to GitHub, OpenRouter or any other site. Without one,
+  nothing can charge you: when the free hours or requests run out, things simply stop until the
+  next month or day. A "$0.00" shown on these sites is normal.

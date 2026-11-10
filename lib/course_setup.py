@@ -39,8 +39,6 @@ PROVIDERS = [
     ("openrouter", "OpenRouter", "https://openrouter.ai/keys", [":free"]),
     ("groq", "Groq", "https://console.groq.com/keys", ["gpt-oss-120b", "gpt-oss", "llama"]),
     ("google", "Google AI Studio (Gemini)", "https://aistudio.google.com/apikey", ["flash-lite", "flash"]),
-    ("nvidia", "NVIDIA (build.nvidia.com)", "https://build.nvidia.com/settings/api-keys", ["nemotron", "gpt-oss", "llama"]),
-    ("mistral", "Mistral", "https://console.mistral.ai/api-keys", ["mistral-small", "small"]),
 ]
 
 # MCP tools: configured but switched OFF. A student switches one on by changing "enabled" to true.
@@ -279,7 +277,9 @@ def openrouter_connect(wait_s: int = 600) -> str:
 
 def key_wizard(course: pathlib.Path) -> None:
     print("\nOpenCode already works with its built-in free models (no account needed), but they are sometimes busy")
-    print("or refuse a network. A free OpenRouter account is the backup: no payment, about 2 minutes.\n")
+    print("or refuse a network. A free OpenRouter account is the backup: no payment, about 2 minutes.")
+    print("Money: never enter a card or buy credits on these sites. Without a card nothing can charge you;")
+    print('a "$0.00" or a dollar price shown on their pages is normal. Use only models ending in :free.\n')
     KEY_DIR.mkdir(parents=True, exist_ok=True)
     have = key_path("openrouter").is_file()
     ans = ask("--- OpenRouter: connect now? " + ("(a key is already saved) [y/N]" if have else "[Y/n]")).strip().lower()
@@ -291,7 +291,7 @@ def key_wizard(course: pathlib.Path) -> None:
         if key:
             save_key("openrouter", key)
             print("  saved the OpenRouter key")
-    more = ask("\nAdd keys for other free services too (Groq, Google, NVIDIA, Mistral)? Most students skip this. [y/N]")
+    more = ask("\nAdd keys for other free services too (Groq, Google)? Most students skip this. [y/N]")
     if more.strip().lower() in ("y", "yes"):
         print("For each one a web page opens: 1. sign up with your UNIVERSITY email,  2. create a key,")
         print("3. copy it,  4. paste it here (it stays hidden). Press Enter without pasting to skip a service.\n")

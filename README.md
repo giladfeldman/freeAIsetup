@@ -46,6 +46,12 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 - To go back to the previous version: `-Rollback` / `--rollback`. To switch the daily check off:
   `-NoAutoUpdate` / `--no-auto-update`.
 
+## Money
+
+Everything is free, for students and teacher. Every service used charges only after the user adds a payment
+method, buys credits or subscribes; at a free limit it returns an error or a wait, never a bill. Students should
+never enter a card anywhere. The setup only uses free models (on OpenRouter only `:free` ones).
+
 ## Privacy
 
 If the setup fails, it asks whether to send the setup report to the teacher. Only on yes, the report and

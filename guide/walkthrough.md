@@ -12,6 +12,23 @@ subtitle: "Meta-science and open science course — step-by-step guide for stude
 
 The setup takes **20-40 minutes**, most of it waiting. You only need to do something at a few points, marked with a hand: ✋.
 
+## Money: everything here is free, and stays free
+
+Nothing in this course costs money, and nothing can charge you **unless you yourself add a payment method**.
+Every service used here charges only after you add a credit card, buy credits, link a billing account or
+subscribe. When a free allowance runs out, you get an error message or a wait until the next day, **never a bill**.
+
+- **Never enter a credit card, bank details or PayPal** anywhere for this course: not in OpenCode, OpenRouter,
+  Groq, Google AI Studio or GitHub. Nobody from the course will ever ask you to.
+- **Never click** "Upgrade", "Subscribe", "Buy credits", "Add credits", "Auto-recharge", "Go", "Extra usage" or
+  "Set up billing".
+- Seeing **"$0.00"**, "credits" or a dollar price next to a model on these websites is normal. It shows what the
+  service *would* cost for paying customers. On a free account with no card it stays at $0.
+- In OpenRouter, use only models whose name ends in **`:free`** (the setup only picks those).
+- GitHub Codespaces: without a payment method on your GitHub account, a Codespace simply stops when the free
+  monthly hours are used up. Do not add one.
+- If a page ever asks you for payment to continue, stop and tell your teacher.
+
 **Before you start:**
 
 1. Plug in your laptop. Connect to the university Wi-Fi.
@@ -141,15 +158,13 @@ To re-run only the check:
 
 # Part 3 — Optional: more free AI services
 
-The built-in free models are enough for the course. If they are busy, you can add more free services. Each one needs a free sign-up. **Use your university email address.**
+The built-in free models are enough for the course. If they are busy, you can add more free services. Each one needs a free sign-up. **Use your university email address, and never add a card (see "Money" above).**
 
 | Service | Free allowance (Nov 2026) | Card needed? | Notes |
 |---|---|---|---|
 | OpenRouter | 50 requests per day on `:free` models | No | Many models in one place |
 | Groq | 1,000 requests per day; 8,000 tokens per minute | No | Very fast; send excerpts, not whole papers |
-| Google AI Studio (Gemini) | Free tier; limits shown in AI Studio | No | You must be 18+. In the EU your prompts are not used for training. |
-| NVIDIA (build.nvidia.com) | About 40 requests per minute | No | Some accounts are asked for a phone number |
-| Mistral | Free "Experiment" plan | No | Prompts may be used for training unless you opt out in settings |
+| Google AI Studio (Gemini) | Free tier; limits shown in AI Studio | No | You must be 18+. Never link a billing account. On the free tier your prompts may be used by Google, so never paste personal or confidential data. |
 
 To add keys:
 
