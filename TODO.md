@@ -17,6 +17,10 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Codespaces
 
 - [ ] [HIGH · now · val:high · M · opus-medium] Verify a real GitHub Codespace finishes setup (15 min after create: OpenCode/RStudio not running, MetaScience empty; local devcontainer passed) (src: video filming 2026-11-09, codespace zany-space-carnival (deleted)) ^d-ad15b4
+- [ ] [HIGH · soon · val:high · S · opus-medium] Make RStudio Server start automatically in a new Codespace (was not running after creation; manual start script worked) (src: video agent Codespace filming 2026-11-10, release 2026.11.10.2) ^d-e4e367
+- [ ] [MED · later · val:med · M · opus-medium] Real fix for RStudio first-visit redirect to localhost:8787 in Codespaces (rewrite Location via small proxy, or RStudio option) (src: .devcontainer/start.sh; agent curl trace 2026-11-10) ^d-644df4
+- [ ] [HIGH · soon · val:high · M · opus-medium] Fix OpenCode web in Codespaces: GET /provider?directory=/workspaces/MetaScience returns 400 through the port proxy, model list empty (src: .devcontainer/start.sh opencode web; video agent 2026-11-10) ^d-a3c2a5
+- [ ] [HIGH · soon · val:high · M · opus-medium] RStudio in Codespaces: second visit also fails (1 of 2 worked) - needs Location rewrite proxy; revise START-HERE 'tap the globe again' text (src: d-644df4 follow-up; video agent 2026-11-10 10:52) ^d-6da8a7
 
 ## Setup scripts
 
@@ -25,3 +29,7 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Mac setup
 
 - [ ] [LOW · later · val:med · S · sonnet-medium] Step 5 R packages: check each package loads (requireNamespace), not only that its folder exists (src: emulator run 2 2026-11-09 (cli/vroom missing after VM reset)) ^d-3d6237
+
+## Windows
+
+- [ ] [HIGH · soon · val:high · M · opus-medium] Find why the Windows Python check crashed with 0xC000070A on its first run (VM take 3, release 2026.11.10.2; re-run passed) (src: video agent take 3 film-log, setup-videos/windows/vm-film) ^d-8fb1bf
