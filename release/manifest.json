@@ -1,9 +1,9 @@
 {
- "version": "2026.11.10.2",
- "published": "2026-11-10T04:13:13Z",
- "notes": "Money safety: OpenCode limited to OpenRouter's free models; fixed free helper model; warnings for students (never a card; existing cards/credits; Codespaces $0 budget); NVIDIA kept, Mistral API removed (no longer free)",
+ "version": "2026.11.10.3",
+ "published": "2026-11-10T09:33:07Z",
+ "notes": "Codespaces: RStudio and OpenCode start before the update check; START-HERE explains RStudio's first-visit 'site can't be reached' (tap the globe again)",
  "files": {
-  "VERSION": "343dbda3dda419152ca1544c5d20a49ed27a7cf740f6ca93f7d88b2b5a528a34",
+  "VERSION": "41cb2c7675db09cd568c87c1e4e0b4e8df790f1264478cdd8b54b47c00869ada",
   "course-kit/AGENTS.md": "aa54018a12db1ddcf208158d917c61114ab846a875ee7c96cca27241f5b3935c",
   "course-kit/analysis/README.txt": "cbe12f2958efd7a8f3793f6fb77b058546b5a1264b92cc39c79f2c606ebf0a0d",
   "course-kit/articles/README.txt": "b4f017153f086bffd5a1bf95ef16399f556d59c401ccc84c9121aa104546c8d9",
