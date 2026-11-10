@@ -19,9 +19,9 @@ Every service used here charges only after you add a credit card, buy credits, l
 subscribe. When a free allowance runs out, you get an error message or a wait until the next day, **never a bill**.
 
 - **Never enter a credit card, bank details or PayPal** anywhere for this course: not in OpenCode, OpenRouter,
-  Groq, Google AI Studio or GitHub. Nobody from the course will ever ask you to.
+  Groq, Google AI Studio, NVIDIA, Mistral or GitHub. Nobody from the course will ever ask you to.
 - **Never click** "Upgrade", "Subscribe", "Buy credits", "Add credits", "Auto-recharge", "Go", "Extra usage" or
-  "Set up billing".
+  "Set up billing" or "Enable pay-as-you-go".
 - Seeing **"$0.00"**, "credits" or a dollar price next to a model on these websites is normal. It shows what the
   service *would* cost for paying customers. On a free account with no card it stays at $0.
 - In OpenRouter, use only models whose name ends in **`:free`** (the setup only picks those).
@@ -165,6 +165,8 @@ The built-in free models are enough for the course. If they are busy, you can ad
 | OpenRouter | 50 requests per day on `:free` models | No | Many models in one place |
 | Groq | 1,000 requests per day; 8,000 tokens per minute | No | Very fast; send excerpts, not whole papers |
 | Google AI Studio (Gemini) | Free tier; limits shown in AI Studio | No | You must be 18+. Never link a billing account. On the free tier your prompts may be used by Google, so never paste personal or confidential data. |
+| NVIDIA (build.nvidia.com) | Free "for prototyping" (NVIDIA Developer Program); limits shown on the site | No | Some accounts are asked for a phone number. There is no card field: paid use needs a separate company license. |
+| Mistral | Free mode (default); limits shown in its console | No (a phone number) | Never click "Enable pay-as-you-go". Prompts in free mode may be used for training, so never paste personal or confidential data. |
 
 To add keys:
 
