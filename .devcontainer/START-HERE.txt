@@ -36,3 +36,6 @@ MONEY: ALL FREE
   Never add a credit card or payment method to GitHub, OpenRouter or any other site. Without one,
   nothing can charge you: when the free hours or requests run out, things simply stop until the
   next month or day. A "$0.00" shown on these sites is normal.
+  If your GitHub account ALREADY has a card: github.com/settings/billing -> Budgets and alerts ->
+  New budget -> Product-level budget -> Codespaces, amount $0, tick "Stop usage when budget limit
+  is reached", Create budget.

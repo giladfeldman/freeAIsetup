@@ -14,19 +14,22 @@ The setup takes **20-40 minutes**, most of it waiting. You only need to do somet
 
 ## Money: everything here is free, and stays free
 
-Nothing in this course costs money, and nothing can charge you **unless you yourself add a payment method**.
-Every service used here charges only after you add a credit card, buy credits, link a billing account or
-subscribe. When a free allowance runs out, you get an error message or a wait until the next day, **never a bill**.
+Nothing in this course costs money. Every service used here charges **only through a payment method, credits or a
+billing account on your own account there**. A free account without one cannot be charged: when a free allowance
+runs out, you get an error message or a wait until the next day or month, never a bill.
 
 - **Never enter a credit card, bank details or PayPal** anywhere for this course: not in OpenCode, OpenRouter,
-  Groq, Google AI Studio, NVIDIA, Mistral or GitHub. Nobody from the course will ever ask you to.
-- **Never click** "Upgrade", "Subscribe", "Buy credits", "Add credits", "Auto-recharge", "Go", "Extra usage" or
+  Groq, Google AI Studio, NVIDIA or GitHub. Nobody from the course will ever ask you to.
+- **Never click** "Upgrade", "Subscribe", "Buy credits", "Add credits", "Auto-recharge", "Go", "Extra usage",
   "Set up billing" or "Enable pay-as-you-go".
+- **If you already pay for one of these services** (a card on your GitHub account, credits on OpenRouter, a Google
+  Cloud billing account), use a separate free account for the course, or ask your teacher first.
+- **GitHub Codespaces with a card already on your GitHub account:** before you create the Codespace, open
+  github.com/settings/billing → **Budgets and alerts** → **New budget** → **Product-level budget** → **Codespaces**,
+  amount **$0**, tick **"Stop usage when budget limit is reached"**, then **Create budget**. Without a card on GitHub, the Codespace simply stops when the free monthly hours are used up.
 - Seeing **"$0.00"**, "credits" or a dollar price next to a model on these websites is normal. It shows what the
-  service *would* cost for paying customers. On a free account with no card it stays at $0.
-- In OpenRouter, use only models whose name ends in **`:free`** (the setup only picks those).
-- GitHub Codespaces: without a payment method on your GitHub account, a Codespace simply stops when the free
-  monthly hours are used up. Do not add one.
+  service *would* cost paying customers.
+- On OpenRouter, the setup lets OpenCode show **only the free models** (names ending in `:free`).
 - If a page ever asks you for payment to continue, stop and tell your teacher.
 
 **Before you start:**
@@ -166,7 +169,6 @@ The built-in free models are enough for the course. If they are busy, you can ad
 | Groq | 1,000 requests per day; 8,000 tokens per minute | No | Very fast; send excerpts, not whole papers |
 | Google AI Studio (Gemini) | Free tier; limits shown in AI Studio | No | You must be 18+. Never link a billing account. On the free tier your prompts may be used by Google, so never paste personal or confidential data. |
 | NVIDIA (build.nvidia.com) | Free "for prototyping" (NVIDIA Developer Program); limits shown on the site | No | Some accounts are asked for a phone number. There is no card field: paid use needs a separate company license. |
-| Mistral | Free mode (default); limits shown in its console | No (a phone number) | Never click "Enable pay-as-you-go". Prompts in free mode may be used for training, so never paste personal or confidential data. |
 
 To add keys:
 
@@ -180,6 +182,8 @@ To add keys:
 The setup then tests each key. A key that does not answer is shown as a WARN, never as a failure of the setup.
 
 Keys are saved only on your laptop, in your user folder (`.config/metascience/keys`). They are never inside the course folder, so you will not share them by accident.
+
+**Mistral:** its free mode no longer includes API keys (paying is required since 2026), so it is not in the setup. Its chat in the browser (Vibe, formerly Le Chat) is free to use without a card.
 
 # Part 4 — Optional: MCP tools (extra abilities for the AI)
 

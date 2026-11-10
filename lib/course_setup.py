@@ -19,6 +19,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import webbrowser
 
@@ -40,7 +41,6 @@ PROVIDERS = [
     ("groq", "Groq", "https://console.groq.com/keys", ["gpt-oss-120b", "gpt-oss", "llama"]),
     ("google", "Google AI Studio (Gemini)", "https://aistudio.google.com/apikey", ["flash-lite", "flash"]),
     ("nvidia", "NVIDIA (build.nvidia.com)", "https://build.nvidia.com/settings/api-keys", ["nemotron", "gpt-oss", "llama"]),
-    ("mistral", "Mistral", "https://console.mistral.ai/api-keys", ["mistral-small", "small"]),
 ]
 
 # MCP tools: configured but switched OFF. A student switches one on by changing "enabled" to true.
@@ -129,7 +129,7 @@ def pick(models: list[str], hints: list[str]) -> str | None:
         for m in models:
             if h in m:
                 return m
-    return models[0] if models else None
+    return None   # never an arbitrary model from the catalogue: it could be a paid one (consult, Sol, 2026-11-10)
 
 
 def key_path(pid: str) -> pathlib.Path:
@@ -149,6 +149,8 @@ def write_config(course: pathlib.Path, log=print) -> pathlib.Path:
     cfg: dict = {
         "$schema": "https://opencode.ai/config.json",
         "model": default,
+        # the helper model OpenCode uses for titles and summaries: the same free model, never one picked by itself
+        "small_model": default,
         "instructions": ["AGENTS.md"],
         "share": "disabled",
         "autoupdate": False,
@@ -159,6 +161,12 @@ def write_config(course: pathlib.Path, log=print) -> pathlib.Path:
     for pid, _name, _url, _hints in PROVIDERS:
         if key_path(pid).is_file() and key_path(pid).stat().st_size > 0:
             providers[pid] = {"options": {"apiKey": "{file:" + key_path(pid).as_posix() + "}"}}
+            if pid == "openrouter":
+                # OpenCode shows only these: OpenRouter's free models (363 -> 12 on 2026-11-10, OpenCode 1.19.5).
+                # A paid OpenRouter model then cannot even be chosen, also by a student who has bought credits.
+                # Listed outside the course folder, so an older list there does not hide newly free models.
+                providers[pid]["whitelist"] = [m.split("/", 1)[1] for m in list_models("openrouter", pathlib.Path(tempfile.gettempdir()))
+                                               if m.endswith(":free")]
     if providers:
         cfg["provider"] = providers
     target = course / "opencode.json"
@@ -280,8 +288,9 @@ def openrouter_connect(wait_s: int = 600) -> str:
 def key_wizard(course: pathlib.Path) -> None:
     print("\nOpenCode already works with its built-in free models (no account needed), but they are sometimes busy")
     print("or refuse a network. A free OpenRouter account is the backup: no payment, about 2 minutes.")
-    print("Money: never enter a card or buy credits on these sites. Without a card nothing can charge you;")
-    print('a "$0.00" or a dollar price shown on their pages is normal. Use only models ending in :free.\n')
+    print("Money: never enter a card or buy credits on these sites. A free account without a card cannot be charged;")
+    print('a "$0.00" or a dollar price on their pages is normal. If you already pay for one of them, use a separate')
+    print("free account. OpenCode will show only OpenRouter's free models.\n")
     KEY_DIR.mkdir(parents=True, exist_ok=True)
     have = key_path("openrouter").is_file()
     ans = ask("--- OpenRouter: connect now? " + ("(a key is already saved) [y/N]" if have else "[Y/n]")).strip().lower()
@@ -293,7 +302,7 @@ def key_wizard(course: pathlib.Path) -> None:
         if key:
             save_key("openrouter", key)
             print("  saved the OpenRouter key")
-    more = ask("\nAdd keys for other free services too (Groq, Google, NVIDIA, Mistral)? Most students skip this. [y/N]")
+    more = ask("\nAdd keys for other free services too (Groq, Google, NVIDIA)? Most students skip this. [y/N]")
     if more.strip().lower() in ("y", "yes"):
         print("For each one a web page opens: 1. sign up with your UNIVERSITY email,  2. create a key,")
         print("3. copy it,  4. paste it here (it stays hidden). Press Enter without pasting to skip a service.\n")

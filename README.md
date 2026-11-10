@@ -48,9 +48,11 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 
 ## Money
 
-Everything is free, for students and teacher. Every service used charges only after the user adds a payment
-method, buys credits or subscribes; at a free limit it returns an error or a wait, never a bill. Students should
-never enter a card anywhere. The setup only uses free models (on OpenRouter only `:free` ones).
+Everything is free, for students and teacher. Every service used charges only through a payment method, credits or a
+billing account on the user's own account there; a free account without one gets an error or a wait at its limit,
+never a bill. Students should never enter a card anywhere, and use a separate free account where they already pay
+for a service (or, for Codespaces, set a $0 budget with "Stop usage"). The setup only uses free models; on
+OpenRouter, OpenCode is limited to the `:free` models.
 
 ## Privacy
 
