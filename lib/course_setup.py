@@ -122,6 +122,9 @@ def list_models(provider: str, cwd: pathlib.Path) -> list[str]:
 
 
 def pick(models: list[str], hints: list[str]) -> str | None:
+    # OpenRouter also lists paid models: only ever use its free ones (":free"), never fall back to another model
+    if any(m.startswith("openrouter/") for m in models):
+        models = [m for m in models if m.endswith(":free")]
     for h in hints:
         for m in models:
             if h in m:
