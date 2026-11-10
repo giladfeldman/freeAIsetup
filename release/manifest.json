@@ -1,9 +1,9 @@
 {
- "version": "2026.11.10.4",
- "published": "2026-11-10T14:29:34Z",
- "notes": "Codespaces: RStudio opens on the first try (relay fixes the localhost redirect); OpenCode in the browser keeps running after the Codespace starts",
+ "version": "2026.11.10.5",
+ "published": "2026-11-10T16:12:35Z",
+ "notes": "Codespaces: clearer Start-here note (setup runs in the background; free key only if needed)",
  "files": {
-  "VERSION": "f2d3f236cb6fa2e41a456a123a76a27f28ad8c9ca5cef927f176d18a3b5cf0f3",
+  "VERSION": "1155f0e944105ac15614cfcab61fb75f4be3bcd41ac3a9ad7e4d7694f8b33196",
   "course-kit/AGENTS.md": "aa54018a12db1ddcf208158d917c61114ab846a875ee7c96cca27241f5b3935c",
   "course-kit/analysis/README.txt": "cbe12f2958efd7a8f3793f6fb77b058546b5a1264b92cc39c79f2c606ebf0a0d",
   "course-kit/articles/README.txt": "b4f017153f086bffd5a1bf95ef16399f556d59c401ccc84c9121aa104546c8d9",
