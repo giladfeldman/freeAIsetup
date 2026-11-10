@@ -20,8 +20,7 @@ FREE AI KEY (needed in most Codespaces)
 OPEN THE PROGRAMS
   Tap PORTS at the bottom of this screen, then the globe icon next to a name:
   - OpenCode (AI assistant): port 4096. Choose the folder /workspaces/MetaScience
-  - RStudio: port 8787. The first time, the tab may say "This site can't be reached".
-    That is normal: close that tab and tap the globe again. RStudio then opens.
+  - RStudio: port 8787
   If a tab does not open, allow pop-ups for github.dev, or press and hold the address in PORTS
   and open it in a new tab.
 

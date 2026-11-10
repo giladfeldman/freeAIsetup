@@ -12,4 +12,8 @@ bash setup-mac.sh --yes --no-gui --no-auto-update 2>&1 | tee /tmp/metascience-cr
 # RStudio opens in the course folder
 mkdir -p "$HOME/.config/rstudio"
 printf '{ "initial_working_directory": "%s" }\n' "${METASCIENCE_DIR:-/workspaces/MetaScience}" > "$HOME/.config/rstudio/rstudio-prefs.json"
+# the small relay in front of RStudio (see rstudio-nginx.conf); without it start.sh runs RStudio directly
+command -v nginx >/dev/null || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx-light >> /tmp/metascience-create.log 2>&1 \
+  || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq nginx >> /tmp/metascience-create.log 2>&1
+sudo service nginx stop >/dev/null 2>&1   # the package's own web server on port 80 is not needed
 exit 0   # a failed check is shown in the log and setup-report.txt; it must not stop the Codespace from opening
