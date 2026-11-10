@@ -1,9 +1,9 @@
 {
- "version": "2026.11.10.3",
- "published": "2026-11-10T09:33:07Z",
- "notes": "Codespaces: RStudio and OpenCode start before the update check; START-HERE explains RStudio's first-visit 'site can't be reached' (tap the globe again)",
+ "version": "2026.11.10.4",
+ "published": "2026-11-10T14:29:34Z",
+ "notes": "Codespaces: RStudio opens on the first try (relay fixes the localhost redirect); OpenCode in the browser keeps running after the Codespace starts",
  "files": {
-  "VERSION": "41cb2c7675db09cd568c87c1e4e0b4e8df790f1264478cdd8b54b47c00869ada",
+  "VERSION": "f2d3f236cb6fa2e41a456a123a76a27f28ad8c9ca5cef927f176d18a3b5cf0f3",
   "course-kit/AGENTS.md": "aa54018a12db1ddcf208158d917c61114ab846a875ee7c96cca27241f5b3935c",
   "course-kit/analysis/README.txt": "cbe12f2958efd7a8f3793f6fb77b058546b5a1264b92cc39c79f2c606ebf0a0d",
   "course-kit/articles/README.txt": "b4f017153f086bffd5a1bf95ef16399f556d59c401ccc84c9121aa104546c8d9",
