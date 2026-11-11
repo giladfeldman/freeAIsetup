@@ -36,6 +36,23 @@ deleted if not opened for 30 days, so download what you hand in. Nobody else can
 Then follow the student guide: `guide/walkthrough.docx`. The same files are also in
 `metascience-setup.zip` on the [latest release](https://github.com/giladfeldman/freeAIsetup/releases/latest).
 
+## Video walkthroughs
+
+Each video shows the whole setup from start to finish. Full-quality copies are on OSF:
+[osf.io/yq9h5](https://osf.io/yq9h5/).
+
+**Windows** (2:53) · [full quality on OSF](https://osf.io/yq9h5/files/6jskr)
+
+https://github.com/user-attachments/assets/9b398de2-0615-4476-854c-4658a5ac16e7
+
+**Mac** (2:50) · [full quality on OSF](https://osf.io/8xwg3)
+
+https://github.com/user-attachments/assets/9605692e-bb17-4338-9d5f-c33bf67d1b87
+
+**Codespace: in the browser, for iPad or Chromebook** (5:13) · [full quality on OSF](https://osf.io/yq9h5/files/ghe3s)
+
+https://github.com/user-attachments/assets/c0e45b3b-1174-4725-b04a-9fc2bdf258c4
+
 ## Updates
 
 The installed pack can keep itself up to date. The setup asks once; you can say no.
