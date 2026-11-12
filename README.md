@@ -10,7 +10,7 @@ It installs, on Windows, Mac and Linux:
 
 The setup never upgrades or removes software you already have, and never changes security settings.
 (Next to an R older than 4.5, which the course packages no longer support, it installs the current R for the
-student's account and keeps the old one.)
+student's account and keeps the old one. On a Mac where Homebrew installed the old R, Homebrew updates it instead.)
 The AI assistant is always installed; R, RStudio, Quarto, the Python course packages and Node.js are optional (the
 setup asks once, and installs all of them when you press Enter).
 

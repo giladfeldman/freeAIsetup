@@ -126,7 +126,7 @@ To start the AI helper again later:
 - **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Fix`
 - **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --fix`
 
-**Software you already have is safe.** If R, Git or another tool is already on the computer (also when another user account installed it), the setup uses it as it is. It never upgrades or removes it. One exception: the course packages need R 4.5 or newer, so next to an older R the setup installs the current R for your account. Your old R stays.
+**Software you already have is safe.** If R, Git or another tool is already on the computer (also when another user account installed it), the setup uses it as it is. It never upgrades or removes it. One exception: the course packages need R 4.5 or newer, so next to an older R the setup installs the current R for your account. Your old R stays (on a Mac where Homebrew installed the old R, Homebrew updates it instead).
 
 To re-run only the check:
 
@@ -141,7 +141,7 @@ To re-run only the check:
 | *"An Application Control policy has blocked this file"* in R or Python | Smart App Control is on and blocks a package file. | Switch it off (Windows Security > App & browser control > Smart App Control settings > Off), then run the setup line again. |
 | *"This computer is managed by an organisation …"* | A school or company laptop that blocks scripts. | Use your own laptop, or ask the teacher. Do not try to get around the block. Say yes to *"Send a short report to your teacher?"*. |
 | *"The setup files could not be downloaded"* or *"Download stopped"* | The internet connection dropped, or a network blocks GitHub and jsDelivr. | Paste the line again. If it stops twice, say yes to *"Send a short report to your teacher?"*, then try a phone hotspot. |
-| *"Your R (4.x) is too old for the course packages"* | The course R packages need R 4.5 or newer. | Nothing: the setup installs the current R next to your old one, which stays. In RStudio, if it still starts the old R, choose the new one under **Tools > Global Options > General > R version** (Windows). |
+| *"Your R (4.x) is too old for the course packages"* | The course R packages need R 4.5 or newer. | Nothing: the setup installs the current R next to your old one, which stays (on a Mac where Homebrew installed the old R, Homebrew updates it). In RStudio, if it still starts the old R, choose the new one under **Tools > Global Options > General > R version** (Windows). |
 | *"Free usage limit reached"* (in the check, or later in OpenCode) | The built-in free models allow only a limited number of requests from one internet address. On shared class Wi-Fi, many students share one address. | See *"When the free models are busy"* in Part 2. Everything else is installed and works. |
 | *"Blocked site — github.com cannot be reached from this network"* (or another site) | Your network blocks that site. This is common in China and on some school or hotel Wi-Fi. | The setup switches to mirror sites where it can (Python, R packages, OpenCode). For the rest, connect to a phone hotspot or your VPN and run the setup again. |
 | *"Proxy — Windows is set to send internet traffic through …, but nothing answers there"* | Windows/Mac is told to use a VPN or proxy app that is not running. | Start your VPN app (for example Clash or v2rayN) and run the setup again, or switch off *"Use a proxy server"* in the Windows proxy settings. |

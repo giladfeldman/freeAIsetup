@@ -435,11 +435,14 @@ install_tools() {
     if ! has_part r; then skip "R"
     elif [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
     else
-      [ -n "$rv" ] && say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays; macOS may ask for your password)."
       local rcmd="install"; [ -n "$rv" ] && brew list --cask r >/dev/null 2>&1 && rcmd="upgrade"   # an old R that brew itself installed
+      # say what really happens: Homebrew's own upgrade replaces its old R (decision pending, see TODO)
+      local rnote="old R $rv kept"; [ "$rcmd" = upgrade ] && rnote="Homebrew replaced R $rv"
+      if [ "$rcmd" = upgrade ]; then say "  Your R ($rv) is too old for the course packages. Homebrew installed it, so Homebrew now updates it to the current R (macOS may ask for your password)."
+      elif [ -n "$rv" ]; then say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays; macOS may ask for your password)."; fi
       # recorded only when the setup brought R alone (an old R shares R.framework with the new one)
       local rhad=0; brew_had --cask r && rhad=1
-      retry brew $rcmd --cask r && { [ -z "$rv" ] && [ "$rhad" = 0 ] && record_install r cask r; ok "R" "installed$([ -n "$rv" ] && echo " (current R; old R $rv kept)")"; } || fail "R" "brew install --cask r failed"
+      retry brew $rcmd --cask r && { [ -z "$rv" ] && [ "$rhad" = 0 ] && record_install r cask r; ok "R" "installed$([ -n "$rv" ] && echo " (current R; $rnote)")"; } || fail "R" "brew install --cask r failed"
     fi
     if ! has_part quarto; then skip "Quarto"
     elif have quarto; then ok "Quarto" "already installed"

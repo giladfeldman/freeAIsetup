@@ -85,4 +85,4 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 
 ## Public repo hygiene
 
-- [x] [LOW · later · val:low · S · sonnet-medium] TODO.md in the public repo names the internal hook, session-notes folder and gitignored .claude skill path (src: TODO.md (d-d2924e line)) ^d-7b87a7 (fixed 2026-11-12: TODO.md d-d2924e and d-d5916d reworded without internal paths/tooling; git grep for main checkout/session notes/.claude/skills finds only this item's own title, 2026-11-12)
+- [x] [LOW · later · val:low · S · sonnet-medium] TODO wording named internal tooling (reworded) (src: TODO.md) ^d-7b87a7 (fixed 2026-11-12: TODO.md d-d2924e and d-d5916d reworded without internal paths/tooling; git grep for main checkout/session notes/.claude/skills finds only this item's own title, 2026-11-12)

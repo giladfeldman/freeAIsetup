@@ -43,4 +43,11 @@ for k in "core	brew	git" "r	cask	r" "quarto	cask	quarto" "rstudio	cask	rstudio";
   if [ -n "$REC" ] && grep -qxF "$k" "$REC"; then echo "PASS recorded: $k"; pass=$((pass+1)); else echo "MISS recorded: $k"; failn=$((failn+1)); fi
 done
 grep -q 'MetaScience setup' "$HOME/.zprofile" && { echo "PASS PATH added to .zprofile"; pass=$((pass+1)); } || { echo "MISS PATH added to .zprofile"; failn=$((failn+1)); }
+# An old R that Homebrew itself installed: Homebrew updates it, and the setup must say so (never "old R kept")
+printf '#!/bin/bash\necho "R version 4.3.1 (2023-06-16)"\n' > "$STUB/R"; chmod +x "$STUB/R"
+mk brew 'if [ "$1" = --version ]; then echo "Homebrew 5.0.0"; exit 0; fi
+if [ "$*" = "list --cask r" ]; then exit 0; fi; if [ "$1" = list ]; then exit 1; fi; exit 0'
+: > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=r > /tmp/run2.log 2>&1
+t "old brew R: brew upgrade used" "^brew upgrade --cask r$"
+if grep -q "Homebrew replaced R 4.3" /tmp/run2.log && ! grep -q "old R 4.3 kept\|your old R stays" /tmp/run2.log; then echo "PASS old brew R: message says it is replaced"; pass=$((pass+1)); else echo "MISS old brew R: message says it is replaced"; failn=$((failn+1)); fi
 echo "RESULT pass=$pass miss=$failn"; [ $failn = 0 ]
