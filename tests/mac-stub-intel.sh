@@ -2,6 +2,7 @@
 # Exercises the Intel-Mac branch of setup-mac.sh (no Homebrew: each tool from its maker) on Linux with small
 # fakes that record how they were called. Proves the control flow, not that the real installers work.
 set -u
+export MS_LOG_ENV=local   # test runs never count as real installs or send real alerts
 STUB=/tmp/stubs; mkdir -p "$STUB"; CALLS=/tmp/calls.log; : > "$CALLS"
 mk() { printf '#!/bin/bash\necho "%s $*" >> %s\n%s\n' "$1" "$CALLS" "${2:-exit 0}" > "$STUB/$1"; chmod +x "$STUB/$1"; }
 # a real Node tarball with a fake node inside, and its checksum, as nodejs.org would serve them

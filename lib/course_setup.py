@@ -23,7 +23,11 @@ import tempfile
 import threading
 import webbrowser
 
-SETUP_VERSION = "2026-11-07"
+# the pack's release version (VERSION next to lib/); a hard-coded date here went stale for every report
+try:
+    SETUP_VERSION = (pathlib.Path(__file__).resolve().parent.parent / "VERSION").read_text(encoding="utf-8").split()[0]
+except (OSError, IndexError):
+    SETUP_VERSION = "dev"
 KEY_DIR = pathlib.Path.home() / ".config" / "metascience" / "keys"
 
 # Preferred default models, best first. All are OpenCode free models that need no account.
@@ -114,8 +118,10 @@ def sh(cmd: list[str], cwd: pathlib.Path | None = None, timeout: int = 120,
     return 124, f"timed out after {timeout}s. {''.join(chunks)}"
 
 
-def list_models(provider: str, cwd: pathlib.Path) -> list[str]:
+def list_models(provider: str, cwd: pathlib.Path, record=None) -> list[str]:
     code, out = sh(["opencode", "models", provider], cwd=cwd, timeout=120)
+    if record:   # the full list goes to the log, so a missing model can be traced (bad key, names not in the list)
+        record(f"models {provider}", code, out)
     if code != 0:
         return []
     return [ln.strip() for ln in out.splitlines() if ln.strip().startswith(provider + "/")]
@@ -165,8 +171,17 @@ def write_config(course: pathlib.Path, log=print) -> pathlib.Path:
                 # OpenCode shows only these: OpenRouter's free models (363 -> 12 on 2026-11-10, OpenCode 1.19.5).
                 # A paid OpenRouter model then cannot even be chosen, also by a student who has bought credits.
                 # Listed outside the course folder, so an older list there does not hide newly free models.
-                providers[pid]["whitelist"] = [m.split("/", 1)[1] for m in list_models("openrouter", pathlib.Path(tempfile.gettempdir()))
-                                               if m.endswith(":free")]
+                wl = [m.split("/", 1)[1] for m in list_models("openrouter", pathlib.Path(tempfile.gettempdir()))
+                      if m.endswith(":free")]
+                if not wl:
+                    # the listing failed (slow network, timeout): an empty whitelist would hide every OpenRouter model,
+                    # so keep the list from the previous opencode.json
+                    try:
+                        wl = json.loads((course / "opencode.json").read_text(encoding="utf-8"))["provider"]["openrouter"]["whitelist"]
+                    except (OSError, ValueError, KeyError, TypeError):
+                        wl = []
+                    log(f"note: OpenRouter's free models could not be listed now; kept {len(wl)} from the previous settings")
+                providers[pid]["whitelist"] = wl
     if providers:
         cfg["provider"] = providers
     target = course / "opencode.json"
@@ -329,7 +344,7 @@ class Table:
 
     def add(self, status: str, item: str, detail: str = "") -> None:
         self.rows.append((status, item, detail))
-        mark = {"OK": "OK  ", "WARN": "WARN", "FAIL": "FAIL"}[status]
+        mark = {"OK": "OK  ", "WARN": "WARN", "FAIL": "FAIL", "SKIP": "SKIP"}[status]
         print(f"  {mark}  {item:<22} {detail}", flush=True)
 
     @property
@@ -337,8 +352,16 @@ class Table:
         return sum(1 for s, _i, _d in self.rows if s == "FAIL")
 
 
-def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
+# Parts a student may leave out (setup -Components / --components); the AI assistant, Git and uv are always installed.
+PARTS = ("r", "rstudio", "quarto", "python", "node")
+PART_NAMES = {"r": "R", "quarto": "Quarto", "python": "Python course packages", "node": "Node.js"}
+
+
+def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tuple[str, ...] = PARTS) -> int:
     t = Table()
+
+    def skip(item: str, part: str, what: str = "") -> None:
+        t.add("SKIP", item, f"{PART_NAMES[part]}: not chosen in this setup{what}")
     log = open(log_file, "a", encoding="utf-8")
 
     def record(name: str, code: int, out: str) -> None:
@@ -347,8 +370,12 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
 
     print("\nReal-task check: an AI extracts four facts from a sample article, then Python checks the")
     print("answer, R re-checks the reported statistic with statcheck, and Quarto renders a report.\n")
+    part_of = {"node": "node", "Rscript": "r", "quarto": "quarto"}
     for tool, args in [("git", ["--version"]), ("node", ["--version"]), ("uv", ["--version"]),
                        ("Rscript", ["--version"]), ("quarto", ["--version"]), ("opencode", ["--version"])]:
+        if tool in part_of and part_of[tool] not in parts:
+            skip(tool, part_of[tool])
+            continue
         code, out = sh([tool, *args], timeout=60)
         record(tool, code, out)
         first = out.strip().splitlines()[0] if out.strip() else ""
@@ -440,27 +467,42 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
             sample_answer()   # still test Python, R and Quarto, so one AI outage does not hide other problems
 
     if extract.is_file():
-        code, out = sh(["uv", "run", "--quiet", "python", "check/check.py"], cwd=course, timeout=600)
-        record("python check", code, out)
-        if code == 124 and (out_dir / "python-ok.txt").is_file():
-            code = 0   # the check finished and wrote its marker; only the Python process was slow to exit
-        t.add("OK" if code == 0 else "FAIL", "Python step",
-              "AI answer verified; course packages load" if code == 0 else (out.strip().splitlines() or ["see log"])[-1][:90])
-        code, out = sh(["Rscript", "check/check.R"], cwd=course, timeout=300)
-        record("R check", code, out)
-        t.add("OK" if code == 0 else "FAIL", "R step",
-              "statcheck re-checked the reported t-test" if code == 0 else "see log")
-        code, out = sh(["quarto", "render", "report.qmd", "--quiet"], cwd=c, timeout=300)
-        record("quarto render", code, out)
-        ok = code == 0 and (c / "report.html").is_file()
-        t.add("OK" if ok else "FAIL", "Report step", "Quarto + R rendered check/report.html" if ok else "see log")
+        if "python" in parts:
+            code, out = sh(["uv", "run", "--quiet", "python", "check/check.py"], cwd=course, timeout=600)
+            record("python check", code, out)
+            if code == 124 and (out_dir / "python-ok.txt").is_file():
+                code = 0   # the check finished and wrote its marker; only the Python process was slow to exit
+            t.add("OK" if code == 0 else "FAIL", "Python step",
+                  "AI answer verified; course packages load" if code == 0 else (out.strip().splitlines() or ["see log"])[-1][:90])
+        else:
+            skip("Python step", "python", " (the AI answer was not verified)")
+        if "r" in parts:
+            code, out = sh(["Rscript", "check/check.R"], cwd=course, timeout=300)
+            record("R check", code, out)
+            t.add("OK" if code == 0 else "FAIL", "R step",
+                  "statcheck re-checked the reported t-test" if code == 0 else "see log")
+        else:
+            skip("R step", "r")
+        if "r" in parts and "quarto" in parts:   # the check report runs R code inside Quarto
+            code, out = sh(["quarto", "render", "report.qmd", "--quiet"], cwd=c, timeout=300)
+            record("quarto render", code, out)
+            ok = code == 0 and (c / "report.html").is_file()
+            t.add("OK" if ok else "FAIL", "Report step", "Quarto + R rendered check/report.html" if ok else "see log")
+        else:
+            skip("Report step", "quarto" if "quarto" not in parts else "r", " (the check report needs Quarto and R)")
 
     for pid, name, _url, hints in PROVIDERS:
         if not key_path(pid).is_file():
             continue
-        model = pick(list_models(pid, course), hints)
+        listed = list_models(pid, course, record)
+        model = pick(listed, hints)
         if not model:
-            t.add("FAIL", f"Key: {name}", "OpenCode lists no models for it")
+            # an optional key never turns the setup red (class 2026-11-09; student report 2026-11-12)
+            keys_cmd = "install-windows.cmd -Keys" if IS_WIN else "bash setup-mac.sh --keys"
+            why = (f"OpenCode shows no models for it yet; the built-in free models still work. Later, run: {keys_cmd}"
+                   if not listed else
+                   f"OpenCode lists {len(listed)} models for it but none of the free ones the course uses; see the log")
+            t.add("WARN", f"Key: {name}", why)
             continue
         code, out = sh(["opencode", "run", "-m", model, "Reply with exactly the word PONG"], cwd=course, timeout=180)
         record(f"key {pid}", code, out)
@@ -488,7 +530,9 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path) -> int:
         for s, i, d in t.rows:
             r.write(f"{s:<5} {i:<22} {d}\n")
     print()
-    if t.failed == 0:
+    if t.failed == 0 and any(s == "SKIP" for s, _i, _d in t.rows):
+        print("ALL CHECKS PASSED for the parts you chose. The parts marked SKIP were not installed.")
+    elif t.failed == 0:
         print("ALL CHECKS PASSED. Your computer is ready for the course.")
     else:
         print(f"{t.failed} CHECK(S) FAILED. Run the setup again first; it repairs most problems.")
@@ -503,7 +547,10 @@ def main() -> int:
     ap.add_argument("--course", required=True)
     ap.add_argument("--skip-ai", action="store_true")
     ap.add_argument("--log", default=None)
+    ap.add_argument("--parts", default=" ".join(PARTS),
+                    help="the optional parts this computer has, separated by spaces or commas (default: all)")
     a = ap.parse_args()
+    parts = tuple(x for x in a.parts.replace(",", " ").split() if x in PARTS)
     course = pathlib.Path(a.course).expanduser()
     if a.command == "config":
         write_config(course)
@@ -512,7 +559,7 @@ def main() -> int:
         key_wizard(course)
         return 0
     log_file = pathlib.Path(a.log) if a.log else course / "setup-check.log"
-    return check(course, a.skip_ai, log_file)
+    return check(course, a.skip_ai, log_file, parts)
 
 
 if __name__ == "__main__":

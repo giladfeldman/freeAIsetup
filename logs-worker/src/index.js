@@ -2,7 +2,7 @@
 // Write-only: there is no way to read logs through this address. The teacher reads them with
 // `wrangler kv key list/get` using his own Cloudflare login (see README.md).
 // A failed report also triggers an admin alert email (src/alerts.js).
-import { onFailedReport, environmentOf, sendDigest } from "./alerts.js";
+import { onFailedReport, environmentOf, sendDigest, countKey, COUNT_TTL } from "./alerts.js";
 
 const MAX_BYTES = 1_500_000;         // a full setup log is ~100-400 KB
 const KEEP_SECONDS = 180 * 24 * 3600; // deleted automatically after 180 days
@@ -17,6 +17,15 @@ function code() {
 export default {
   async fetch(req, env, ctx) {
     const url = new URL(req.url);
+    if (req.method === "POST" && url.pathname === "/count") {
+      // A successful install: only the platform and pack version arrive; no body, no name, no address is stored.
+      if (req.headers.get("x-freeaisetup") !== "1") return new Response("missing header\n", { status: 400 });
+      const platform = (url.searchParams.get("platform") || "").toLowerCase();
+      if (!PLATFORMS.has(platform)) return new Response("bad platform\n", { status: 400 });
+      const version = (url.searchParams.get("version") || "").replace(/[^0-9A-Za-z._-]/g, "").slice(0, 32);
+      await env.LOGS.put(countKey(environmentOf(req), platform), "", { expirationTtl: COUNT_TTL, metadata: { version } });
+      return new Response("counted\n", { headers: { "content-type": "text/plain" } });
+    }
     if (req.method !== "POST" || url.pathname !== "/upload") {
       return new Response("freeAIsetup log upload. Nothing to see here.\n", { status: 404 });
     }

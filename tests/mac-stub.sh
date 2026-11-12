@@ -3,6 +3,7 @@
 # small fakes that record how they were called. Proves the Mac control flow (Homebrew, casks,
 # desktop app unpacking, PATH edits) without a Mac. It does NOT prove the real Mac installers work.
 set -u
+export MS_LOG_ENV=local   # test runs never count as real installs or send real alerts
 STUB=/tmp/stubs; mkdir -p "$STUB"; CALLS=/tmp/calls.log; : > "$CALLS"
 mk() { printf '#!/bin/bash\necho "%s $*" >> %s\n%s\n' "$1" "$CALLS" "${2:-exit 0}" > "$STUB/$1"; chmod +x "$STUB/$1"; }
 mk uname 'case "$1" in -s) echo Darwin;; -m) echo arm64;; *) echo Darwin;; esac'

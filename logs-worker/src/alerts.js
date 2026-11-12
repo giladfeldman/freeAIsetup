@@ -8,15 +8,28 @@ export const APP = "freeAIsetup";
 const DAY_MS = 24 * 3600 * 1000;
 const STATE_TTL = 200 * 24 * 3600;   // a little longer than the reports themselves (180 days)
 
-// "FAIL  Python step            ImportError: ..." lines from setup-report.txt (Windows and Mac write the same shape).
+// "FAIL  Python step            ImportError: ..." lines: setup-report.txt, the Windows setup log, the installers' own
+// reports, and the Mac setup log (which indents them, may colour them and puts the detail in brackets).
+// One step is listed once, so a failure shown in both the report and the log is not counted twice.
 export function parseFailures(body) {
-  const out = [];
-  for (const line of String(body).split(/\r?\n/)) {
+  const out = []; const seen = new Set();
+  for (const raw of String(body).split(/\r?\n/)) {
+    const line = raw.replace(/\x1b\[[0-9;]*m/g, "").trim();
     const m = /^FAIL\s+(\S.*?)\s{2,}(\S.*)$/.exec(line) || /^FAIL\s+(\S.*)$/.exec(line);
-    if (m) out.push({ step: m[1].trim(), detail: (m[2] || "").trim() });
+    if (!m) continue;
+    const step = m[1].trim(); const detail = (m[2] || "").trim().replace(/^\((.*)\)$/, "$1");
+    if (seen.has(step)) continue;
+    seen.add(step); out.push({ step, detail });
     if (out.length >= 20) break;
   }
   return out;
+}
+
+// Owner request 2026-11-12: count successful installs. One KV key per success (no read-then-write, so two at the
+// same moment cannot overwrite each other); the key holds only the day, platform, version and a random id.
+export const COUNT_TTL = 400 * 24 * 3600;   // a little over a year, for year-on-year numbers
+export function countKey(environment, platform, now = new Date(), rnd = crypto.randomUUID().slice(0, 8)) {
+  return `stats/${environment}/${now.toISOString().slice(0, 10)}/${platform}/${rnd}`;
 }
 
 // The originator says where it ran: students' setups send nothing (= production); tests send "local".
@@ -39,7 +52,9 @@ export function issueFor({ key, platform, version, country, body, environment, n
     app: APP,
     priority: "P2",   // a student's setup failed: a feature is failing for some users (standard §2)
     summary: `${platform} setup failed${steps.length ? " at " + steps.slice(0, 3).join(", ") : ""} (version ${version || "not recorded"})`,
-    explanation: `A student's ${platform} setup finished with ${fails.length || "unknown"} failed step${fails.length === 1 ? "" : "s"} and they chose to send the report to you. ` +
+    explanation: (version === "DEPLOY-CHECK"
+      ? "This is the deploy's own confirming check, not a student: it proves that a failed report reaches you as an email. "
+      : `A student's ${platform} setup finished with ${fails.length || "unknown"} failed step${fails.length === 1 ? "" : "s"} and they chose to send the report to you. `) +
       `This is report ${key.split("/").pop()}${count > 1 ? `; the same failure has now arrived ${count} times` : ""}. ` +
       `The student was offered the AI setup helper next, so it may already be fixed on their side; the report says what broke.`,
     event: "setup failed",
@@ -58,7 +73,7 @@ export function issueFor({ key, platform, version, country, body, environment, n
     stack: failList,
     source: `student setup report (country ${country || "not recorded"})`,
     suggestedStep: `Read the full report: in the logs-worker folder run  npx wrangler kv key get "${key}" --binding LOGS --remote`,
-    importance: { usersAffected: count > 1 ? `${count} reports so far` : "1 student", scienceAffected: "no", moneyAffected: "no", dataAtRisk: "no" },
+    importance: { usersAffected: version === "DEPLOY-CHECK" ? "none (deploy check)" : count > 1 ? `${count} reports so far` : "1 student", scienceAffected: "no", moneyAffected: "no", dataAtRisk: "no" },
     adminLogUrl: env.ADMIN_LOG_URL || undefined,
   };
 }
@@ -156,6 +171,12 @@ export async function sendDigest(env, now = new Date(), send = sendEmail) {
     const s = await getJson(kv, k.name);
     if (s && new Date(s.lastSeen) >= start) states.push(s);
   }
+  // successful installs (stats/production/<day>/<platform>/<id>) in the same period
+  const installs = {}; let installTotal = 0;
+  for (let t = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate()); t <= now.getTime(); t += DAY_MS) {
+    const day = new Date(t).toISOString().slice(0, 10);
+    for (const k of await listAll(kv, `stats/production/${day}/`)) { const p = k.name.split("/")[3]; installs[p] = (installs[p] || 0) + 1; installTotal += 1; }
+  }
   const by = (f) => reports.reduce((m, k) => { const v = f(k); m[v] = (m[v] || 0) + 1; return m; }, {});
   const plat = by((k) => k.name.split("/")[1]); const res = by((k) => k.name.split("/")[2]);
   const open = states.map((s) => ({ app: APP, priority: "P2", summary: s.summary, explanation: "", event: "setup failed",
@@ -166,12 +187,14 @@ export async function sendDigest(env, now = new Date(), send = sendEmail) {
     app: APP, environment: "production", periodStart: start.toISOString(), periodEnd: now.toISOString(),
     open, resolved: [], noise: [],
     numbers: [
+      { label: "Successful installs", value: installTotal },
       { label: "Reports received", value: reports.length },
       { label: "Failed setups", value: res.failed || 0 },
       { label: "Distinct issues", value: states.length },
     ],
     alertingHealth: [
       { label: "Reports by platform", value: fmt(plat) },
+      { label: "Successful installs by platform", value: fmt(installs) },
       { label: "Last report", value: meta.lastReport || "none yet" },
       { label: "Last alert email sent", value: meta.lastAlertSent || "none yet" },
       { label: "Alert send failures (all time)", value: String(meta.sendFailures || 0) },
@@ -185,5 +208,5 @@ export async function sendDigest(env, now = new Date(), send = sendEmail) {
   await send(env, digest);
   meta.lastDigest = now.toISOString(); meta.lastCron = now.toISOString();
   await kv.put("alerts/meta", JSON.stringify(meta));
-  return { reports: reports.length, issues: states.length, subject: digest.subject };
+  return { reports: reports.length, issues: states.length, installs: installTotal, subject: digest.subject };
 }

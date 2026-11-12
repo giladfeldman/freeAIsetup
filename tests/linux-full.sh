@@ -2,6 +2,7 @@
 # Full real install on clean Ubuntu, including the AI step with OpenCode's no-account free model.
 # Run inside the test image with the student-setup folder mounted read-only at /src.
 set -u
+export MS_LOG_ENV=local   # test runs never count as real installs or send real alerts
 cp -r /src "$HOME/student-setup"            # students run it from a downloaded copy
 cd "$HOME/student-setup"
 bash setup-mac.sh --yes --no-gui "$@"; rc=$?

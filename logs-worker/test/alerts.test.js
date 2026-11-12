@@ -112,3 +112,55 @@ test("fortnight digest counts reports since the last digest and lists open issue
   assert.equal(quiet.reports, 0);
   assert.match(sent[1].subject, /all quiet/);
 });
+
+// ---- added 2026-11-12: every stop reaches the log box, Mac log lines parse, success counts ----
+import worker from "../src/index.js";
+
+test("parseFailures also reads the Mac log (indented, coloured, detail in brackets) and the installers' reports, once per step", () => {
+  const mac = "  \x1b[31mFAIL\x1b[0m  Free disk space  (3 GB free, 8 GB needed)\n";
+  assert.deepEqual(parseFailures(mac), [{ step: "Free disk space", detail: "3 GB free, 8 GB needed" }]);
+  const inst = "== installer (install.ps1) ==\nFAIL  Installer download  no source gave a signed file list\n";
+  assert.deepEqual(parseFailures(inst), [{ step: "Installer download", detail: "no source gave a signed file list" }]);
+  const twice = "FAIL  R step                 see log\n== setup log ==\nFAIL  R step  see log\n";
+  assert.equal(parseFailures(twice).length, 1);
+});
+
+test("the deploy check's alert says it is the deploy check, not a student", async () => {
+  const e = env(); const sent = [];
+  await onFailedReport(e, rep("k-deploy", { version: "DEPLOY-CHECK", body: "FAIL  Deploy check           not a student" }), new Date("2026-11-12T10:00:00Z"), async (_e, m) => sent.push(m));
+  assert.match(sent[0].text, /deploy's own confirming check, not a student/);
+  assert.doesNotMatch(sent[0].text, /A student's/);
+});
+
+const ctx = () => { const w = []; return { w, waitUntil: (p) => w.push(p) }; };
+const post = (path, headers = {}, body = "") => new Request(`https://box.example${path}`, { method: "POST", headers: { "x-freeaisetup": "1", ...headers }, body });
+
+test("/count stores one key per success with platform and version only, and the environment from the header", async () => {
+  const e = env();
+  const r = await worker.fetch(post("/count?platform=windows&version=2026.11.12.1"), e, ctx());
+  assert.equal(r.status, 200);
+  await worker.fetch(post("/count?platform=mac&version=2026.11.12.1", { "x-freeaisetup-env": "local" }), e, ctx());
+  const keys = [...e.LOGS.m.keys()];
+  assert.equal(keys.filter((k) => /^stats\/production\/\d{4}-\d{2}-\d{2}\/windows\/[0-9a-f]{8}$/.test(k)).length, 1);
+  assert.equal(keys.filter((k) => k.startsWith("stats/local/")).length, 1);
+  assert.equal(e.LOGS.m.get(keys.find((k) => k.startsWith("stats/production/"))), "");   // no content at all
+});
+
+test("/count refuses requests without the header or with an unknown platform", async () => {
+  const e = env();
+  assert.equal((await worker.fetch(new Request("https://box.example/count?platform=windows", { method: "POST" }), e, ctx())).status, 400);
+  assert.equal((await worker.fetch(post("/count?platform=amiga"), e, ctx())).status, 400);
+  assert.equal(e.LOGS.m.size, 0);
+});
+
+test("the digest reports successful installs of the period by platform, production only", async () => {
+  const e = env(); const sent = [];
+  await e.LOGS.put("stats/production/2026-11-05/windows/aaaaaaaa", "");
+  await e.LOGS.put("stats/production/2026-11-06/windows/bbbbbbbb", "");
+  await e.LOGS.put("stats/production/2026-11-06/mac/cccccccc", "");
+  await e.LOGS.put("stats/local/2026-11-06/mac/dddddddd", "");          // a test: not counted
+  await e.LOGS.put("stats/production/2026-10-01/mac/eeeeeeee", "");     // before the period: not counted
+  const r = await sendDigest(e, new Date("2026-11-15T06:00:00Z"), async (_e, m) => sent.push(m));
+  assert.equal(r.installs, 3);
+  assert.match(sent[0].text, /windows 2, mac 1/);
+});

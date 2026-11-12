@@ -7,6 +7,7 @@
 #
 #  Start it by double-clicking install-windows.cmd (recommended), or:
 #    powershell -ExecutionPolicy Bypass -File setup-windows.ps1 [-Check] [-Keys] [-Fix] [-DryRun] [-SkipAI]
+#                [-Choose] [-Components r,rstudio,quarto,python,node|all|none] [-Uninstall]
 #  Written for Windows PowerShell 5.1 (the Windows default).
 # =============================================================================
 param(
@@ -20,7 +21,10 @@ param(
   [switch]$Update,    # check for a newer version of this pack now and install it
   [switch]$Rollback,  # go back to the previous version of this pack
   [switch]$NoAutoUpdate, # do not set up (or remove) the automatic daily update check
-  [switch]$FromUpdate # internal: run by the updater after new files arrived (quiet, no AI check)
+  [switch]$FromUpdate, # internal: run by the updater after new files arrived (quiet, no AI check)
+  [switch]$Choose,    # ask again which parts to install
+  [string]$Components = '', # the parts to install, without asking: r,rstudio,quarto,python,node (or all / none)
+  [switch]$Uninstall  # remove some or all of what this setup installed (lib\uninstall-windows.ps1)
 )
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'      # makes downloads much faster in PowerShell 5.1
@@ -36,6 +40,8 @@ $SetupVersion = if (Test-Path -LiteralPath (Join-Path $ScriptDir0 'VERSION')) { 
 $PackDir   = Join-Path $env:LOCALAPPDATA 'MetaScience\pack'      # installed copy of this pack (updated automatically)
 $PackItems = @('install-windows.cmd', 'setup-windows.ps1', 'setup-mac.sh', 'VERSION', 'lib', 'course-kit', 'doctor', 'guide', 'update')
 $UpdateTask = 'MetaScience pack update'
+# What this setup remembers for this account: the chosen parts and a record of what it installed (tests: MS_STATE_DIR)
+$StateDir  = if ($env:MS_STATE_DIR) { $env:MS_STATE_DIR } else { Join-Path $env:LOCALAPPDATA 'MetaScience' }
 $CourseDir = if ($env:METASCIENCE_DIR) { $env:METASCIENCE_DIR } else { Join-Path $env:USERPROFILE 'MetaScience' }
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $KitDir    = Join-Path $ScriptDir 'course-kit'
@@ -51,8 +57,23 @@ function Say($t)  { Write-Host $t; Log $t }
 function Step($t) { Say ''; Write-Host "== $t ==" -ForegroundColor Cyan; Log "== $t ==" }
 function Ok($i, $d = '')   { Write-Host '  OK    ' -ForegroundColor Green -NoNewline; Write-Host "$i  $d"; Log "OK $i $d" }
 function Warn($i, $d = '') { Write-Host '  WARN  ' -ForegroundColor Yellow -NoNewline; Write-Host "$i  $d"; Log "WARN $i $d" }
-function Fail($i, $d = '') { Write-Host '  FAIL  ' -ForegroundColor Red -NoNewline; Write-Host "$i  $d"; Log "FAIL $i $d"; $script:Failed++ }
+function Fail($i, $d = '') { Write-Host '  FAIL  ' -ForegroundColor Red -NoNewline; Write-Host "$i  $d"; Log "FAIL  $i  $d"; $script:Failed++ }
+function Skip($i, $d = 'not chosen') { Write-Host '  SKIP  ' -ForegroundColor DarkGray -NoNewline; Write-Host "$i  $d"; Log "SKIP $i $d" }
 function Have($n) { [bool](Get-Command $n -ErrorAction SilentlyContinue) }
+
+# What this setup itself installed, one line each: part <TAB> kind <TAB> target. The uninstall (lib\uninstall-windows.ps1)
+# removes only what is listed here, so software that was on this computer before the setup is never touched.
+function Record-Install($part, $kind, $target) {
+  if ($DryRun -or -not $target) { return }
+  $line = "$part`t$kind`t$target"
+  try {
+    New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+    $f = Join-Path $StateDir 'installed.tsv'
+    if (-not ((Test-Path -LiteralPath $f) -and (@(Get-Content -LiteralPath $f -Encoding UTF8) -contains $line))) {
+      Add-Content -LiteralPath $f -Value $line -Encoding UTF8
+    }
+  } catch { Log "could not record '$line': $_" }
+}
 
 function Refresh-Path {
   # pick up PATH changes made by installers, without restarting the window
@@ -106,6 +127,7 @@ function Add-UserPath($dir) {
     if ($DryRun) { Say "  [dry-run] add $dir to your PATH"; return }
     Set-UserPathRaw ((@($parts) + @($dir)) -join ';')
     Log "added to user PATH: $dir"
+    Record-Install 'core' 'path' $dir
   }
   if (($env:Path.Split(';')) -notcontains $dir) { $env:Path = "$dir;$env:Path" }
 }
@@ -418,6 +440,8 @@ function Check-SmartAppControl {
 }
 function Precheck {
   Step '1/9  Checking this computer'
+  # test hook: a stop in step 1 must still reach the offer to send the report (tests\exit-paths.ps1)
+  if ($env:MS_TEST_FAIL_AT -eq 'precheck') { Fail 'Test stop' 'MS_TEST_FAIL_AT=precheck'; return $false }
   $os = Get-CimInstance Win32_OperatingSystem
   $arch = $env:PROCESSOR_ARCHITECTURE
   Ok 'System' "$($os.Caption) build $($os.BuildNumber), $arch"
@@ -425,7 +449,13 @@ function Precheck {
   Check-SmartAppControl
   $drive = (Get-Item -LiteralPath $env:USERPROFILE).PSDrive
   $freeGb = [math]::Floor((Get-PSDrive $drive.Name).Free / 1GB)
-  if ($freeGb -lt 8) { Fail 'Free disk space' "$freeGb GB free, 8 GB needed"; return $false } else { Ok 'Free disk space' "$freeGb GB" }
+  # The chosen parts that are not here yet, plus 2 GB for the downloads while installing; 3 GB more leaves room
+  # for course work. Before 2026-11-12 this was a flat 8 GB for every computer.
+  $needGb = Estimate-Gb; $minGb = [math]::Ceiling($needGb + 2)
+  if ($freeGb -lt $minGb) { Fail 'Free disk space' "$freeGb GB free; this setup needs about $needGb GB, plus 2 GB while it installs. Free up space (or install fewer parts: install-windows.cmd -Choose), then run it again"; return $false }
+  elseif ($freeGb -lt $minGb + 3) { Warn 'Free disk space' "$freeGb GB free; the setup will use about $needGb GB, which leaves little room for your course work" }
+  elseif ($needGb -lt 0.1) { Ok 'Free disk space' "$freeGb GB free; what you chose is already on this computer" }
+  else { Ok 'Free disk space' "$freeGb GB free; this setup will use about $needGb GB" }
   Setup-Proxy
   if (-not (Setup-Network)) { return $false }
   if (-not (Have 'winget')) {
@@ -473,22 +503,188 @@ function Find-Tool($t) {
   return $null
 }
 
+# ---------- R older than 4.5 (d-872f0e) ------------------------------------------------
+# The course packages no longer come ready-built for R older than 4.5, so all of them fail there (class
+# 2026-11-09, a Mac with R 4.0.0). winget --no-upgrade rightly keeps an old R, so the current R is installed NEXT
+# to it, for this account only (CRAN's installer, /CURRENTUSER: no admin; tested 2026-11-12 with R 4.6.2), and put
+# first on this account's PATH. The old R stays.
+$RMin = [version]'4.5'
+function R-Version($bin) {   # the version of the R in this bin folder: from its folder name (R-4.6.2), else by asking it
+  $n = Split-Path -Leaf (Split-Path -Parent $bin)
+  if ($n -match '^R-(\d+\.\d+\.\d+)') { return [version]$Matches[1] }
+  try { $v = "$((& (Join-Path $bin 'Rscript.exe') -e 'cat(as.character(getRversion()))') 2>$null)".Trim(); if ($v) { return [version]$v } } catch { Log "R version of $bin unknown: $_" }
+  return $null
+}
+function Find-CurrentR {   # the bin folder of the newest R 4.5 or newer on this computer, or $null
+  $c = @()
+  if (Have 'Rscript') { $c += Split-Path -Parent (Get-Command Rscript).Source }
+  foreach ($root in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, (Join-Path $env:LOCALAPPDATA 'Programs')) | Where-Object { $_ }) {
+    $c += @(Get-Item -Path (Join-Path $root 'R\R-*\bin') -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName })
+  }
+  foreach ($k in 'HKCU:\SOFTWARE\R-core\R', 'HKLM:\SOFTWARE\R-core\R') {   # an R in a folder of its own choosing
+    $ip = (Get-ItemProperty -Path $k -ErrorAction SilentlyContinue).InstallPath; if ($ip) { $c += Join-Path $ip 'bin' }
+  }
+  $best = $null; $bv = $null
+  foreach ($b in @($c | Select-Object -Unique)) {
+    if (-not (Test-Path -LiteralPath (Join-Path $b 'Rscript.exe'))) { continue }
+    $v = R-Version $b
+    if ($v -and $v -ge $RMin -and (-not $bv -or $v -gt $bv)) { $best = $b; $bv = $v }
+  }
+  return $best
+}
+function Put-PathFirst($dir) {   # this folder first on this account's PATH and in this window (an older R further down stays)
+  $parts = @(Split-PathList (Get-UserPathRaw))
+  $key = $dir.TrimEnd('\').ToLowerInvariant()
+  $norm = @($parts | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\').ToLowerInvariant() })
+  if (-not $norm.Count -or $norm[0] -ne $key) {
+    if ($DryRun) { Say "  [dry-run] put $dir first on your PATH" }
+    else {
+      $rest = @(); for ($i = 0; $i -lt $parts.Count; $i++) { if ($norm[$i] -ne $key) { $rest += $parts[$i] } }
+      Set-UserPathRaw ((@($dir) + $rest) -join ';'); Log "put first on user PATH: $dir"
+      if ($norm -notcontains $key) { Record-Install 'core' 'path' $dir }
+    }
+  }
+  $env:Path = (@($dir) + @($env:Path.Split(';') | Where-Object { $_ -and $_.TrimEnd('\').ToLowerInvariant() -ne $key })) -join ';'
+  $m = @(([Environment]::GetEnvironmentVariable('Path', 'Machine')).Split(';') | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'Rscript.exe')) })
+  if ($m.Count) { Warn 'R on PATH' "the computer-wide PATH lists another R first ($($m[0])); new windows may start that one. In RStudio, choose R under Tools > Global Options > General." }
+}
+function Install-RDirect {   # the current R from CRAN, for this account only; returns its folder, or $null
+  $name = $null
+  try {   # CRAN's release page points to the current installer, e.g. R-4.6.2-win.exe
+    $page = (Invoke-WebRequest -Uri "$($script:Cran)/bin/windows/base/release.html" -UseBasicParsing -UserAgent 'MetaScience-setup' -TimeoutSec 30).Content
+    if ($page -match 'URL=(R-[0-9.]+-win\.exe)') { $name = $Matches[1] }
+  } catch { Log "R version lookup failed: $_" }
+  if (-not $name) { $name = 'R-4.6.2-win.exe' }   # fallback if the page cannot be read
+  $exe = Join-Path $env:TEMP $name
+  Say "  Downloading $($name -replace '-win\.exe$','') for this account only (about 90 MB)..."
+  if (-not (Download "$($script:Cran)/bin/windows/base/$name" $exe)) { return $null }
+  $dir = Join-Path $env:LOCALAPPDATA ("Programs\R\" + ($name -replace '-win\.exe$', ''))
+  $code = Run-Native $exe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NOICONS', "/DIR=`"$dir`"") 1800
+  Remove-Item -LiteralPath $exe -Force -ErrorAction SilentlyContinue
+  if ($code -eq 0 -and (Test-Path -LiteralPath (Join-Path $dir 'bin\Rscript.exe'))) { return $dir }
+  Log "R installer exit $code"; return $null
+}
+
+# ---------- parts the student chooses (owner request 2026-11-12) ---------------------
+# The AI assistant (OpenCode), Git and uv (which runs the setup's own Python helper) are always installed.
+$AllParts = @('r', 'rstudio', 'quarto', 'python', 'node')
+# gb: installed size, measured on one Windows 11 computer on 2026-11-12 (not yet on a fresh computer)
+$PartInfo = @{
+  r       = @{ name = 'R and the course R packages';              gb = 0.4 }
+  rstudio = @{ name = 'RStudio (an editor for R; needs R)';       gb = 1.9 }
+  quarto  = @{ name = 'Quarto (turns an analysis into a report)'; gb = 0.5 }
+  python  = @{ name = 'Python course packages';                   gb = 0.5 }
+  node    = @{ name = 'Node.js (a few optional AI tools need it)'; gb = 0.2 }
+}
+$script:Parts = $AllParts
+function Has-Part($p) { $script:Parts -contains $p }
+function Tool-Defs {
+  @(
+    @{ id = 'Git.Git';           name = 'Git';     part = 'core';    cmd = 'git';     exe = 'git.exe';     dirs = @('Git\cmd', 'MinGit\cmd') },
+    @{ id = 'OpenJS.NodeJS.LTS'; name = 'Node.js'; part = 'node';    cmd = 'node';    exe = 'node.exe';    dirs = @('nodejs') },
+    @{ id = 'astral-sh.uv';      name = 'uv';      part = 'core';    cmd = 'uv';      exe = 'uv.exe';      dirs = @() },
+    @{ id = 'RProject.R';        name = 'R';       part = 'r';       cmd = 'Rscript'; exe = 'Rscript.exe'; dirs = @('R\R-*\bin') },
+    @{ id = 'Posit.Quarto';      name = 'Quarto';  part = 'quarto';  cmd = 'quarto';  exe = 'quarto.exe';  dirs = @('Quarto\bin') },
+    @{ id = 'Posit.RStudio';     name = 'RStudio'; part = 'rstudio'; cmd = '';        exe = 'rstudio.exe'; dirs = @('RStudio') }
+  )
+}
+function Tool-Def($name) { Tool-Defs | Where-Object { $_.name -eq $name } | Select-Object -First 1 }
+function Part-Gb($p) {   # what a part still needs on this computer: 0 when it is already there
+  switch ($p) {
+    'r'       { if (Find-CurrentR) { return 0.2 } }          # the course R packages may still be missing; an R older than 4.5 gets a new one
+    'rstudio' { if (Find-Tool (Tool-Def 'RStudio')) { return 0 } }
+    'quarto'  { if (Find-Tool (Tool-Def 'Quarto')) { return 0 } }
+    'node'    { if (Find-Tool (Tool-Def 'Node.js')) { return 0 } }
+    'python'  { if (Test-Path -LiteralPath (Join-Path $CourseDir '.venv')) { return 0 } }
+  }
+  return $PartInfo[$p].gb
+}
+function Estimate-Gb {   # disk space this run will use: only the chosen parts that are not on this computer yet
+  $gb = 0.0
+  if (-not (Have 'opencode')) { $gb += 0.6 }                          # OpenCode: command line + desktop app
+  if (-not (Find-Tool (Tool-Def 'Git'))) { $gb += 0.4 }
+  if (-not (Find-Tool (Tool-Def 'uv'))) { $gb += 0.2 }                # uv and its Python
+  foreach ($p in $script:Parts) { $gb += (Part-Gb $p) }
+  return [math]::Round($gb, 1)
+}
+function Parse-Parts([string]$text) {
+  $want = @(); $bad = @()
+  foreach ($w in @("$text" -split '[,;\s]+' | Where-Object { $_ })) {
+    $w = $w.ToLowerInvariant()
+    if ($w -eq 'all') { $want += $AllParts } elseif ($w -eq 'none') { } elseif ($AllParts -contains $w) { $want += $w } else { $bad += $w }
+  }
+  if ($want -contains 'rstudio' -and $want -notcontains 'r') { $want += 'r' }   # RStudio does not work without R
+  return @{ want = @($AllParts | Where-Object { $want -contains $_ }); bad = $bad }
+}
+function Save-Parts {
+  if ($DryRun) { return }
+  $txt = if ($script:Parts.Count) { $script:Parts -join ' ' } else { 'none' }
+  try { New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+        Set-Content -LiteralPath (Join-Path $StateDir 'parts.txt') -Value $txt -Encoding ASCII } catch { Log "could not save the parts: $_" }
+}
+function Load-Parts {   # the parts chosen last time; everything when nothing was chosen (older setups installed all)
+  $f = Join-Path $StateDir 'parts.txt'
+  $script:Parts = if (Test-Path -LiteralPath $f) { (Parse-Parts (Get-Content -LiteralPath $f -Raw)).want } else { $AllParts }
+  if ($NoGui) { $script:Parts = @($script:Parts | Where-Object { $_ -ne 'rstudio' }) }
+}
+function Choose-Parts {
+  $f = Join-Path $StateDir 'parts.txt'
+  if ($Components) {
+    $x = Parse-Parts $Components
+    if ($x.bad.Count) { Say "Unknown part: $($x.bad -join ', '). Use any of: $($AllParts -join ', '), or all, or none."; exit 2 }
+    $script:Parts = $x.want; Save-Parts
+  } elseif ((Test-Path -LiteralPath $f) -and -not $Choose) { Load-Parts }
+  elseif ($Yes -or $FromUpdate) { $script:Parts = $AllParts }
+  else {
+    Say ''
+    Say 'What should the setup install? The AI assistant (OpenCode), Git and uv (for Python) are always installed.'
+    for ($i = 0; $i -lt $AllParts.Count; $i++) {
+      $p = $AllParts[$i]; $g = Part-Gb $p
+      Say ('  {0}. {1,-44} {2}' -f ($i + 1), $PartInfo[$p].name, $(if ($g -eq 0) { 'already on this computer' } else { "about $g GB" }))
+    }
+    for ($try = 0; $try -lt 3; $try++) {
+      $a = "$(Read-Host 'Press Enter to install all of them (recommended), or type the numbers you want, for example 1 3 (0 = none)')".Trim()
+      if (-not $a) { $script:Parts = $AllParts; break }
+      $nums = @($a -split '[,;\s]+' | Where-Object { $_ })
+      if (@($nums | Where-Object { $_ -notmatch '^[0-5]$' }).Count) { Say '  Please type only numbers from the list (0 to 5).'; continue }
+      $picked = @($nums | Where-Object { $_ -ne '0' } | ForEach-Object { $AllParts[[int]$_ - 1] })
+      $script:Parts = (Parse-Parts ($picked -join ' ')).want
+      if ($picked -contains 'rstudio' -and $picked -notcontains 'r') { Say '  RStudio needs R, so R is installed too.' }
+      break
+    }
+    Save-Parts
+  }
+  if ($NoGui) { $script:Parts = @($script:Parts | Where-Object { $_ -ne 'rstudio' }) }
+  $names = @($script:Parts | ForEach-Object { $PartInfo[$_].name })
+  Say "  Installing: the AI assistant$(if ($names.Count) { ', ' + ($names -join ', ') })  (to change this: install-windows.cmd -Choose)"
+}
+
 # ---------- 3. core tools ----------------------------------------------------
 function Install-Tools {
   Step '3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio'
+  if ($env:MS_TEST_CRASH -eq 'tools') { throw 'test crash in step 3 (MS_TEST_CRASH)' }   # test hook: a crash mid-run
   Say '  Rule: this setup never upgrades or removes software that is already on this computer.'
   Say '  Windows may ask "Do you want to allow this app to make changes?" - click Yes each time.'
-  $tools = @(
-    @{ id = 'Git.Git';           name = 'Git';     cmd = 'git';     exe = 'git.exe';     dirs = @('Git\cmd', 'MinGit\cmd') },
-    @{ id = 'OpenJS.NodeJS.LTS'; name = 'Node.js'; cmd = 'node';    exe = 'node.exe';    dirs = @('nodejs') },
-    @{ id = 'astral-sh.uv';      name = 'uv';      cmd = 'uv';      exe = 'uv.exe';      dirs = @() },
-    @{ id = 'RProject.R';        name = 'R';       cmd = 'Rscript'; exe = 'Rscript.exe'; dirs = @('R\R-*\bin') },
-    @{ id = 'Posit.Quarto';      name = 'Quarto';  cmd = 'quarto';  exe = 'quarto.exe';  dirs = @('Quarto\bin') }
-  )
-  if (-not $NoGui) { $tools += @{ id = 'Posit.RStudio'; name = 'RStudio'; cmd = ''; exe = 'rstudio.exe'; dirs = @('RStudio') } }
+  $tools = @()
+  foreach ($t in (Tool-Defs)) {
+    if ($t.part -eq 'core' -or (Has-Part $t.part)) { $tools += $t } elseif (-not ($NoGui -and $t.part -eq 'rstudio')) { Skip $t.name }
+  }
   Add-UserPath (Join-Path $env:USERPROFILE '.local\bin')     # uv's own folder
   foreach ($t in $tools) {
     $found = Find-Tool $t
+    if ($found -and $t.name -eq 'R') {
+      $rv = R-Version $found
+      if ($rv -and $rv -lt $RMin) {   # too old for the course packages: use or install a current R next to it
+        $cur = Find-CurrentR
+        if ($cur) { Put-PathFirst $cur; Ok 'R' "R $(R-Version $cur) is used ($cur); your older R $rv stays"; continue }
+        Say "  Your R ($rv) is too old for the course packages. Installing the current R next to it, for this account only (your old R stays)."
+        if ($DryRun) { Say '  [dry-run] download the current R from CRAN and install it for this account'; continue }
+        $rdir = Install-RDirect
+        if ($rdir) { Record-Install 'r' 'inno' $rdir; Put-PathFirst (Join-Path $rdir 'bin'); Ok 'R' "installed R $(R-Version (Join-Path $rdir 'bin')) for this account; your older R $rv stays" }
+        else { Fail 'R' "could not install the current R next to R $rv; see $LogFile" }
+        continue
+      }
+    }
     if ($found) {
       if ($t.cmd -and -not (Have $t.cmd)) { Add-UserPath $found; Ok $t.name "already on this computer, now usable from this account ($found)" }
       else { Ok $t.name 'already installed' }
@@ -498,16 +694,26 @@ function Install-Tools {
     $ghOnly = $t.name -in 'Git', 'Quarto', 'uv'   # winget fetches these from GitHub
     $wingetOk = (-not ($ghOnly -and $script:Blocked -contains 'github.com')) -and (Winget-Install $t.id)
     if ($wingetOk) { $found = Find-Tool $t }
-    if ($wingetOk -and $found) { if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
+    if ($wingetOk -and $found) { Record-Install $t.part 'winget' $t.id; if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
     elseif ($wingetOk -and $t.name -notin 'uv', 'Git', 'Quarto', 'RStudio') { Fail $t.name "winget reported success but $($t.exe) was not found; see $LogFile" }
     # winget failed, or said "installed" but the program is missing: try the direct download
-    elseif ($t.name -eq 'uv' -and (Install-UvDirect)) { Add-UserPath (Join-Path $env:USERPROFILE '.local\bin'); Ok 'uv' 'installed (direct download)' }
-    elseif ($t.name -eq 'Git' -and (Install-GitDirect)) { Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\MinGit\cmd'); Ok 'Git' 'installed for this account (MinGit, direct download)' }
-    elseif ($t.name -eq 'RStudio' -and (Install-RStudioDirect)) { Ok 'RStudio' 'installed for this account (direct download; in the Start menu)' }
-    elseif ($t.name -eq 'Quarto' -and (Install-QuartoDirect)) { Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\Quarto\bin'); Ok 'Quarto' 'installed for this account (direct download)' }
+    elseif ($t.name -eq 'uv' -and (Install-UvDirect)) {
+      foreach ($e in 'uv.exe', 'uvx.exe', 'uvw.exe') { Record-Install 'core' 'file' (Join-Path $env:USERPROFILE ".local\bin\$e") }
+      Add-UserPath (Join-Path $env:USERPROFILE '.local\bin'); Ok 'uv' 'installed (direct download)' }
+    elseif ($t.name -eq 'Git' -and (Install-GitDirect)) { Record-Install 'core' 'dir' (Join-Path $env:LOCALAPPDATA 'Programs\MinGit'); Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\MinGit\cmd'); Ok 'Git' 'installed for this account (MinGit, direct download)' }
+    elseif ($t.name -eq 'RStudio' -and (Install-RStudioDirect)) {
+      Record-Install 'rstudio' 'dir' (Join-Path $env:LOCALAPPDATA 'Programs\RStudio')
+      Record-Install 'rstudio' 'file' (Join-Path ([Environment]::GetFolderPath('Programs')) 'RStudio.lnk')
+      Ok 'RStudio' 'installed for this account (direct download; in the Start menu)' }
+    elseif ($t.name -eq 'R' -and ($rdir = Install-RDirect)) { Record-Install 'r' 'inno' $rdir; Add-UserPath (Join-Path $rdir 'bin'); Ok 'R' 'installed for this account (direct download from CRAN)' }
+    elseif ($t.name -eq 'Quarto' -and (Install-QuartoDirect)) { Record-Install 'quarto' 'dir' (Join-Path $env:LOCALAPPDATA 'Programs\Quarto'); Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\Quarto\bin'); Ok 'Quarto' 'installed for this account (direct download)' }
     else { Fail $t.name "winget could not install $($t.id); see $LogFile" }
   }
   if ($DryRun) { return }
+  if ((Find-Tool (Tool-Def 'uv')) -and @(Get-Content -LiteralPath (Join-Path $StateDir 'installed.tsv') -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match "^core`t(winget`tastral-sh\.uv|file`t.*\\uv\.exe)$" }).Count) {
+    Record-Install 'core' 'uvdata' 'Python and downloads kept by uv'
+  }
+  if (-not (Has-Part 'r')) { return }
   if (Have 'Rscript') { Ok 'R on PATH' (Get-Command Rscript).Source } else { Fail 'R on PATH' 'Rscript not found' }
 }
 
@@ -519,6 +725,13 @@ function Install-OpenCode {
   $binDir = Join-Path $env:LOCALAPPDATA 'Programs\opencode-cli'
   $current = ''
   if (Have 'opencode') { $current = ((& opencode --version) 2>$null | Select-Object -First 1) }
+  if (-not $current -and -not (Test-Path -LiteralPath $binDir)) {
+    # a first OpenCode on this account: the uninstall may remove it and the settings and chats it keeps
+    Record-Install 'core' 'dir' $binDir
+    foreach ($d in '.local\share\opencode', '.config\opencode', '.cache\opencode', '.local\state\opencode') {
+      if (-not (Test-Path -LiteralPath (Join-Path $env:USERPROFILE $d))) { Record-Install 'core' 'dir' (Join-Path $env:USERPROFILE $d) }
+    }
+  }
   if ($current -eq $OpenCodeVersion) { Ok 'OpenCode command line' "version $OpenCodeVersion already installed" }
   else {
     $asset = if ($isArm) { 'opencode-windows-arm64.zip' } else { 'opencode-windows-x64-baseline.zip' }
@@ -560,20 +773,25 @@ function Install-OpenCode {
   if ($script:Blocked -contains 'github.com') { Warn 'OpenCode desktop app' 'GitHub is blocked here, so only the command-line OpenCode is installed (type opencode in a terminal). Run this again on another network to add the app.'; return }
   if (Download "$base/$app" $setup) {
     $code = Run-Native $setup @('/S') 600     # per-user silent install, no administrator needed
-    if ($code -eq 0) { Ok 'OpenCode desktop app' 'installed (Start menu: OpenCode)' } else { Fail 'OpenCode desktop app' "installer exit code $code" }
+    if ($code -eq 0) { Record-Install 'core' 'app' 'OpenCode*'; Ok 'OpenCode desktop app' 'installed (Start menu: OpenCode)' } else { Fail 'OpenCode desktop app' "installer exit code $code" }
   } else { Fail 'OpenCode desktop app' 'download failed' }
 }
 
 # ---------- 5. R packages ------------------------------------------------------
 function Install-RPackages {
   Step '5/9  R packages for the course'
+  if (-not (Has-Part 'r')) { Skip 'R packages'; return }
   if ($DryRun) { Say '  [dry-run] install missing course R packages into this account''s R library'; return }
   if (-not (Have 'Rscript')) { Fail 'R packages' 'R is not installed'; return }
-  $expr = "lib <- Sys.getenv('R_LIBS_USER'); dir.create(lib, recursive=TRUE, showWarnings=FALSE); .libPaths(c(lib,.libPaths())); pk <- strsplit('$RPackages',' ')[[1]]; miss <- pk[!pk %in% rownames(installed.packages())]; if (length(miss)) install.packages(miss, lib=lib, repos='$($script:Cran)', type='binary')"
+  $listLib = "cat(rownames(installed.packages(lib.loc=Sys.getenv('R_LIBS_USER'))))"
+  $before = @("$((& Rscript -e $listLib) 2>$null)" -split '\s+' | Where-Object { $_ })
+  $expr = "lib <- Sys.getenv('R_LIBS_USER'); dir.create(lib, recursive=TRUE, showWarnings=FALSE); .libPaths(c(lib,.libPaths())); pk <- strsplit('$RPackages',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; if (length(miss)) install.packages(miss, lib=lib, repos='$($script:Cran)', type='binary')"
+  # a package counts as ready only when it loads (its folder can be there while a package it needs is missing)
   Run-Native 'Rscript' @('-e', "`"$expr`"") 1800 | Out-Null
-  $missing = (& Rscript -e "pk <- strsplit('$RPackages',' ')[[1]]; cat(pk[!pk %in% rownames(installed.packages())])") 2>$null
+  $missing = (& Rscript -e "pk <- strsplit('$RPackages',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; cat(miss)") 2>$null
+  foreach ($pk in @("$((& Rscript -e $listLib) 2>$null)" -split '\s+' | Where-Object { $_ })) { if ($before -notcontains $pk) { Record-Install 'r' 'rpkg' $pk } }
   if ($DryRun) { return }
-  if (-not $missing) { Ok 'R packages' "$(($RPackages -split ' ').Count) packages ready" } else { Fail 'R packages' "missing: $missing" }
+  if (-not $missing) { Ok 'R packages' "$(($RPackages -split ' ').Count) packages ready" } else { Fail 'R packages' "missing or not loading: $missing" }
 }
 function Fix-Pandoc {
   # R must find a working pandoc to make reports. If the first pandoc on PATH is broken for this
@@ -598,6 +816,7 @@ function Setup-CourseFolder {
   Step "6/9  Course folder: $CourseDir"
   if (-not (Test-Path -LiteralPath $KitDir)) { Fail 'Course kit' 'folder course-kit is missing next to this script'; return }
   if ($DryRun) { Say "  [dry-run] copy course-kit to $CourseDir, create Python environment, write opencode.json"; return }
+  if (-not (Test-Path -LiteralPath $CourseDir)) { Record-Install 'course' 'dir' $CourseDir }
   New-Item -ItemType Directory -Force -Path $CourseDir | Out-Null
   # what the pack installed last time, so an update can tell a student's own edit from an old course file
   $kitHashFile = Join-Path $CourseDir '.metascience\kit-hashes.json'
@@ -630,6 +849,8 @@ function Setup-CourseFolder {
         $kitHashes | ConvertTo-Json | Set-Content -LiteralPath $kitHashFile -Encoding UTF8 } catch {}
   Ok 'Course folder' $CourseDir
   if (-not (Have 'uv')) { Fail 'Python environment' 'uv is not installed'; return }
+  if (-not (Has-Part 'python')) { Skip 'Python course packages' }
+  else {
   for ($try = 1; $try -le 3; $try++) {   # a dropped download is resumed from uv's cache on the next try
     $code = Run-Native 'uv' @('sync', '--directory', "`"$CourseDir`"", '--python', '3.12') 1800
     if ($code -eq 0) { break }
@@ -643,14 +864,22 @@ function Setup-CourseFolder {
   if ((Test-Path -LiteralPath $pm) -and (Test-Path -LiteralPath $dll) -and -not (Test-Path -LiteralPath (Join-Path $pm 'msvcp140.dll'))) {
     try { Copy-Item -LiteralPath $dll -Destination $pm -ErrorAction Stop; Log 'copied msvcp140.dll next to pymupdf' } catch { Log "msvcp140 copy failed: $_" }
   }
+  }
   if ((Py @('config')) -eq 0) { Ok 'OpenCode settings' 'free model as default, 6 MCP tools (off)' } else { Fail 'OpenCode settings' 'could not write opencode.json' }
 }
 
 function Run-Check {
   Step '8/9  Real-task check (uses every installed tool)'
   if (-not (Have 'uv')) { Fail 'uv' 'not installed, cannot run the check'; return }
-  $a = @('check', '--log', $LogFile); if ($SkipAI) { $a += '--skip-ai' }
-  if ((Py $a) -ne 0) { $script:Failed++ }
+  $a = @('check', '--log', $LogFile, '--parts', $(if ($script:Parts.Count) { $script:Parts -join ',' } else { 'none' })); if ($SkipAI) { $a += '--skip-ai' }
+  $rc = Py $a
+  # A Windows crash code (negative, e.g. 0xC000070A seen once on a fresh VM; the re-run passed) is Python itself
+  # failing, not a failed check: run the check once more, and log the code (d-8fb1bf)
+  if ($rc -lt 0) {
+    Warn 'Check' ("Python stopped unexpectedly (code 0x{0:X8}); running the check once more" -f $rc)
+    $rc = Py $a
+  }
+  if ($rc -ne 0) { $script:Failed++ }
 }
 
 # ---------- AI setup helper ------------------------------------------------------
@@ -714,6 +943,7 @@ function Install-Pack {
         $from = Join-Path $src $i
         if (Test-Path -LiteralPath $from) { Copy-Item -LiteralPath $from -Destination $PackDir -Recurse -Force }
       }
+      Record-Install 'core' 'pack' $PackDir
       Ok 'Pack copy' $PackDir
     } catch { Warn 'Pack copy' "could not copy the pack to $PackDir ($($_.Exception.Message)); updates will not work"; return }
   }
@@ -744,20 +974,66 @@ function Install-Pack {
   try { [IO.File]::WriteAllText($xf, $xml, [Text.Encoding]::Unicode) } catch { Warn 'Automatic updates' "could not prepare the daily check ($_); update by hand: install-windows.cmd -Update"; return }
   $code = Run-Native 'schtasks.exe' @('/create', '/tn', "`"$UpdateTask`"", '/xml', "`"$xf`"", '/f') 300
   Remove-Item -LiteralPath $xf -Force -ErrorAction SilentlyContinue
-  if ($code -eq 0) { Ok 'Automatic updates' 'on: a short check once a day (turn off: install-windows.cmd -NoAutoUpdate)' }
+  if ($code -eq 0) { Record-Install 'core' 'task' $UpdateTask; Ok 'Automatic updates' 'on: a short check once a day (turn off: install-windows.cmd -NoAutoUpdate)' }
   else { Warn 'Automatic updates' "could not add the daily check (schtasks exit $code); update by hand: install-windows.cmd -Update" }
 }
 
+# The file to show the teacher: the report of the check (step 8), or the log when setup stopped before the check
+function Report-File { $r = Join-Path $CourseDir 'setup-report.txt'; if (Test-Path -LiteralPath $r) { return $r }; return $LogFile }
 function Summary {
   Step '9/9  Summary'
   if ($DryRun) { Write-Host 'Dry run finished: the lines above show what a real run would do.' -ForegroundColor Yellow }
   elseif ($script:Failed -eq 0) { Write-Host 'All done. Everything works.' -ForegroundColor Green }
   else {
     Write-Host 'Something needs attention (see the FAIL lines above). Run the setup again first; it repairs most problems.' -ForegroundColor Red
-    Say "If it still fails, show the teacher: $(Join-Path $CourseDir 'setup-report.txt')"
+    Say "If it still fails, show the teacher: $(Report-File)"
   }
   Say "Full log: $LogFile"
   Say "Next: open OpenCode from the Start menu, choose the folder $CourseDir, and follow the guide."
+}
+
+# ---------- reporting to the teacher's log box ------------------------------------
+# One address for both messages; tests point it at a local copy (MS_LOG_URL) and mark themselves (MS_LOG_ENV=local).
+$LogBox = if ($env:MS_LOG_URL) { $env:MS_LOG_URL.TrimEnd('/') } else { 'https://freeaisetup-logs.giladfel.workers.dev' }
+function LogBox-Headers { $h = @{ 'x-freeaisetup' = '1' }; if ($env:MS_LOG_ENV) { $h['x-freeaisetup-env'] = $env:MS_LOG_ENV }; return $h }
+function Send-Log {
+  # With the student's yes: send the log to the teacher's private log box (write-only address, kept 180 days).
+  try {
+    $rep = Join-Path $CourseDir 'setup-report.txt'
+    $txt = "== setup-report.txt ==`n" + $(if (Test-Path -LiteralPath $rep) { [IO.File]::ReadAllText($rep) } else { '' }) +
+           "`n== setup log ==`n" + [IO.File]::ReadAllText($LogFile)
+    $txt = $txt -replace [regex]::Escape($env:USERPROFILE), '~'
+    foreach ($w in @($env:USERNAME, $env:COMPUTERNAME)) { if ($w -and $w.Length -ge 4) { $txt = $txt -replace [regex]::Escape($w), '<name>' } }
+    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+    $url = "$LogBox/upload?platform=windows&version=$SetupVersion&result=failed"
+    $r = Invoke-WebRequest -Uri $url -Method Post -UseBasicParsing -TimeoutSec 60 -Headers (LogBox-Headers) `
+         -ContentType 'text/plain; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($txt))
+    $id = ([string]$r.Content).Trim()
+    if ($id) { Write-Host '  Sent. ' -ForegroundColor Green -NoNewline; Say "Your code is $id. Tell your teacher this code."; return }
+  } catch { Log "upload failed: $($_.Exception.Message)" }
+  Say "  Could not send it (no internet?). Show your teacher this file instead: $(Report-File)"
+}
+function Send-SuccessCount {
+  # Owner request 2026-11-12: count successful installs, nothing else. The message carries only the platform and the
+  # pack version: no name, no computer details, no log. Sent once per account (a marker file remembers it).
+  $mark = Join-Path $StateDir 'install-counted'
+  if ($env:MS_NO_COUNT -or (Test-Path -LiteralPath $mark)) { return }   # MS_NO_COUNT=1 switches it off (README, Privacy)
+  try {
+    $null = Invoke-WebRequest -Uri "$LogBox/count?platform=windows&version=$SetupVersion" -Method Post -UseBasicParsing -TimeoutSec 20 `
+            -Headers (LogBox-Headers) -Body ''
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $mark) | Out-Null
+    Set-Content -LiteralPath $mark -Value (Get-Date -Format 'yyyy-MM-dd') -Encoding ASCII
+    Log 'success count sent (platform and version only)'
+  } catch { Log "success count not sent: $($_.Exception.Message)" }   # never matters to the student
+}
+function Offer-Help {
+  # Every failing run ends here, however it stopped: a check that failed, a stop in step 1, or an unexpected error.
+  if ($script:Failed -eq 0 -or $DryRun -or $Yes -or $FromUpdate) { return }
+  Say ''
+  $a = Read-Host '  Send this setup report to your teacher, so they can see what went wrong? It contains no passwords and no course work; your user name is removed. [Y/n]'
+  if ($a -notmatch '^(n|no)$') { Send-Log }
+  $a = Read-Host 'Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n]'
+  if ($a -notmatch '^(n|no)$') { Start-Doctor }
 }
 
 # ---------- main ---------------------------------------------------------------
@@ -771,43 +1047,46 @@ $updaterHere = Join-Path $PackDir 'update\update.ps1'
 if (-not (Test-Path -LiteralPath $updaterHere)) { $updaterHere = Join-Path $ScriptDir 'update\update.ps1' }
 if ($Update)   { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $updaterHere; exit $LASTEXITCODE }
 if ($Rollback) { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $updaterHere -Rollback; exit $LASTEXITCODE }
-if ($Check) { Run-Check; Summary }
-elseif ($Keys) { Step 'Optional: free AI keys'; Py @('keys') | Out-Null; Run-Check; Summary }
-else {
-  if (-not (Precheck)) { Summary; exit 1 }
-  Install-Tools; Install-OpenCode; Install-RPackages; Fix-Pandoc; Setup-CourseFolder
-  if (-not $FromUpdate) { Install-Pack }
-  if (-not $DryRun -and -not $FromUpdate) {
-    if (-not $Yes) {
-      $a = Read-Host 'Connect a free OpenRouter account as a backup for the AI (about 2 minutes, opens your browser)? You can also do it later with install-windows.cmd -Keys [y/N]'
-      if ($a -match '^(y|yes)$') { Py @('keys') | Out-Null }
-    }
-    Run-Check
+if ($Uninstall) {
+  # The uninstaller removes this pack folder, and Windows cannot delete a folder that a program is working in or
+  # running from (tested 2026-11-12: "it is in use"). So a copy runs from the temp folder, working there.
+  $unCopy = Join-Path $env:TEMP 'metascience-uninstall.ps1'
+  Copy-Item -LiteralPath (Join-Path $ScriptDir 'lib\uninstall-windows.ps1') -Destination $unCopy -Force
+  Set-Location -LiteralPath $env:TEMP; [Environment]::CurrentDirectory = $env:TEMP
+  $un = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $unCopy)
+  if ($Components) { $un += @('-Parts', $Components) }; if ($Yes) { $un += '-Yes' }; if ($DryRun) { $un += '-DryRun' }
+  if ($env:MS_FROM_CMD) {   # started by install-windows.cmd, which runs from the pack folder: the pack goes once it has ended
+    try { $cmdPid = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop).ParentProcessId; if ($cmdPid) { $un += @('-WaitPid', "$cmdPid") } } catch { Log "parent process unknown: $_" }
   }
-  Summary
+  & powershell.exe @un; exit $LASTEXITCODE
 }
-function Send-Log {
-  # With the student's yes: send the log to the teacher's private log box (write-only address, kept 180 days).
-  try {
-    $rep = Join-Path $CourseDir 'setup-report.txt'
-    $txt = "== setup-report.txt ==`n" + $(if (Test-Path -LiteralPath $rep) { [IO.File]::ReadAllText($rep) } else { '' }) +
-           "`n== setup log ==`n" + [IO.File]::ReadAllText($LogFile)
-    $txt = $txt -replace [regex]::Escape($env:USERPROFILE), '~'
-    foreach ($w in @($env:USERNAME, $env:COMPUTERNAME)) { if ($w -and $w.Length -ge 4) { $txt = $txt -replace [regex]::Escape($w), '<name>' } }
-    [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
-    $url = "https://freeaisetup-logs.giladfel.workers.dev/upload?platform=windows&version=$SetupVersion&result=failed"
-    $r = Invoke-WebRequest -Uri $url -Method Post -UseBasicParsing -TimeoutSec 60 -Headers @{ 'x-freeaisetup' = '1' } `
-         -ContentType 'text/plain; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($txt))
-    $id = ([string]$r.Content).Trim()
-    if ($id) { Write-Host '  Sent. ' -ForegroundColor Green -NoNewline; Say "Your code is $id. Tell your teacher this code."; return }
-  } catch { Log "upload failed: $($_.Exception.Message)" }
-  Say "  Could not send it (no internet?). Show your teacher this file instead: $(Join-Path $CourseDir 'setup-report.txt')"
+try {
+  if ($env:MS_TEST_CRASH -eq 'main') { throw 'test crash (MS_TEST_CRASH)' }   # test hook: proves a crash still reaches the offer
+  if ($Check) { Load-Parts; Run-Check; Summary }
+  elseif ($Keys) { Load-Parts; Step 'Optional: free AI keys'; Py @('keys') | Out-Null; Run-Check; Summary }
+  else {
+    # A stop in step 1 (old Windows, full disk, no internet, no winget) skips the installs but still ends with the
+    # summary and the offer to send the report (it used to exit here, so the teacher never heard of it).
+    Choose-Parts
+    if (Precheck) {
+      Install-Tools; Install-OpenCode; Install-RPackages; Fix-Pandoc; Setup-CourseFolder
+      if (-not $FromUpdate) { Install-Pack }
+      if (-not $DryRun -and -not $FromUpdate) {
+        if (-not $Yes) {
+          $a = Read-Host 'Connect a free OpenRouter account as a backup for the AI (about 2 minutes, opens your browser)? You can also do it later with install-windows.cmd -Keys [y/N]'
+          if ($a -match '^(y|yes)$') { Py @('keys') | Out-Null }
+        }
+        Run-Check
+        if ($script:Failed -eq 0) { Send-SuccessCount }
+      }
+    }
+    Summary
+  }
+} catch {
+  # an unexpected error: record it like a failed step, so the student is offered the report and the helper
+  Fail 'Setup stopped' "an unexpected error: $($_.Exception.Message)"
+  Log ($_ | Out-String); Log $_.ScriptStackTrace
+  try { Summary } catch {}
 }
-if ($script:Failed -gt 0 -and -not $DryRun -and -not $Yes -and -not $FromUpdate) {
-  Say ''
-  $a = Read-Host '  Send this setup report to your teacher, so they can see what went wrong? It contains no passwords and no course work; your user name is removed. [Y/n]'
-  if ($a -notmatch '^(n|no)$') { Send-Log }
-  $a = Read-Host 'Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n]'
-  if ($a -notmatch '^(n|no)$') { Start-Doctor }
-}
+Offer-Help
 if ($script:Failed -eq 0) { exit 0 } else { exit 1 }

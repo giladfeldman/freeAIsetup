@@ -11,6 +11,9 @@
 #          bash setup-mac.sh --keys     add optional free AI keys (OpenRouter, Groq, ...)
 #          bash setup-mac.sh --fix      start the AI setup helper on the last setup log
 #          bash setup-mac.sh --dry-run  show what would be done, change nothing
+#          bash setup-mac.sh --choose   ask again which parts to install
+#          bash setup-mac.sh --components=r,rstudio,quarto,python,node   (or all / none) the parts, without asking
+#          bash setup-mac.sh --uninstall   remove some or all of what this setup installed
 #          bash setup-mac.sh --help
 #  Written for bash 3.2 (the macOS default): no associative arrays, no ${x,,}.
 # =============================================================================
@@ -26,10 +29,12 @@ SETUP_VERSION="$(head -1 "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '\r ')"; SETU
 if [ "$(uname -s)" = Darwin ]; then PACK_DIR="$HOME/Library/Application Support/MetaScience/pack"
 else PACK_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/metascience/pack"; fi   # installed copy of this pack (kept up to date)
 PACK_ITEMS="install-windows.cmd setup-windows.ps1 setup-mac.sh VERSION lib course-kit doctor guide update"
+# What this setup remembers for this account: the chosen parts and a record of what it installed (tests: MS_STATE_DIR)
+STATE_DIR="${MS_STATE_DIR:-$(dirname "$PACK_DIR")}"
 LOG_FILE="${TMPDIR:-/tmp}/metascience-setup-$(date +%Y%m%d-%H%M%S).log"
 R_PACKAGES="rmarkdown knitr readr dplyr tidyr ggplot2 metafor statcheck irr here mcptools"
 
-DRY_RUN=0; MODE="full"; ASSUME_YES=0; SKIP_AI=0; SKIP_GUI=0; NO_AUTO_UPDATE=0; FROM_UPDATE=0
+DRY_RUN=0; MODE="full"; ASSUME_YES=0; SKIP_AI=0; SKIP_GUI=0; NO_AUTO_UPDATE=0; FROM_UPDATE=0; CHOOSE=0; COMPONENTS=""
 for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=1 ;;
@@ -43,7 +48,10 @@ for arg in "$@"; do
     --rollback) MODE="rollback" ;;
     --no-auto-update) NO_AUTO_UPDATE=1 ;;
     --from-update) FROM_UPDATE=1; ASSUME_YES=1 ;;   # internal: run by the updater after new files arrived
-    --help|-h) sed -n '2,16p' "$0"; exit 0 ;;
+    --choose)  CHOOSE=1 ;;
+    --components=*) COMPONENTS="${arg#*=}" ;;
+    --uninstall) MODE="uninstall" ;;
+    --help|-h) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "Unknown option: $arg (try --help)"; exit 2 ;;
   esac
 done
@@ -57,6 +65,15 @@ step()  { say ""; say "${B}== $* ==${N}"; }
 ok()    { say "  ${G}OK${N}    $1${2:+  ($2)}"; RESULTS="${RESULTS}OK|$1|${2:-}"$'\n'; }
 warn()  { say "  ${Y}WARN${N}  $1${2:+  ($2)}"; RESULTS="${RESULTS}WARN|$1|${2:-}"$'\n'; }
 fail()  { say "  ${R}FAIL${N}  $1${2:+  ($2)}"; RESULTS="${RESULTS}FAIL|$1|${2:-}"$'\n'; FAILED=$((FAILED+1)); }
+skip()  { say "  SKIP  $1  (${2:-not chosen})"; }
+# What this setup itself installed, one line each: part <TAB> kind <TAB> target. The uninstall (lib/uninstall-mac.sh)
+# removes only what is listed here, so software that was on this computer before the setup is never touched.
+record_install() {
+  [ "$DRY_RUN" = 1 ] && return 0; [ -n "${3:-}" ] || return 0
+  local line f; line="$(printf '%s\t%s\t%s' "$1" "$2" "$3")"; f="$STATE_DIR/installed.tsv"
+  mkdir -p "$STATE_DIR" 2>/dev/null || return 0
+  grep -qxF "$line" "$f" 2>/dev/null || printf '%s\n' "$line" >> "$f"
+}
 run()   { # run a command, log its output; in dry-run only print it
   if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] $*"; return 0; fi
   echo "\$ $*" >> "$LOG_FILE"; "$@" >> "$LOG_FILE" 2>&1
@@ -79,7 +96,7 @@ add_path() { # add a directory to PATH now and in the shell start-up files (once
   case ":$PATH:" in *":$1:"*) ;; *) export PATH="$1:$PATH" ;; esac
   [ "$DRY_RUN" = 1 ] && return 0
   local f; for f in "$HOME/.zprofile" "$HOME/.bash_profile"; do
-    touch "$f"; grep -qF "$1" "$f" 2>/dev/null || printf '\nexport PATH="%s:$PATH"  # added by MetaScience setup\n' "$1" >> "$f"
+    touch "$f"; grep -qF "$1" "$f" 2>/dev/null || { printf '\nexport PATH="%s:$PATH"  # added by MetaScience setup\n' "$1" >> "$f"; record_install core path "$1"; }
   done
 }
 
@@ -179,18 +196,110 @@ setup_network() {
 }
 
 # ---------- 1. pre-checks ----------------------------------------------------
+# ---------- parts the student chooses (owner request 2026-11-12) ---------------------
+# The AI assistant (OpenCode), Git and uv (which runs the setup's own Python helper) are always installed.
+ALL_PARTS="r rstudio quarto python node"
+PARTS="$ALL_PARTS"
+has_part() { case " $PARTS " in *" $1 "*) return 0 ;; esac; return 1; }
+part_name() {
+  case "$1" in r) echo "R and the course R packages" ;; rstudio) echo "RStudio (an editor for R; needs R)" ;;
+    quarto) echo "Quarto (turns an analysis into a report)" ;; python) echo "Python course packages" ;;
+    node) echo "Node.js (a few optional AI tools need it)" ;; esac
+}
+r_current() { # R 4.5 or newer is here (an older R gets a current one next to it)
+  local rv; have R || return 1; rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
+  [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]
+}
+# GB a part still needs here (0 = already on this computer). Sizes measured on one Windows 11 computer on 2026-11-12;
+# not yet measured on a Mac, where they are assumed to be similar.
+part_gb() {
+  case "$1" in
+    r) if r_current; then echo 0.2; else echo 0.4; fi ;;
+    rstudio) if [ -d /Applications/RStudio.app ] || [ -d "$HOME/Applications/RStudio.app" ]; then echo 0; else echo 1.9; fi ;;
+    quarto) if have quarto; then echo 0; else echo 0.5; fi ;;
+    python) if [ -d "$COURSE_DIR/.venv" ]; then echo 0; else echo 0.5; fi ;;
+    node) if have node; then echo 0; else echo 0.2; fi ;;
+  esac
+}
+estimate_gb() { # disk space this run will use: only the chosen parts that are not on this computer yet
+  local gb=0 p
+  have opencode || gb="$gb+0.6"
+  have uv || gb="$gb+0.2"
+  if [ "$PLATFORM" = mac ]; then
+    # Apple's command line tools (they bring git) and Homebrew: rough sizes, not measured here
+    xcode-select -p >/dev/null 2>&1 || gb="$gb+2.0"
+    [ "$NO_BREW" = 1 ] || have brew || [ -x /opt/homebrew/bin/brew ] || [ -x /usr/local/bin/brew ] || gb="$gb+0.5"
+  else have git || gb="$gb+0.4"; fi
+  for p in $PARTS; do gb="$gb+$(part_gb "$p")"; done
+  awk "BEGIN { printf \"%.1f\", $gb }"
+}
+PARSED=""; BAD_PARTS=""
+parse_parts() { # $1 = text -> PARSED (valid parts, in order) and BAD_PARTS (unknown words)
+  local w want="" p; BAD_PARTS=""
+  for w in $(printf '%s' "$1" | tr ',;' '  ' | tr 'A-Z' 'a-z'); do
+    case "$w" in all) want="$want $ALL_PARTS" ;; none) ;; r|rstudio|quarto|python|node) want="$want $w" ;; *) BAD_PARTS="$BAD_PARTS $w" ;; esac
+  done
+  case " $want " in *" rstudio "*) case " $want " in *" r "*) ;; *) want="$want r" ;; esac ;; esac   # RStudio needs R
+  PARSED=""; for p in $ALL_PARTS; do case " $want " in *" $p "*) PARSED="$PARSED $p" ;; esac; done
+  PARSED="${PARSED# }"; BAD_PARTS="${BAD_PARTS# }"
+}
+save_parts() { [ "$DRY_RUN" = 1 ] && return 0; mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "${PARTS:-none}" > "$STATE_DIR/parts.txt"; }
+load_parts() { # the parts chosen last time; everything when nothing was chosen (older setups installed all)
+  if [ -f "$STATE_DIR/parts.txt" ]; then parse_parts "$(cat "$STATE_DIR/parts.txt")"; PARTS="$PARSED"; else PARTS="$ALL_PARTS"; fi
+  [ "$SKIP_GUI" = 1 ] && PARTS="$(printf '%s' " $PARTS " | sed 's/ rstudio / /; s/^ //; s/ $//')"
+  return 0
+}
+choose_parts() {
+  if [ -n "$COMPONENTS" ]; then
+    parse_parts "$COMPONENTS"
+    [ -n "$BAD_PARTS" ] && { say "Unknown part: $BAD_PARTS. Use any of: r, rstudio, quarto, python, node, or all, or none."; FINISHED=1; exit 2; }
+    PARTS="$PARSED"; save_parts
+  elif [ -f "$STATE_DIR/parts.txt" ] && [ "$CHOOSE" = 0 ]; then load_parts
+  elif [ "$ASSUME_YES" = 1 ] || [ ! -t 0 ]; then PARTS="$ALL_PARTS"
+  else
+    say ""; say "What should the setup install? The AI assistant (OpenCode), Git and uv (for Python) are always installed."
+    local i=0 p g a n try picked
+    for p in $ALL_PARTS; do i=$((i+1)); g="$(part_gb "$p")"
+      if [ "$g" = 0 ]; then g="already on this computer"; else g="about $g GB"; fi
+      say "$(printf '  %d. %-44s %s' "$i" "$(part_name "$p")" "$g")"
+    done
+    for try in 1 2 3; do
+      printf 'Press Enter to install all of them (recommended), or type the numbers you want, for example 1 3 (0 = none): '
+      read -r a || a=""; a="$(printf '%s' "$a" | tr ',;' '  ')"
+      if [ -z "${a// /}" ]; then PARTS="$ALL_PARTS"; break; fi
+      case "$a" in *[!0-5\ ]*) say "  Please type only numbers from the list (0 to 5)."; continue ;; esac
+      picked=""; for n in $a; do [ "$n" = 0 ] || picked="$picked $(echo $ALL_PARTS | cut -d' ' -f"$n")"; done
+      parse_parts "$picked"; PARTS="$PARSED"
+      case " $picked " in *" rstudio "*) case " $picked " in *" r "*) ;; *) say "  RStudio needs R, so R is installed too." ;; esac ;; esac
+      break
+    done
+    save_parts
+  fi
+  [ "$SKIP_GUI" = 1 ] && PARTS="$(printf '%s' " $PARTS " | sed 's/ rstudio / /; s/^ //; s/ $//')"
+  local names="" p; for p in $PARTS; do names="$names, $(part_name "$p")"; done
+  say "  Installing: the AI assistant$names  (to change this: bash setup-mac.sh --choose)"
+}
+
 precheck() {
   step "1/9  Checking this computer"
+  # test hook: a stop in step 1 must still reach the offer to send the report (tests/exit-paths.sh)
+  [ "${MS_TEST_FAIL_AT:-}" = precheck ] && { fail "Test stop" "MS_TEST_FAIL_AT=precheck"; return 1; }
   ok "System" "$PLATFORM $(sw_vers -productVersion 2>/dev/null || uname -r), $ARCH"
   if [ "$PLATFORM" = mac ]; then
     local major; major="$(sw_vers -productVersion | cut -d. -f1)"
     if [ "$major" -lt 12 ]; then fail "macOS version" "macOS 12 or newer is needed; you have $(sw_vers -productVersion)"; return 1; fi
   fi
-  local free_gb; free_gb="$(df -Pk "$HOME" | awk 'NR==2 {print int($4/1048576)}')"
-  # The course tools need about 4 GB; 8 GB leaves room for course work. A GitHub Codespace shows only ~7 GB free
-  # while it is still being built (20 GB a few minutes later; 2026-11-09), so there 4 GB is enough.
-  local need=8; [ -n "${CODESPACES:-}" ] && need=4
-  if [ "${free_gb:-0}" -lt "$need" ]; then fail "Free disk space" "${free_gb} GB free, $need GB needed"; return 1; else ok "Free disk space" "${free_gb} GB"; fi
+  local free_gb need_gb min; free_gb="$(df -Pk "$HOME" | awk 'NR==2 {print int($4/1048576)}')"
+  # The chosen parts that are not here yet, plus 2 GB for the downloads while installing; 3 GB more leaves room for
+  # course work (before 2026-11-12 a flat 8 GB). A GitHub Codespace shows only ~7 GB free while it is still being
+  # built (20 GB a few minutes later; 2026-11-09), so there 4 GB is enough.
+  need_gb="$(estimate_gb)"; min="$(awk "BEGIN { m = $need_gb + 2; printf \"%d\", (m == int(m)) ? m : int(m) + 1 }")"
+  [ -n "${CODESPACES:-}" ] && min=4
+  if [ "${free_gb:-0}" -lt "$min" ]; then
+    fail "Free disk space" "${free_gb} GB free; this setup needs about $need_gb GB, plus 2 GB while it installs. Free up space (or install fewer parts: bash setup-mac.sh --choose), then run it again"; return 1
+  elif [ -z "${CODESPACES:-}" ] && [ "${free_gb:-0}" -lt $((min + 3)) ]; then warn "Free disk space" "${free_gb} GB free; the setup will use about $need_gb GB, which leaves little room for your course work"
+  elif [ "$need_gb" = 0.0 ]; then ok "Free disk space" "${free_gb} GB free; what you chose is already on this computer"
+  else ok "Free disk space" "${free_gb} GB free; this setup will use about $need_gb GB"; fi
   setup_proxy
   setup_network || return 1
   if [ -n "$SUDO" ] && [ "$DRY_RUN" = 0 ]; then
@@ -217,7 +326,7 @@ pkg_manager() {
     if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Homebrew"; return 0; fi
     NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" >> "$LOG_FILE" 2>&1
     for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$p" ] && eval "$("$p" shellenv)" && add_path "$(dirname "$p")"; done
-    have brew && ok "Homebrew" "installed" || { fail "Homebrew" "installation failed, see $LOG_FILE"; return 1; }
+    have brew && { record_install core homebrew "$(brew --prefix)"; ok "Homebrew" "installed"; } || { fail "Homebrew" "installation failed, see $LOG_FILE"; return 1; }
   else
     retry $SUDO apt-get update -y && ok "apt" "package lists updated" || { fail "apt" "apt-get update failed"; return 1; }
   fi
@@ -240,12 +349,13 @@ install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the ma
     local flag=/tmp/.com.apple.dt.CommandLineTools.installondemand.in-progress label
     touch "$flag"
     label="$(softwareupdate -l 2>>"$LOG_FILE" | sed -n 's/^[[:space:]]*\* Label: \(Command Line Tools.*\)$/\1/p' | tail -1)"
-    if [ -n "$label" ] && run $SUDO softwareupdate -i "$label" && xcode-select -p >/dev/null 2>&1; then ok "git" "installed (Apple command line tools)"
+    if [ -n "$label" ] && run $SUDO softwareupdate -i "$label" && xcode-select -p >/dev/null 2>&1; then record_install core clt "$(xcode-select -p)"; ok "git" "installed (Apple command line tools)"
     else fail "git" "Apple command line tools did not install: run  xcode-select --install  then run the setup again"; fi
     rm -f "$flag"
   fi
   # Node.js: the official current 22.x build, unpacked into your own folder (no password needed)
-  if have node; then ok "node" "already installed"
+  if ! has_part node; then skip "node"
+  elif have node; then ok "node" "already installed"
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Node.js"
   else
     local nb="https://nodejs.org/dist/latest-v22.x" sums nf
@@ -255,44 +365,55 @@ install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the ma
        && [ "$(shasum -a 256 "$t/$nf" | cut -d' ' -f1)" = "$(printf '%s\n' "$sums" | awk -v f="$nf" '$2 == f {print $1}')" ]; then
       mkdir -p "$HOME/.local/share" && tar -xzf "$t/$nf" -C "$HOME/.local/share" \
         && ln -sfn "$HOME/.local/share/${nf%.tar.gz}" "$HOME/.local/share/node" && add_path "$HOME/.local/share/node/bin"
-      have node && ok "node" "installed ($(node --version))" || fail "node" "could not unpack $nf"
+      have node && { record_install node dir "$HOME/.local/share/${nf%.tar.gz}"; record_install node file "$HOME/.local/share/node"; ok "node" "installed ($(node --version))"; } || fail "node" "could not unpack $nf"
     else fail "node" "download from nodejs.org failed or did not match its checksum"; fi
   fi
   if have uv; then ok "uv" "already installed"
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install uv"
   else curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >> "$LOG_FILE" 2>&1; add_path "$HOME/.local/bin"
-    if have uv; then ok "uv" "installed"; elif uv_from_pypi; then ok "uv" "installed (direct download)"; else fail "uv" "installer failed"; fi; fi
+    if have uv; then record_uv; ok "uv" "installed"; elif uv_from_pypi; then record_uv; ok "uv" "installed (direct download)"; else fail "uv" "installer failed"; fi; fi
   # R: the newest Intel build on CRAN (same "older than 4.5" rule as with Homebrew; the old R stays)
   local rv=""; have R && rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
-  if [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
+  if ! has_part r; then skip "R"
+  elif [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install R"
   else
     [ -n "$rv" ] && say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays)."
     local rb="$CRAN/bin/macosx/big-sur-x86_64/base" rver
     rver="$(curl -fsSL -m 60 "$rb/" 2>>"$LOG_FILE" | grep -oE 'R-[0-9]+\.[0-9]+\.[0-9]+-x86_64\.pkg' | sed 's/^R-//; s/-x86_64\.pkg$//' | sort -u -t. -k1,1n -k2,2n -k3,3n | tail -1)"
     if [ -n "$rver" ] && mac_pkg "$rb/R-$rver-x86_64.pkg"; then add_path /Library/Frameworks/R.framework/Resources/bin
+      # an old R shares R.framework with the new one: only an R the setup brought alone may be removed later
+      [ -z "$rv" ] && { record_install r pkgdir /Library/Frameworks/R.framework; record_install r pkgdir /Applications/R.app; }
       ok "R" "installed (R $rver$([ -n "$rv" ] && echo "; old R $rv kept"))"
     else fail "R" "download or install of R from CRAN failed"; fi
   fi
-  if have quarto; then ok "Quarto" "already installed"
+  if ! has_part quarto; then skip "Quarto"
+  elif have quarto; then ok "Quarto" "already installed"
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Quarto"
   elif mac_pkg "https://github.com/quarto-dev/quarto-cli/releases/download/v$QUARTO_VERSION/quarto-$QUARTO_VERSION-macos.pkg"; then
-    add_path /Applications/quarto/bin; ok "Quarto" "installed"
+    record_install quarto pkgdir /Applications/quarto; add_path /Applications/quarto/bin; ok "Quarto" "installed"
   else fail "Quarto" "download or install failed"; fi
-  if [ "$SKIP_GUI" = 0 ]; then
+  if [ "$SKIP_GUI" = 0 ] && ! has_part rstudio; then skip "RStudio"
+  elif [ "$SKIP_GUI" = 0 ]; then
     if [ -d "/Applications/RStudio.app" ] || [ -d "$HOME/Applications/RStudio.app" ]; then ok "RStudio" "already installed"
     elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install RStudio"
     elif retry curl -fL -m 900 -o "$t/RStudio.dmg" "https://rstudio.org/download/latest/stable/desktop/mac/RStudio-latest.dmg" \
          && run hdiutil attach -nobrowse -readonly -mountpoint "$t/mnt" "$t/RStudio.dmg"; then
       run $SUDO ditto "$t/mnt/RStudio.app" /Applications/RStudio.app
       run hdiutil detach "$t/mnt" -quiet
-      [ -d /Applications/RStudio.app ] && ok "RStudio" "installed" || fail "RStudio" "could not copy RStudio into Applications"
+      [ -d /Applications/RStudio.app ] && { record_install rstudio pkgdir /Applications/RStudio.app; ok "RStudio" "installed"; } || fail "RStudio" "could not copy RStudio into Applications"
     else fail "RStudio" "download from Posit failed"; fi
   fi
   rm -rf "$t"
 }
+record_uv() { # uv installed by this setup: its files, and the Python and downloads it keeps, may go with the uninstall
+  local f; for f in uv uvx; do [ -e "$HOME/.local/bin/$f" ] && record_install core file "$HOME/.local/bin/$f"; done
+  record_install core uvdata "Python and downloads kept by uv"
+}
 install_tools() {
   step "3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio"
+  [ "${MS_TEST_CRASH:-}" = tools ] && { echo "test crash in step 3 (MS_TEST_CRASH)" >> "$LOG_FILE"; exit 3; }   # test hook: a crash mid-run
+  [ "${MS_TEST_CRASH:-}" = unbound ] && echo "$MS_TEST_UNSET_VARIABLE"   # test hook: a bash error (set -u) mid-run
   say "  Rule: this setup never upgrades or removes software that is already on this computer."
   if [ "$PLATFORM" = mac ]; then
     # tools another account installed for the whole Mac: make them usable from this account
@@ -300,42 +421,54 @@ install_tools() {
       [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) { [ -x "$d/Rscript" ] || [ -x "$d/quarto" ] || [ -x "$d/git" ]; } && add_path "$d" ;; esac
     done
     if [ "$NO_BREW" = 1 ]; then install_tools_direct; add_path "$HOME/.local/bin"; return 0; fi
-    local f; for f in git node uv; do
-      if have "$f"; then ok "$f" "already installed"; elif retry brew install "$f"; then ok "$f" "installed"
-      elif [ "$f" = uv ] && uv_from_pypi; then ok "uv" "installed (direct download)"; else fail "$f" "brew install $f failed"; fi
+    local f fp; for f in git node uv; do
+      fp=core; [ "$f" = node ] && fp=node
+      if [ "$f" = node ] && ! has_part node; then skip "node"
+      elif have "$f"; then ok "$f" "already installed"; elif retry brew install "$f"; then record_install "$fp" brew "$f"; [ "$f" = uv ] && record_uv; ok "$f" "installed"
+      elif [ "$f" = uv ] && uv_from_pypi; then record_uv; ok "uv" "installed (direct download)"; else fail "$f" "brew install $f failed"; fi
     done
     # R older than 4.5: the course packages no longer come ready-built for it, so all of them fail (class 2026-11-09:
     # a MacBook with R 4.0.0 from 2020). The R installer keeps the old version in R.framework/Versions; the new one
     # becomes the default. This is the one exception to "never upgrade": nothing is removed.
     local rv=""; have R && rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
-    if [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
+    if ! has_part r; then skip "R"
+    elif [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
     else
       [ -n "$rv" ] && say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays; macOS may ask for your password)."
       local rcmd="install"; [ -n "$rv" ] && brew list --cask r >/dev/null 2>&1 && rcmd="upgrade"   # an old R that brew itself installed
-      retry brew $rcmd --cask r && ok "R" "installed$([ -n "$rv" ] && echo " (current R; old R $rv kept)")" || fail "R" "brew install --cask r failed"
+      # recorded only when the setup brought R alone (an old R shares R.framework with the new one)
+      retry brew $rcmd --cask r && { [ -z "$rv" ] && record_install r cask r; ok "R" "installed$([ -n "$rv" ] && echo " (current R; old R $rv kept)")"; } || fail "R" "brew install --cask r failed"
     fi
-    have quarto  && ok "Quarto" "already installed"  || { retry brew install --cask quarto  && ok "Quarto" "installed"  || fail "Quarto" "brew install --cask quarto failed"; }
+    if ! has_part quarto; then skip "Quarto"
+    elif have quarto; then ok "Quarto" "already installed"
+    else retry brew install --cask quarto && { record_install quarto cask quarto; ok "Quarto" "installed"; } || fail "Quarto" "brew install --cask quarto failed"; fi
     if [ "$SKIP_GUI" = 0 ]; then
-      if [ -d "/Applications/RStudio.app" ]; then ok "RStudio" "already installed"
-      else retry brew install --cask rstudio && ok "RStudio" "installed" || fail "RStudio" "brew install --cask rstudio failed"; fi
+      if ! has_part rstudio; then skip "RStudio"
+      elif [ -d "/Applications/RStudio.app" ]; then ok "RStudio" "already installed"
+      else retry brew install --cask rstudio && { record_install rstudio cask rstudio; ok "RStudio" "installed"; } || fail "RStudio" "brew install --cask rstudio failed"; fi
     fi
   else
     # only what is missing (a course Codespace already brings current Node.js and R; never replace them)
-    local want="curl ca-certificates unzip python3"
-    have git || want="$want git"; have node || want="$want nodejs npm"; have R || want="$want r-base r-base-dev"
+    local want="curl ca-certificates unzip python3" added="" a
+    have git || added="$added git"
+    has_part node && ! have node && added="$added nodejs npm"
+    has_part r && ! have R && added="$added r-base r-base-dev"
+    want="$want$added"
     retry $SUDO apt-get install -y --no-install-recommends $want \
+      && { for a in $added; do case "$a" in git) record_install core apt git ;; nodejs|npm) record_install node apt "$a" ;; *) record_install r apt "$a" ;; esac; done; true; } \
       && ok "Git, Node.js, R" "ready (git $(git --version 2>/dev/null | cut -d' ' -f3), node $(node --version 2>/dev/null), R $(R --version 2>/dev/null | head -1 | cut -d' ' -f3))" \
       || fail "apt packages" "see $LOG_FILE"
     if have uv; then ok "uv" "already installed"
     elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install uv"
     else curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >> "$LOG_FILE" 2>&1; add_path "$HOME/.local/bin"
-      if have uv; then ok "uv" "installed"; elif uv_from_pypi; then ok "uv" "installed (direct download)"; else fail "uv" "installer failed"; fi; fi
-    if have quarto; then ok "Quarto" "already installed"
+      if have uv; then record_uv; ok "uv" "installed"; elif uv_from_pypi; then record_uv; ok "uv" "installed (direct download)"; else fail "uv" "installer failed"; fi; fi
+    if ! has_part quarto; then skip "Quarto"
+    elif have quarto; then ok "Quarto" "already installed"
     elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Quarto"
     else
       local qv="$QUARTO_VERSION" qa; [ "$ARCH_ID" = arm64 ] && qa=arm64 || qa=amd64
       retry curl -fsSL -o /tmp/quarto.deb "https://github.com/quarto-dev/quarto-cli/releases/download/v$qv/quarto-$qv-linux-$qa.deb" \
-        && run $SUDO apt-get install -y /tmp/quarto.deb && ok "Quarto" "installed" || fail "Quarto" "download or install failed"
+        && run $SUDO apt-get install -y /tmp/quarto.deb && { record_install quarto apt quarto; ok "Quarto" "installed"; } || fail "Quarto" "download or install failed"
     fi
   fi
   add_path "$HOME/.local/bin"
@@ -346,6 +479,12 @@ install_opencode() {
   step "4/9  OpenCode $OPENCODE_VERSION (AI assistant)"
   local base="https://github.com/anomalyco/opencode/releases/download/v$OPENCODE_VERSION" bindir="$HOME/.local/bin" tmp
   tmp="$(mktemp -d)"
+  if ! have opencode && [ ! -e "$bindir/opencode" ] && [ "$DRY_RUN" = 0 ]; then
+    # a first OpenCode on this account: the uninstall may remove it and the settings and chats it keeps
+    record_install core file "$bindir/opencode"
+    local d; for d in .local/share/opencode .config/opencode .cache/opencode .local/state/opencode; do
+      [ -e "$HOME/$d" ] || record_install core dir "$HOME/$d"; done
+  fi
   if have opencode && [ "$(opencode --version 2>/dev/null)" = "$OPENCODE_VERSION" ]; then ok "OpenCode command line" "version $OPENCODE_VERSION already installed"
   else
     local asset
@@ -384,8 +523,8 @@ install_opencode() {
       if retry curl -fsSL -o "$tmp/$app" "$base/$app"; then
         run ditto -x -k "$tmp/$app" "$tmp/app"
         local found; found="$(find "$tmp/app" -maxdepth 2 -name '*.app' | head -1)"
-        if [ -n "$found" ] && run cp -R "$found" /Applications/; then ok "OpenCode desktop app" "in Applications"
-        elif [ -n "$found" ] && run mkdir -p "$HOME/Applications" && run cp -R "$found" "$HOME/Applications/"; then ok "OpenCode desktop app" "in your personal Applications folder"
+        if [ -n "$found" ] && run cp -R "$found" /Applications/; then record_install core dir "/Applications/$(basename "$found")"; ok "OpenCode desktop app" "in Applications"
+        elif [ -n "$found" ] && run mkdir -p "$HOME/Applications" && run cp -R "$found" "$HOME/Applications/"; then record_install core dir "$HOME/Applications/$(basename "$found")"; ok "OpenCode desktop app" "in your personal Applications folder"
         else [ "$DRY_RUN" = 1 ] || fail "OpenCode desktop app" "could not unpack"; fi
       else fail "OpenCode desktop app" "download failed"; fi
     fi
@@ -396,16 +535,22 @@ install_opencode() {
 # ---------- 5. R packages ------------------------------------------------------
 install_r_packages() {
   step "5/9  R packages for the course"
+  has_part r || { skip "R packages"; return 0; }
   have Rscript || { fail "R packages" "R is not installed"; return 1; }
   local repo="$CRAN"
   if [ "$PLATFORM" = linux ]; then repo="https://packagemanager.posit.co/cran/__linux__/$(. /etc/os-release; echo "$VERSION_CODENAME")/latest"; fi
   local lib; lib="$(Rscript -e 'cat(Sys.getenv("R_LIBS_USER"))' 2>/dev/null)"
   run mkdir -p "$lib"
+  local before pk; before=" $(Rscript -e "cat(rownames(installed.packages(lib.loc='$lib')))" 2>/dev/null) "
   # On Linux, Posit's server sends ready-made (binary) packages only if R identifies itself this way
   local ua="options(HTTPUserAgent = sprintf('R/%s R (%s)', getRversion(), paste(getRversion(), R.version[['platform']], R.version[['arch']], R.version[['os']])));"
-  run Rscript -e "$ua pk <- strsplit('$R_PACKAGES',' ')[[1]]; miss <- pk[!pk %in% rownames(installed.packages())]; if (length(miss)) install.packages(miss, lib='$lib', repos='$repo', Ncpus=2)"
-  local missing; missing="$(Rscript -e "pk <- strsplit('$R_PACKAGES',' ')[[1]]; cat(pk[!pk %in% rownames(installed.packages())])" 2>/dev/null)"
-  if [ "$DRY_RUN" = 1 ]; then :; elif [ -z "$missing" ]; then ok "R packages" "$(echo $R_PACKAGES | wc -w | tr -d ' ') packages ready"; else fail "R packages" "missing: $missing"; fi
+  run Rscript -e "$ua pk <- strsplit('$R_PACKAGES',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; if (length(miss)) install.packages(miss, lib='$lib', repos='$repo', Ncpus=2)"
+  for pk in $(Rscript -e "cat(rownames(installed.packages(lib.loc='$lib')))" 2>/dev/null); do
+    case "$before" in *" $pk "*) ;; *) record_install r rpkg "$pk" ;; esac
+  done
+  # a package counts as ready only when it loads (its folder can be there while a package it needs is missing)
+  local missing; missing="$(Rscript -e "pk <- strsplit('$R_PACKAGES',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; cat(miss)" 2>/dev/null)"
+  if [ "$DRY_RUN" = 1 ]; then :; elif [ -z "$missing" ]; then ok "R packages" "$(echo $R_PACKAGES | wc -w | tr -d ' ') packages ready"; else fail "R packages" "missing or not loading: $missing"; fi
 }
 
 fix_pandoc() { # R needs a working pandoc for reports; if the first one on PATH is broken, use Quarto's own
@@ -421,6 +566,7 @@ fix_pandoc() { # R needs a working pandoc for reports; if the first one on PATH 
 setup_course_folder() {
   step "6/9  Course folder: $COURSE_DIR"
   [ -d "$KIT_DIR" ] || { fail "Course kit" "folder course-kit is missing next to this script"; return 1; }
+  [ -d "$COURSE_DIR" ] || record_install course dir "$COURSE_DIR"
   run mkdir -p "$COURSE_DIR"
   # copy kit files without overwriting the student's own work; course files that may be updated get a backup
   local f rel
@@ -433,7 +579,8 @@ setup_course_folder() {
   done
   ok "Course folder" "$COURSE_DIR"
   have uv || { fail "Python environment" "uv is not installed"; return 1; }
-  if retry uv sync --directory "$COURSE_DIR" --python 3.12; then ok "Python environment" "Python 3.12 + course packages"
+  if ! has_part python; then skip "Python course packages"
+  elif retry uv sync --directory "$COURSE_DIR" --python 3.12; then ok "Python environment" "Python 3.12 + course packages"
   else fail "Python environment" "uv sync failed, see $LOG_FILE"; fi
   write_opencode_config
 }
@@ -454,8 +601,9 @@ key_wizard() { step "Optional: free AI keys"; py keys; }
 run_check() {
   step "8/9  Real-task check (uses every installed tool)"
   have uv || { fail "uv" "not installed, cannot run the check"; return 1; }
-  local extra=""; [ "$SKIP_AI" = 1 ] && extra="--skip-ai"
-  if py check $extra --log "$LOG_FILE"; then CHECK_OK=1; else CHECK_OK=0; FAILED=$((FAILED+1)); fi
+  local extra="" parts; [ "$SKIP_AI" = 1 ] && extra="--skip-ai"
+  parts="$(printf '%s' "${PARTS:-none}" | tr ' ' ',')"
+  if py check $extra --log "$LOG_FILE" --parts "$parts"; then CHECK_OK=1; else CHECK_OK=0; FAILED=$((FAILED+1)); fi
 }
 
 # ---------- AI setup helper ------------------------------------------------------
@@ -494,12 +642,14 @@ EOF
   say "Helper notes (if any) are in $help"
 }
 
+# The file to show the teacher: the report of the check (step 8), or the log when setup stopped before the check
+report_file() { if [ -f "$COURSE_DIR/setup-report.txt" ]; then echo "$COURSE_DIR/setup-report.txt"; else echo "$LOG_FILE"; fi; }
 summary() {
   step "9/9  Summary"
   if [ "$DRY_RUN" = 1 ]; then say "${Y}Dry run finished: the lines above show what a real run would do.${N}"
   elif [ "$FAILED" = 0 ]; then say "${G}${B}All done. Everything works.${N}"
   else say "${R}${B}Something needs attention (see the FAIL lines above).${N} Run this script again first; it repairs most problems."
-       say "If it still fails, show the teacher: $COURSE_DIR/setup-report.txt"; fi
+       say "If it still fails, show the teacher: $(report_file)"; fi
   say "Full log: $LOG_FILE"
   say "Next: open OpenCode, choose the folder $COURSE_DIR, and follow the guide."
 }
@@ -511,7 +661,7 @@ install_pack() { # installed copy of the pack + a daily update check for this ac
     mkdir -p "$PACK_DIR" || { warn "Pack copy" "could not create $PACK_DIR; updates will not work"; return 0; }
     local i; for i in $PACK_ITEMS; do [ -e "$SCRIPT_DIR/$i" ] && cp -R "$SCRIPT_DIR/$i" "$PACK_DIR/"; done
     chmod +x "$PACK_DIR/setup-mac.sh" "$PACK_DIR/update/update.sh" 2>/dev/null
-    ok "Pack copy" "$PACK_DIR"
+    record_install core pack "$PACK_DIR"; ok "Pack copy" "$PACK_DIR"
   fi
   local upd="$PACK_DIR/update/update.sh"
   [ -f "$upd" ] || { warn "Automatic updates" "this copy of the pack has no updater"; return 0; }
@@ -537,63 +687,98 @@ install_pack() { # installed copy of the pack + a daily update check for this ac
   <key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string>
 </dict></plist>
 PLIST
+    record_install core launchd "$plist"
     launchctl unload "$plist" >/dev/null 2>&1; launchctl load "$plist" >/dev/null 2>&1 \
       && ok "Automatic updates" "on: a short check once a day (turn off: bash setup-mac.sh --no-auto-update)" \
       || warn "Automatic updates" "could not add the daily check; update by hand: bash setup-mac.sh --update"
   elif have crontab; then
     ( crontab -l 2>/dev/null | grep -v 'freeaisetup-update'; echo "30 12 * * * bash '$upd' --auto # freeaisetup-update" ) | crontab - \
-      && ok "Automatic updates" "on: a short check once a day (turn off: bash setup-mac.sh --no-auto-update)" \
+      && record_install core cron freeaisetup-update && ok "Automatic updates" "on: a short check once a day (turn off: bash setup-mac.sh --no-auto-update)" \
       || warn "Automatic updates" "could not add the daily check; update by hand: bash setup-mac.sh --update"
   else
     warn "Automatic updates" "no scheduler found; update by hand: bash setup-mac.sh --update"
   fi
 }
 
+# ---------- reporting to the teacher's log box ------------------------------------
+# One address for both messages; tests point it at a local copy (MS_LOG_URL) and mark themselves (MS_LOG_ENV=local).
+LOG_BOX="${MS_LOG_URL:-https://freeaisetup-logs.giladfel.workers.dev}"; LOG_BOX="${LOG_BOX%/}"
+log_box_post() { # $1 = path?query; body on stdin
+  if [ -n "${MS_LOG_ENV:-}" ]; then curl -fsS --max-time 60 -X POST -H 'x-freeaisetup: 1' -H "x-freeaisetup-env: $MS_LOG_ENV" --data-binary @- "$LOG_BOX/$1"
+  else curl -fsS --max-time 60 -X POST -H 'x-freeaisetup: 1' --data-binary @- "$LOG_BOX/$1"; fi
+}
+log_platform() { if [ -n "${CODESPACES:-}" ]; then echo codespace; else echo "$PLATFORM"; fi; }
+upload_log() { # with the student's yes: send the log to the teacher's private log box (kept 180 days, write-only address)
+  local body id
+  have curl || return 0
+  body="$( { echo "== setup-report.txt =="; cat "$COURSE_DIR/setup-report.txt" 2>/dev/null; echo; echo "== setup log =="; cat "$LOG_FILE"; } | sed -e "s#$HOME#~#g" )"
+  local w; for w in "$(id -un)" "$(hostname -s 2>/dev/null)"; do   # short names would hit ordinary words: only 4+ letters
+    [ "${#w}" -ge 4 ] && case "$w" in *[!A-Za-z0-9._-]*) ;; *) body="$(printf '%s' "$body" | sed "s#$w#<name>#g")" ;; esac
+  done
+  id="$(printf '%s' "$body" | log_box_post "upload?platform=$(log_platform)&version=$SETUP_VERSION&result=failed" 2>/dev/null | tr -d '\r\n ')"
+  if [ -n "$id" ]; then say "  ${G}Sent.${N} Your code is ${B}$id${N}. Tell your teacher this code."
+  else say "  Could not send it (no internet?). Show your teacher this file instead: $(report_file)"; fi
+}
+count_success() { # owner request 2026-11-12: count successful installs. Sends only the platform and the pack version
+  # (no name, no computer details, no log), once per account: a marker file remembers that it was sent.
+  local mark; mark="$STATE_DIR/install-counted"
+  { [ -n "${MS_NO_COUNT:-}" ] || [ -f "$mark" ]; } && return 0   # MS_NO_COUNT=1 switches it off (README, Privacy)
+  have curl || return 0
+  if printf '' | log_box_post "count?platform=$(log_platform)&version=$SETUP_VERSION" >/dev/null 2>&1; then
+    mkdir -p "$(dirname "$mark")" && date +%Y-%m-%d > "$mark"; echo "success count sent (platform and version only)" >> "$LOG_FILE"
+  else echo "success count not sent" >> "$LOG_FILE"; fi
+}
+offer_help() { # every failing run ends here, however it stopped: a failed check, a stop in steps 1-2, or an unexpected error
+  [ "$FAILED" != 0 ] && [ "$DRY_RUN" = 0 ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ] || return 0
+  printf '\n  Send this setup report to your teacher, so they can see what went wrong?\n  It contains no passwords and no course work; your user name is removed. [Y/n] '
+  read -r a || a="n"; case "$a" in n|N|no) ;; *) upload_log ;; esac
+  printf '\n  Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n] '
+  read -r a || a="n"; case "$a" in [nN]*) ;; *) start_doctor ;; esac
+}
+# An unexpected stop (a bash error, a command that kills the script) still ends with the offer: the EXIT trap runs
+# whatever ends the script. Ctrl+C is the student's own choice and only says so.
+FINISHED=0; INTERRUPTED=0
+on_exit() {
+  local rc=$?
+  trap - EXIT
+  [ "$FINISHED" = 1 ] && exit "$rc"
+  if [ "$INTERRUPTED" = 1 ]; then exit "$rc"; fi
+  if [ "$rc" != 0 ]; then fail "Setup stopped" "an unexpected error (exit code $rc); the log has the details"; summary; offer_help; fi
+  exit "$rc"
+}
+trap on_exit EXIT
+trap 'INTERRUPTED=1; echo; echo "  Setup stopped (Ctrl+C). Run it again any time."; exit 130' INT
+
 # ---------- main ---------------------------------------------------------------
 say "${B}MetaScience course setup $SETUP_VERSION${N}  ($PLATFORM, $ARCH)  log: $LOG_FILE"
 [ "$DRY_RUN" = 1 ] && say "${Y}DRY RUN: nothing will be changed.${N}"
 updater="$PACK_DIR/update/update.sh"; [ -f "$updater" ] || updater="$SCRIPT_DIR/update/update.sh"
+[ "${MS_TEST_CRASH:-}" = main ] && { echo "test crash (MS_TEST_CRASH)" >> "$LOG_FILE"; exit 3; }   # test hook: a crash still reaches the offer
 case "$MODE" in
-  update)   bash "$updater"; exit $? ;;
-  rollback) bash "$updater" --rollback; exit $? ;;
-  fix)   add_path "$HOME/.local/bin"; start_doctor; exit 0 ;;
+  update)   FINISHED=1; bash "$updater"; exit $? ;;
+  rollback) FINISHED=1; bash "$updater" --rollback; exit $? ;;
+  uninstall) FINISHED=1; un=(); [ -n "$COMPONENTS" ] && un+=("--parts=$COMPONENTS"); [ "$ASSUME_YES" = 1 ] && un+=(--yes)
+             [ "$DRY_RUN" = 1 ] && un+=(--dry-run); bash "$SCRIPT_DIR/lib/uninstall-mac.sh" ${un[@]+"${un[@]}"}; exit $? ;;
+  fix)   FINISHED=1; add_path "$HOME/.local/bin"; start_doctor; exit 0 ;;
   check) add_path "$HOME/.local/bin"; [ "$PLATFORM" = mac ] && for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$p" ] && eval "$("$p" shellenv)"; done
-         run_check; summary ;;
-  keys)  add_path "$HOME/.local/bin"; key_wizard; run_check; summary ;;
-  full)  precheck || { summary; exit 1; }
-         pkg_manager || { summary; exit 1; }
-         install_tools; install_opencode; install_r_packages; fix_pandoc; setup_course_folder
-         [ "$FROM_UPDATE" = 1 ] || install_pack
-         if [ "$DRY_RUN" = 0 ] && [ "$FROM_UPDATE" = 0 ]; then
-           if [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
-             printf '\n  Connect a free OpenRouter account as a backup for the AI (about 2 minutes, opens your browser)? You can also do it later with --keys. [y/N] '; read -r a || a=""
-             case "$a" in y|Y|yes) key_wizard ;; esac
+         load_parts; run_check; summary ;;
+  keys)  add_path "$HOME/.local/bin"; load_parts; key_wizard; run_check; summary ;;
+  full)  # a stop in step 1 or 2 skips the installs but still ends with the summary and the offer to send the report
+         choose_parts
+         if precheck && pkg_manager; then
+           install_tools; install_opencode; install_r_packages; fix_pandoc; setup_course_folder
+           [ "$FROM_UPDATE" = 1 ] || install_pack
+           if [ "$DRY_RUN" = 0 ] && [ "$FROM_UPDATE" = 0 ]; then
+             if [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
+               printf '\n  Connect a free OpenRouter account as a backup for the AI (about 2 minutes, opens your browser)? You can also do it later with --keys. [y/N] '; read -r a || a=""
+               case "$a" in y|Y|yes) key_wizard ;; esac
+             fi
+             run_check
+             [ "$FAILED" = 0 ] && count_success
            fi
-           run_check
          fi
          summary ;;
 esac
-upload_log() { # with the student's yes: send the log to the teacher's private log box (kept 180 days, write-only address)
-  local plat="$PLATFORM" body id; [ -n "${CODESPACES:-}" ] && plat=codespace
-  have curl || return 0
-  body="$( { echo "== setup-report.txt =="; cat "$COURSE_DIR/setup-report.txt" 2>/dev/null; echo; echo "== setup log =="; cat "$LOG_FILE"; }           | sed -e "s#$HOME#~#g" )"
-  local w; for w in "$(id -un)" "$(hostname -s 2>/dev/null)"; do   # short names would hit ordinary words: only 4+ letters
-    [ "${#w}" -ge 4 ] && case "$w" in *[!A-Za-z0-9._-]*) ;; *) body="$(printf '%s' "$body" | sed "s#$w#<name>#g")" ;; esac
-  done
-  id="$(printf '%s' "$body" | curl -fsS --max-time 60 -X POST -H 'x-freeaisetup: 1' --data-binary @-         "https://freeaisetup-logs.giladfel.workers.dev/upload?platform=$plat&version=$SETUP_VERSION&result=failed" 2>/dev/null | tr -d '
- ')"
-  if [ -n "$id" ]; then say "  ${G}Sent.${N} Your code is ${B}$id${N}. Tell your teacher this code."
-  else say "  Could not send it (no internet?). Show your teacher this file instead: $COURSE_DIR/setup-report.txt"; fi
-}
-if [ "$FAILED" != 0 ] && [ "$DRY_RUN" = 0 ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
-  printf '
-  Send this setup report to your teacher, so they can see what went wrong?
-  It contains no passwords and no course work; your user name is removed. [Y/n] '
-  read -r a || a="n"; case "$a" in n|N|no) ;; *) upload_log ;; esac
-fi
-if [ "$FAILED" != 0 ] && [ "$DRY_RUN" = 0 ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then
-  printf '
-  Some steps failed. Start the AI setup helper? It reads the setup log and fixes what it can, explaining each step. [Y/n] '
-  read -r a || a="n"; case "$a" in [nN]*) ;; *) start_doctor ;; esac
-fi
+offer_help
+FINISHED=1
 [ "$FAILED" = 0 ]

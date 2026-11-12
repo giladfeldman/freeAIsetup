@@ -9,6 +9,10 @@ It installs, on Windows, Mac and Linux:
 - a course folder with a real end-to-end check that uses every tool
 
 The setup never upgrades or removes software you already have, and never changes security settings.
+(Next to an R older than 4.5, which the course packages no longer support, it installs the current R for the
+student's account and keeps the old one.)
+The AI assistant is always installed; R, RStudio, Quarto, the Python course packages and Node.js are optional (the
+setup asks once, and installs all of them when you press Enter).
 
 ## Quick start
 
@@ -63,6 +67,19 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 - To go back to the previous version: `-Rollback` / `--rollback`. To switch the daily check off:
   `-NoAutoUpdate` / `--no-auto-update`.
 
+## Choosing parts, disk space, and removing the setup
+
+- **Parts:** the setup asks once which optional parts to install and remembers the answer. To choose again:
+  `install-windows.cmd -Choose` (Windows) or `bash setup-mac.sh --choose` (Mac). Without asking:
+  `-Components r,quarto` / `--components=r,quarto` (any of `r`, `rstudio`, `quarto`, `python`, `node`, `all`, `none`).
+- **Disk space:** before installing, the setup adds up what the chosen parts that are not on the computer yet need,
+  says how much it will use, stops if that plus 2 GB for the downloads is not free, and warns when less than 3 GB
+  would be left. The sizes were measured on one Windows 11 computer; Mac sizes are not yet measured.
+- **Removing it:** `install-windows.cmd -Uninstall` (Windows) or `bash setup-mac.sh --uninstall` (Mac), run from the
+  installed pack. The setup keeps a record of what it installed itself (since November 2026); the uninstall removes
+  some or all of that record and nothing else, so software that was on the computer before is never touched. The
+  course folder is kept unless the student types DELETE.
+
 ## Money
 
 Everything is free, for students and teacher. Every service used charges only through a payment method, credits or a
@@ -73,9 +90,22 @@ OpenRouter, OpenCode is limited to the `:free` models.
 
 ## Privacy
 
-If the setup fails, it asks whether to send the setup report to the teacher. Only on yes, the report and
-log go to the teacher's private log box (user name, computer name and home folder removed; deleted after
-180 days). See `logs-worker/README.md`.
+The setup sends two kinds of messages to the teacher's private log box (a small Cloudflare service, see
+`logs-worker/README.md`). Neither contains personal identifiers or personal information.
+
+- **A count of successful installs.** When a setup finishes with everything working, it sends one message
+  that says only "an install succeeded", with the platform (Windows, Mac, Linux or Codespace) and the version
+  of this pack. No name, no e-mail, no computer name, no files, no log. It is sent once per user account (a
+  small marker file on the computer remembers it), so re-running the setup is not counted twice. The log box
+  does not store the internet address the message came from. This tells us how widely the setup is used.
+  To switch it off, set the environment variable `MS_NO_COUNT=1` before running the setup.
+- **Error reports, only with your yes.** If the setup or the installer stops with a problem, it asks whether
+  to send the setup report to the teacher. Only on yes, the report and log go to the log box, with the user
+  name, computer name and home folder removed. They are used only to find and fix setup problems, and are
+  deleted automatically after 180 days. The log box also records the country the report came from (from the
+  network, not an address), which helps with network blocks in some countries.
+
+Nothing is sent without one of these two events, and nothing about your course work is ever sent.
 
 The free AI models may use what you type to train their models. **Never paste identifiable participant data
 or anything confidential into them.**

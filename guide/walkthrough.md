@@ -35,7 +35,7 @@ runs out, you get an error message or a wait until the next day or month, never 
 **Before you start:**
 
 1. Plug in your laptop. Connect to the university Wi-Fi.
-2. Have 8 GB of free disk space.
+2. Have about 10 GB of free disk space. The setup itself uses about 5 GB when none of the tools are on your laptop yet, and less when some are or when you leave parts out. At the start it tells you how much space it will use. It stops if there is not enough (it needs 2 GB more while it installs), and warns if little room would be left for your course work.
 3. Know your laptop password (the one you use to log in).
 
 # Part 1 — Run the setup
@@ -54,7 +54,9 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
    ```
 
 3. **Right-click** inside the PowerShell window (this pastes the line), then press **Enter**.
+   - ✋ **If the window fills with program text** (lines starting with `#` and `$`) and nothing installs: the end of the line, ` | iex`, was missing. Nothing was installed and nothing is broken. Copy the **whole** line again, including ` | iex` at the end, and paste it.
 4. It says *"downloading the setup files"*, then *"downloaded and checked. Starting the setup"*, and shows the steps. Leave the window open.
+   - ✋ It asks *"What should the setup install?"* and lists R, RStudio, Quarto, the Python course packages and Node.js, each with the space it needs. Press **Enter** to install all of them (recommended). Leave a part out only if your teacher says you will not need it: type the numbers you want (for example `1 3`) and press Enter. The AI assistant is always installed. You are asked only once (to choose again later, see Part 5).
    - ✋ **If it says *"Smart App Control is ON"*:** this Windows protection blocks parts of R and Python that the course needs. Windows Security opens by itself. Click **Smart App Control settings**, choose **Off**, confirm (Windows asks for the computer's administrator password; on a laptop owned by your employer or school, ask its IT), then go back to the PowerShell window and press **Enter**. Your normal virus protection stays on. Windows may not let you switch it back on later without a reset; if you do not want that, type **Q** and ask your teacher about the browser-only option.
    - ✋ Windows may ask *"Do you want to allow this app to make changes to your device?"* If you know your computer's admin password, click **Yes**. If you do not, click **No**: the setup then installs that tool just for your account.
 5. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
@@ -70,7 +72,9 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
    ```
 
 3. Click in the Terminal window, paste with **⌘ + V**, and press **Enter**.
-4. ✋ When asked for a **Password**, type your Mac login password and press Enter. **Nothing appears while you type**, which is normal.
+   - ✋ **If the window fills with program text** and nothing installs: the end of the line, ` | bash`, was missing. Nothing was installed. Copy the **whole** line again, including ` | bash`, and paste it.
+4. ✋ It asks *"What should the setup install?"* and lists R, RStudio, Quarto, the Python course packages and Node.js, each with the space it needs. Press **Enter** to install all of them (recommended). Leave a part out only if your teacher says you will not need it: type the numbers you want (for example `1 3`) and press Enter. The AI assistant is always installed. You are asked only once (to choose again later, see Part 5).
+   - ✋ When asked for a **Password**, type your Mac login password and press Enter. **Nothing appears while you type**, which is normal.
 5. ✋ If a window asks to install *"command line developer tools"*, click **Install**, then **Agree**. This alone can take 10–40 minutes; the setup continues by itself afterwards. If the screen goes dark or locks meanwhile, log in again: the setup keeps running underneath.
    - ✋ If macOS asks whether *"Terminal"* may access your **Downloads** folder, click **Allow**.
    - A notice *"Background Items Added: bash"* may appear. That is the daily update check; you can ignore it.
@@ -103,16 +107,18 @@ At the end you see a table like this:
 ALL CHECKS PASSED. Your computer is ready for the course.
 ```
 
+If you left out some parts, their lines say **SKIP** and the last line says *"ALL CHECKS PASSED for the parts you chose"*.
+
 This check gave the AI a real (fictional) article abstract. The AI extracted four facts. Python checked the AI's answer, R re-checked the reported t-test with **statcheck**, and Quarto made a small report. These are the same steps you will use in the course.
 
 ## If something says FAIL
 
 1. **Run the setup again** (paste the same line again). It skips everything that already works and repairs the rest. Most problems (slow Wi-Fi, a busy server) go away on the second run.
 2. **Let the AI setup helper look at it.** When something fails, the setup asks *"Start the AI setup helper?"* Press Enter. OpenCode starts in the same window with a free AI model. It reads the setup log, explains in plain words what went wrong, and suggests fixes one step at a time.
-   - ✋ Before the helper runs any command, it shows you the command and asks. Choose **Allow** only if its explanation makes sense to you. If you are unsure, choose **Reject** and ask the teacher.
-   - The helper never removes or upgrades software you already have, never changes security settings, and never asks for passwords or accounts.
+   - The helper explains each fix in one sentence and then runs it by itself. It is not allowed to delete files, use administrator rights or change security settings; if a fix needs one of those, it tells you the exact command and you decide whether to type it.
+   - The helper never removes or upgrades software you already have, and never asks for passwords or accounts.
    - To stop it, type `/exit` and press Enter. If it cannot fix the problem, it writes a note for the teacher in the folder **`MetaScience-help`** in your home folder.
-3. If it still fails, show the teacher the file **`setup-report.txt`** in your MetaScience folder.
+3. **Send the report to the teacher.** When something fails, the setup also asks *"Send this setup report to your teacher?"* Press Enter (yes). You get a short code (for example `AB3XYZ`): tell the teacher this code. The report contains no passwords and no course work; your user name is removed. If sending does not work, show the teacher the file **`setup-report.txt`** in your MetaScience folder.
 4. **"AI step" FAIL only?** The free AI may be busy. Everything else is fine. Try later with the check command below.
 
 To start the AI helper again later:
@@ -120,7 +126,7 @@ To start the AI helper again later:
 - **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Fix`
 - **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --fix`
 
-**Software you already have is safe.** If R, Git or another tool is already on the computer (also when another user account installed it), the setup uses it as it is. It never upgrades or removes it.
+**Software you already have is safe.** If R, Git or another tool is already on the computer (also when another user account installed it), the setup uses it as it is. It never upgrades or removes it. One exception: the course packages need R 4.5 or newer, so next to an older R the setup installs the current R for your account. Your old R stays.
 
 To re-run only the check:
 
@@ -133,7 +139,10 @@ To re-run only the check:
 |---|---|---|
 | *"Smart App Control blocked …"* or *"Windows protected your PC"* | You double-clicked a downloaded setup file. | Close it and use the one-line method in Part 1 instead. The setup then tells you whether Smart App Control needs to be switched off. |
 | *"An Application Control policy has blocked this file"* in R or Python | Smart App Control is on and blocks a package file. | Switch it off (Windows Security > App & browser control > Smart App Control settings > Off), then run the setup line again. |
-| *"This computer is managed by an organisation …"* | A school or company laptop that blocks scripts. | Use your own laptop, or ask the teacher. Do not try to get around the block. |
+| *"This computer is managed by an organisation …"* | A school or company laptop that blocks scripts. | Use your own laptop, or ask the teacher. Do not try to get around the block. Say yes to *"Send a short report to your teacher?"*. |
+| *"The setup files could not be downloaded"* or *"Download stopped"* | The internet connection dropped, or a network blocks GitHub and jsDelivr. | Paste the line again. If it stops twice, say yes to *"Send a short report to your teacher?"*, then try a phone hotspot. |
+| *"Your R (4.x) is too old for the course packages"* | The course R packages need R 4.5 or newer. | Nothing: the setup installs the current R next to your old one, which stays. In RStudio, if it still starts the old R, choose the new one under **Tools > Global Options > General > R version** (Windows). |
+| *"Free usage limit reached"* (in the check, or later in OpenCode) | The built-in free models allow only a limited number of requests from one internet address. On shared class Wi-Fi, many students share one address. | See *"When the free models are busy"* in Part 2. Everything else is installed and works. |
 | *"Blocked site — github.com cannot be reached from this network"* (or another site) | Your network blocks that site. This is common in China and on some school or hotel Wi-Fi. | The setup switches to mirror sites where it can (Python, R packages, OpenCode). For the rest, connect to a phone hotspot or your VPN and run the setup again. |
 | *"Proxy — Windows is set to send internet traffic through …, but nothing answers there"* | Windows/Mac is told to use a VPN or proxy app that is not running. | Start your VPN app (for example Clash or v2rayN) and run the setup again, or switch off *"Use a proxy server"* in the Windows proxy settings. |
 | *"Internet access — no download site can be reached"* | No site could be reached. | Check the Wi-Fi. On a café, hotel or university network, open a web page first; you may need to log in there. |
@@ -145,10 +154,11 @@ To re-run only the check:
 
 1. Open **OpenCode** from the Start menu (Windows) or the Applications folder (Mac).
 2. ✋ Mac only, the first time: if macOS says the app *"is downloaded from the internet"*, click **Open**.
-3. Choose **Open folder** and select the **MetaScience** folder in your home folder:
+3. Choose **Add project** (older versions: **Open folder**) and select the **MetaScience** folder in your home folder:
    - **Windows:** `C:\Users\<your name>\MetaScience`
    - **Mac:** your home folder → `MetaScience`
-4. The model shown at the bottom should end in **`-free`**. If not, click the model name and choose **GLM 5.3 Flash Free**.
+4. The model shown at the bottom should be a free one: it has a **Free** label (older versions: its name ends in **`-free`**). If not, click the model name and choose **GLM 5.3 Flash Free**.
+   - ✋ **OpenCode asks before it changes a file or runs a command.** To let it work without asking each time, open **Settings → Preferences** and switch on auto-accept. Only do this inside the MetaScience folder.
 5. Try your first task. Type:
 
    > Read check/sample-abstract.txt and tell me, with an exact quote for each, whether the study was preregistered, whether data are open, and what the sample size was.
@@ -156,6 +166,18 @@ To re-run only the check:
 6. Then try one that uses the tools:
 
    > Write an R script in analysis/ that reads check/out/extract.csv and prints it as a table. Run it and show me the output.
+
+**When the free models are busy.** The built-in free models have a daily limit per internet address. When you
+see *"Free usage limit reached"* (or the AI stops answering), switch the model (click the model name at the bottom), in
+this order, and try again:
+
+1. **GLM 5.3 Flash Free** (the default)
+2. **DeepSeek V4.1 Flash Free**
+3. any other model with the **Free** label (in a class test on 2026-11-08, when the first two were used up, an
+   NVIDIA Nemotron free model still answered)
+4. an **OpenRouter** model ending in `:free`, after connecting the free OpenRouter account (Part 3)
+
+The limit resets after a while (usually the next day). A phone hotspot gives you a different internet address.
 
 **Rules the AI follows** are in `AGENTS.md`. Read them. They match the course rules: never invent numbers or citations, quote the source, log what it did in `log/ai-log.md`.
 
@@ -200,7 +222,46 @@ MCP tools give the AI extra abilities. They are installed in the course settings
 
 To switch one on, open `opencode.json` in the MetaScience folder. Find the tool's name, change `"enabled": false` to `"enabled": true`, save, and restart OpenCode.
 
+# Part 5 — Change what is installed, or remove it
+
+**Choose the parts again** (to add one you left out):
+
+- **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Choose`
+- **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --choose`
+
+Leaving a part out here does not remove it; the setup just stops installing and updating it.
+
+**Remove what the setup installed:**
+
+- **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Uninstall`
+- **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --uninstall`
+
+It lists what the setup itself installed (for example RStudio, R and the course R packages, Quarto, Node.js, and the
+AI assistant with its tools). Type the numbers of what to remove, or **A** for all of it, and confirm with **y**.
+
+- It removes only what the setup installed. Programs that were on your laptop before the setup are not listed and
+  are never touched.
+- Your course folder (**MetaScience**) is kept, unless you type **DELETE** when asked. Copy your work somewhere safe
+  first.
+- For programs installed for the whole computer, Windows may ask for permission and the Mac for your password.
+- Setups from before November 2026 kept no list of what they installed. Then only the course pack and its daily
+  update can be removed this way. Remove other programs yourself (Windows: **Settings > Apps > Installed apps**;
+  Mac: drag them from **Applications** to the **Bin**).
+- On a Mac, Homebrew stays in place, because other programs may use it.
+
 # Privacy rules
+
+**What the setup sends to the teacher, and nothing else:**
+
+- **A count of successful installs:** when the setup finishes with everything working, it sends one message that
+  says only that an install succeeded, with the kind of computer (Windows, Mac, Linux or Codespace) and the version
+  of the setup. No name, no e-mail, no computer name, no files, no log, and no internet address is kept. It is sent
+  once per computer account. This tells the teacher how widely the setup is used.
+- **Error reports, only if you say yes:** when something fails, the setup asks before sending its report. Your user
+  name, computer name and home folder are removed first. The reports are used only to fix setup problems and are
+  deleted after 180 days.
+
+**What you type into the AI:**
 
 - Put only **published, public papers and course materials** into any AI.
 - Never paste personal data: names of participants, grades, health information, or other people's emails.

@@ -13,6 +13,7 @@ if ($cfg.extractZip) {
 }
 $cmd = Join-Path $dest 'student-setup\install-windows.cmd'
 if ($cfg.cmdPath) { $cmd = [Environment]::ExpandEnvironmentVariables($cfg.cmdPath) }
+$env:MS_LOG_ENV = 'local'   # test runs never count as real installs or send real alerts
 $t0 = Get-Date
 $p = Start-Process -FilePath 'cmd.exe' -ArgumentList "/c echo.| `"$cmd`" $($cfg.args) > `"$out\console.txt`" 2>&1" -PassThru -WindowStyle Normal
 $null = $p.Handle; $p.WaitForExit()
