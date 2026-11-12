@@ -51,7 +51,8 @@ fYLUKs+KlwabPzetzAsEq4vOZazV0eyeYWRWuNSATmUNAgMBAAE=
     box="${box%/}"; plat=mac; [ "$(uname -s)" = Darwin ] || plat=linux; [ -n "${CODESPACES:-}" ] && plat=codespace
     if (exec < /dev/tty) 2>/dev/null; then
       printf '  Send a short report to your teacher, so they can see what went wrong?\n  It contains no passwords; your user name is removed. [Y/n] '
-      read -r a < /dev/tty || a=""
+      read -r a < /dev/tty || a="n"
+    else return 0   # no terminal to ask on: send nothing (a report goes only with the student's yes)
     fi
     case "$a" in n|N|no) return 0 ;; esac
     body="$(printf '== installer (install.sh) ==\nFAIL  %s  %s\n\n%s %s %s, bash %s\n\n' "$1" "$2" "$(uname -s)" "$(sw_vers -productVersion 2>/dev/null || uname -r)" "$(uname -m)" "$BASH_VERSION"; cat "$NOTES")"

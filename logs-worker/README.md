@@ -32,7 +32,10 @@ marker file, `install-counted` next to the installed pack, remembers it; `MS_NO_
 It carries no name, computer details or log, and the worker stores neither the address nor the country:
 one empty key per install, `stats/<environment>/<day>/<platform>/<random 8 letters>`, version in its
 metadata, deleted after 400 days. One key per install (not a counter that is read and rewritten) means two
-installs at the same moment cannot overwrite each other. The fortnight digest shows the period's count by
+installs at the same moment cannot overwrite each other. At most 500 installs are counted per day for each
+environment and platform (a small counter key, `countcap/<environment>/<day>/<platform>`, deleted after 3 days),
+so a broken or hostile caller cannot fill the store; past the cap the answer is still `counted`, but nothing is
+written. The fortnight digest shows the period's count by
 platform. Count by hand:
 
 ```powershell

@@ -10,6 +10,7 @@ mk uname 'case "$1" in -s) echo Darwin;; -m) echo arm64;; *) echo Darwin;; esac'
 mk sw_vers 'echo 15.1'
 mk sudo 'if [ "$1" = -v ] || [ "$1" = -n ]; then exit 0; fi; "$@"'
 mk brew 'if [ "$1" = --version ]; then echo "Homebrew 5.0.0"; exit 0; fi
+if [ "$1" = list ]; then exit 1; fi   # nothing installed yet (the setup asks before it records a brew install as its own)
 case "$*" in "install --cask r") printf "#!/bin/bash\necho R\n" > '"$STUB"'/Rscript; chmod +x '"$STUB"'/Rscript;;
  "install --cask quarto") printf "#!/bin/bash\necho quarto\n" > '"$STUB"'/quarto; chmod +x '"$STUB"'/quarto;;
  "install uv") printf "#!/bin/bash\nexit 0\n" > '"$STUB"'/uv; chmod +x '"$STUB"'/uv;; esac; exit 0'
@@ -37,5 +38,9 @@ t "arm64 CLI downloaded"        "opencode-darwin-arm64.zip"
 t "arm64 desktop app downloaded" "opencode-desktop-mac-arm64.zip"
 t "desktop app unpacked"        "^ditto -x -k"
 if [ -d /Applications/OpenCode.app ] || [ -d "$HOME/Applications/OpenCode.app" ]; then echo "PASS app copied"; pass=$((pass+1)); else echo "MISS app copied"; failn=$((failn+1)); fi
+REC="$(ls "$HOME"/Library/Application\ Support/MetaScience/installed.tsv 2>/dev/null | head -1)"
+for k in "core	brew	git" "r	cask	r" "quarto	cask	quarto" "rstudio	cask	rstudio"; do
+  if [ -n "$REC" ] && grep -qxF "$k" "$REC"; then echo "PASS recorded: $k"; pass=$((pass+1)); else echo "MISS recorded: $k"; failn=$((failn+1)); fi
+done
 grep -q 'MetaScience setup' "$HOME/.zprofile" && { echo "PASS PATH added to .zprofile"; pass=$((pass+1)); } || { echo "MISS PATH added to .zprofile"; failn=$((failn+1)); }
 echo "RESULT pass=$pass miss=$failn"; [ $failn = 0 ]

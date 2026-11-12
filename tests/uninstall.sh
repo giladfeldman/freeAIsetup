@@ -78,6 +78,20 @@ export HOME="$HOME_SAVE"
 make_state norecord; un '|' >/dev/null
 check "no record: says so, offers only the AI part" 'grep -q "no record" "$W/out.txt" && grep -q "1. The AI assistant" "$W/out.txt" && ! grep -q "  2\. " "$W/out.txt"'
 
+# 9. only the AI part while RStudio stays: the pack (which holds the uninstall) and its update check stay too,
+#    so the student can remove RStudio later; a later run with all removes everything
+make_state
+printf '%s\n' "rstudio${T}cask${T}rstudio" "rstudio${T}pkgdir${T}$W/RStudio.app" "core${T}file${T}$W/uv" "core${T}dir${T}$W/opencode-data" \
+  "core${T}pack${T}$MS_STATE_DIR/pack" "core${T}cron${T}freeaisetup-update" "course${T}dir${T}$W/course" > "$MS_STATE_DIR/installed.tsv"
+rc="$(un '' --parts=ai --yes)"
+check "ai only, RStudio stays: exit 0 ($rc)" '[ "$rc" = 0 ]'
+check "ai only, RStudio stays: the rest of the AI part removed" '[ ! -e "$W/uv" ] && [ ! -e "$W/opencode-data" ]'
+check "ai only, RStudio stays: RStudio, the pack and the update check stay" '[ -d "$W/RStudio.app" ] && [ -d "$MS_STATE_DIR/pack" ] && ! logof | grep -q "crontab without"'
+check "ai only, RStudio stays: record still lists RStudio and the pack" '[ "$(rec | grep -c "^rstudio$T")" = 2 ] && rec | grep -q "^core${T}pack$T" && rec | grep -q "^core${T}cron$T" && ! rec | grep -q opencode-data'
+check "ai only, RStudio stays: says the pack stays" 'grep -q "The course pack stays until the other parts are removed" "$W/out.txt"'
+rc="$(un '' --parts=all --yes)"
+check "ai only, then all: RStudio, the pack and the state folder gone ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/RStudio.app" ] && [ ! -e "$MS_STATE_DIR" ] && [ -f "$W/course/my-notes.txt" ]'
+
 # 8. setup-mac.sh: record_install and the part choice
 (
   STATE_DIR="$W/rs"; DRY_RUN=0

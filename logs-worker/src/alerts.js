@@ -28,6 +28,7 @@ export function parseFailures(body) {
 // Owner request 2026-11-12: count successful installs. One KV key per success (no read-then-write, so two at the
 // same moment cannot overwrite each other); the key holds only the day, platform, version and a random id.
 export const COUNT_TTL = 400 * 24 * 3600;   // a little over a year, for year-on-year numbers
+export const COUNT_DAY_CAP = 500;            // installs counted per day, per environment and platform (src/index.js)
 export function countKey(environment, platform, now = new Date(), rnd = crypto.randomUUID().slice(0, 8)) {
   return `stats/${environment}/${now.toISOString().slice(0, 10)}/${platform}/${rnd}`;
 }

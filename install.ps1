@@ -53,7 +53,7 @@
   function Note($t) { [void]$notes.Add([string]$t) }
   function Stop-WithReport($step, $why) {
     $a = ''
-    try { $a = Read-Host '  Send a short report to your teacher, so they can see what went wrong? It contains no passwords; your user name is removed. [Y/n]' } catch {}
+    try { $a = Read-Host '  Send a short report to your teacher, so they can see what went wrong? It contains no passwords; your user name is removed. [Y/n]' } catch { $a = 'n' }   # no keyboard to ask on: send nothing
     if ($a -match '^(n|no)$') { return }
     try {
       $os = Get-CimInstance Win32_OperatingSystem -ErrorAction SilentlyContinue

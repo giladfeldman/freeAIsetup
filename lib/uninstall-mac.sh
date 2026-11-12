@@ -100,6 +100,12 @@ if [ -n "$COURSE" ] && [ -d "$COURSE" ]; then
   fi
 fi
 if [ -z "$CHOSEN" ] && [ "$REMOVE_COURSE_NOW" = 0 ]; then say "Nothing was removed."; exit 0; fi
+# The course pack holds this uninstall. If other parts the setup installed stay on this computer, the pack and its
+# daily update stay too, so the student can come back and remove those parts later.
+KEEP_PACK=0
+case " $CHOSEN " in *" core "*)
+  for g in $PRESENT; do [ "$g" = core ] && continue; case " $CHOSEN " in *" $g "*) ;; *) KEEP_PACK=1 ;; esac; done ;; esac
+[ "$KEEP_PACK" = 1 ] && { say ""; say "The course pack stays until the other parts are removed, so you can run the uninstall again."; }
 if [ "$YES" = 0 ] && [ "$DRY_RUN" = 0 ]; then
   what=""; for g in $CHOSEN; do what="$what; $(group_name "$g")"; done; [ "$REMOVE_COURSE_NOW" = 1 ] && what="$what; your course folder"
   say ""; printf 'Remove: %s? Your Mac password may be needed for some programs. [y/N] ' "${what#; }"; read -r a || a=""
@@ -111,6 +117,7 @@ fi
 prio() { case "$1" in rpkg) echo 0 ;; uvdata) echo 1 ;; launchd|cron) echo 2 ;; brew|cask|apt) echo 3 ;; homebrew) echo 4 ;;
   dir|file|pkgdir|clt) echo 5 ;; pack) echo 6 ;; path) echo 7 ;; *) echo 8 ;; esac; }
 TODO="$(printf '%s\n' "$ITEMS" | while IFS="$TAB" read -r part kind target; do
+  [ "$KEEP_PACK" = 1 ] && case "$kind" in pack|launchd|cron) continue ;; esac
   case " $CHOSEN " in *" $part "*) printf '%s\t%s\t%s\t%s\n' "$(prio "$kind")" "$part" "$kind" "$target" ;; esac; done | sort -s -n -k1,1 | cut -f2-)"
 [ "$REMOVE_COURSE_NOW" = 1 ] && TODO="${TODO:+$TODO
 }course${TAB}dir$TAB$COURSE"
@@ -184,7 +191,7 @@ fi
 if [ "$DRY_RUN" = 0 ]; then
   LEFT="$(printf '%s\n' "$ITEMS" | grep -v '^[[:space:]]*$' | grep -vxF -f <(printf '%s\n' "$DONE" | grep -v '^[[:space:]]*$') 2>/dev/null)"
   [ -z "$(printf '%s' "$DONE" | tr -d '\n')" ] && LEFT="$(printf '%s\n' "$ITEMS" | grep -v '^[[:space:]]*$')"
-  LEFT="$(printf '%s\n' "$LEFT" | grep -v "^core${TAB}\(pack\|launchd\|cron\)${TAB}" | grep -v '^[[:space:]]*$')"   # the setup adds those itself
+  [ "$KEEP_PACK" = 1 ] || LEFT="$(printf '%s\n' "$LEFT" | grep -v "^core${TAB}\(pack\|launchd\|cron\)${TAB}" | grep -v '^[[:space:]]*$')"   # the setup adds those itself
   case " $CHOSEN " in *" core "*) AI_GONE=1 ;; *) AI_GONE=0 ;; esac
   if [ "$AI_GONE" = 1 ] && [ -z "$(printf '%s\n' "$LEFT" | grep -v "^course$TAB")" ]; then
     rm -rf "$STATE_DIR"          # nothing of the setup is left (a kept course folder needs no record)

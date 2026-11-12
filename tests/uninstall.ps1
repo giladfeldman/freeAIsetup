@@ -98,18 +98,35 @@ try {
   $code = Run-Un @() @('', '')
   Check 'no record: says so and offers only the AI part (pack, update)' ((Out) -match 'no record' -and (Out) -match '1\. The AI assistant' -and (Out) -notmatch '(?m)^\s*2\. ') (Out)
 
+  # 9. only the AI part while RStudio stays: the pack (which holds the uninstall) and its update task stay too,
+  #    so the student can remove RStudio later; a later run with all removes everything
+  Make-State
+  Set-Content -LiteralPath (Join-Path $state 'installed.tsv') -Encoding UTF8 -Value @("rstudio`tdir`t$(D 'rstudio')", "rstudio`tfile`t$(D 'rstudio.lnk')",
+    "core`tdir`t$(D 'mingit')", "core`tfile`t$(D 'uv.exe')", "core`tpack`t$(Join-Path $state 'pack')", "core`ttask`tMetaScience pack update", "course`tdir`t$(D 'course')")
+  $code = Run-Un @('-Parts', 'ai', '-Yes')
+  Check 'ai only, RStudio stays: exit 0' ($code -eq 0) "exit $code $(Out)"
+  Check 'ai only, RStudio stays: the rest of the AI part removed' (-not (Test-Path (D 'mingit')) -and -not (Test-Path (D 'uv.exe')))
+  Check 'ai only, RStudio stays: RStudio, the pack and the update task stay' ((Test-Path (D 'rstudio')) -and (Test-Path (Join-Path $state 'pack')) -and (LogOf) -notmatch 'schtasks\.exe /delete')
+  Check 'ai only, RStudio stays: record still lists RStudio and the pack' (((Rec) -match '^rstudio\t').Count -eq 2 -and ((Rec) -match '^core\tpack\t').Count -eq 1 -and ((Rec) -match '^core\ttask\t').Count -eq 1 -and -not ((Rec) -match 'mingit')) ((Rec) -join ' | ')
+  Check 'ai only, RStudio stays: says the pack stays' ((Out) -match 'The course pack stays until the other parts are removed') (Out)
+  $code = Run-Un @('-Parts', 'all', '-Yes')
+  Check 'ai only, then all: RStudio, the pack and the state folder gone' ($code -eq 0 -and -not (Test-Path (D 'rstudio')) -and -not (Test-Path $state) -and (Test-Path (D 'course\my-notes.txt'))) "exit $code $(Out)"
+
   # 8. the real route, from an installed pack: Windows cannot delete a folder a window works in (install-windows.cmd
   #    works in the pack folder), so the setup runs a copy from the temp folder and the rest goes when the window closes
-  foreach ($route in 'powershell', 'cmd') {
+  #    ('cmd, -Uninstall not first': the cmd must find -Uninstall in any place, not only as the first word)
+  foreach ($route in 'powershell', 'cmd', 'cmd, -Uninstall not first') {
     Make-State
     $pack = Join-Path $state 'pack'
     foreach ($f in 'install-windows.cmd', 'setup-windows.ps1', 'VERSION') { Copy-Item -LiteralPath (Join-Path $root $f) -Destination $pack }
     Copy-Item -LiteralPath (Join-Path $root 'lib\uninstall-windows.ps1') -Destination (Join-Path $pack 'lib')
     Set-Content -LiteralPath (Join-Path $state 'installed.tsv') -Value @("core`tpack`t$pack") -Encoding UTF8
     $in = D 'in.txt'; Set-Content -LiteralPath $in -Value @('', '') -Encoding ASCII
-    $argv = if ($route -eq 'cmd') { @('/c', "`"`"$pack\install-windows.cmd`" -Uninstall -Components ai -Yes`"") } else { @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$pack\setup-windows.ps1`"", '-Uninstall', '-Components', 'ai', '-Yes') }
-    $exe = if ($route -eq 'cmd') { 'cmd.exe' } else { 'powershell.exe' }
-    $p = Start-Process -FilePath $exe -ArgumentList $argv -WorkingDirectory $(if ($route -eq 'cmd') { $env:TEMP } else { $env:USERPROFILE }) `
+    $argv = if ($route -eq 'cmd') { @('/c', "`"`"$pack\install-windows.cmd`" -Uninstall -Components ai -Yes`"") }
+            elseif ($route -like 'cmd*') { @('/c', "`"`"$pack\install-windows.cmd`" -Yes -Uninstall -Components ai`"") }
+            else { @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$pack\setup-windows.ps1`"", '-Uninstall', '-Components', 'ai', '-Yes') }
+    $exe = if ($route -like 'cmd*') { 'cmd.exe' } else { 'powershell.exe' }
+    $p = Start-Process -FilePath $exe -ArgumentList $argv -WorkingDirectory $(if ($route -like 'cmd*') { $env:TEMP } else { $env:USERPROFILE }) `
          -RedirectStandardInput $in -RedirectStandardOutput (D 'out.txt') -RedirectStandardError (D 'err.txt') -PassThru -WindowStyle Hidden
     $null = $p.Handle; $p.WaitForExit()
     for ($i = 0; $i -lt 12 -and (Test-Path -LiteralPath $state); $i++) { Start-Sleep -Seconds 5 }   # the later removal

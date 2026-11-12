@@ -135,6 +135,10 @@ if ($course.Count -and (Test-Path -LiteralPath $course[0].target)) {
   }
 }
 if (-not $chosen.Count -and -not $removeCourse) { Say 'Nothing was removed.'; exit 0 }
+# The course pack holds this uninstall. If other parts the setup installed stay on this computer, the pack and its
+# daily update stay too, so the student can come back and remove those parts later.
+$keepPack = ($chosen -contains 'core') -and [bool]@($present | Where-Object { $_ -ne 'core' -and $chosen -notcontains $_ }).Count
+if ($keepPack) { Say ''; Say 'The course pack stays until the other parts are removed, so you can run the uninstall again.' }
 if (-not $Yes -and -not $DryRun) {
   $what = @($chosen | ForEach-Object { $Groups[$_] }); if ($removeCourse) { $what += 'your course folder' }
   Say ''
@@ -146,7 +150,7 @@ if (-not $Yes -and -not $DryRun) {
 # order: R packages before R, uv's own data before uv, the desktop app, the update task, programs, folders, the
 # pack itself, and last the PATH entries whose folders are now gone
 $order = @{ rpkg = 0; uvdata = 1; app = 2; task = 3; winget = 4; inno = 4; dir = 5; file = 5; pack = 6; path = 7 }
-$todo = @($items | Where-Object { $chosen -contains $_.part } | Sort-Object { $order[$_.kind] })
+$todo = @($items | Where-Object { $chosen -contains $_.part -and -not ($keepPack -and $_.kind -in 'pack', 'task') } | Sort-Object { $order[$_.kind] })
 if ($removeCourse) { $todo += $course[0] }
 $done = @()
 Say ''

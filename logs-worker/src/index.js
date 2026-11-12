@@ -2,7 +2,7 @@
 // Write-only: there is no way to read logs through this address. The teacher reads them with
 // `wrangler kv key list/get` using his own Cloudflare login (see README.md).
 // A failed report also triggers an admin alert email (src/alerts.js).
-import { onFailedReport, environmentOf, sendDigest, countKey, COUNT_TTL } from "./alerts.js";
+import { onFailedReport, environmentOf, sendDigest, countKey, COUNT_TTL, COUNT_DAY_CAP } from "./alerts.js";
 
 const MAX_BYTES = 1_500_000;         // a full setup log is ~100-400 KB
 const KEEP_SECONDS = 180 * 24 * 3600; // deleted automatically after 180 days
@@ -23,7 +23,16 @@ export default {
       const platform = (url.searchParams.get("platform") || "").toLowerCase();
       if (!PLATFORMS.has(platform)) return new Response("bad platform\n", { status: 400 });
       const version = (url.searchParams.get("version") || "").replace(/[^0-9A-Za-z._-]/g, "").slice(0, 32);
-      await env.LOGS.put(countKey(environmentOf(req), platform), "", { expirationTtl: COUNT_TTL, metadata: { version } });
+      // Daily cap per environment and platform, so a broken or hostile caller cannot fill the store. Past the cap
+      // the answer is the same ("counted"), but nothing is written. The cap counter is read and rewritten, so two
+      // installs at the same moment may let one extra through; that is fine for a cap.
+      const environment = environmentOf(req);
+      const capKey = `countcap/${environment}/${new Date().toISOString().slice(0, 10)}/${platform}`;
+      const sofar = Number((await env.LOGS.get(capKey)) || "0");
+      if (sofar < COUNT_DAY_CAP) {
+        await env.LOGS.put(countKey(environment, platform), "", { expirationTtl: COUNT_TTL, metadata: { version } });
+        await env.LOGS.put(capKey, String(sofar + 1), { expirationTtl: 3 * 24 * 3600 });
+      }
       return new Response("counted\n", { headers: { "content-type": "text/plain" } });
     }
     if (req.method !== "POST" || url.pathname !== "/upload") {

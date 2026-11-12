@@ -74,6 +74,7 @@ record_install() {
   mkdir -p "$STATE_DIR" 2>/dev/null || return 0
   grep -qxF "$line" "$f" 2>/dev/null || printf '%s\n' "$line" >> "$f"
 }
+brew_had() { brew list "$@" >/dev/null 2>&1; }   # Homebrew already has it (maybe not on PATH): a later brew install says "ok" and installs nothing, so it is not ours to record
 run()   { # run a command, log its output; in dry-run only print it
   if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] $*"; return 0; fi
   echo "\$ $*" >> "$LOG_FILE"; "$@" >> "$LOG_FILE" 2>&1
@@ -424,7 +425,7 @@ install_tools() {
     local f fp; for f in git node uv; do
       fp=core; [ "$f" = node ] && fp=node
       if [ "$f" = node ] && ! has_part node; then skip "node"
-      elif have "$f"; then ok "$f" "already installed"; elif retry brew install "$f"; then record_install "$fp" brew "$f"; [ "$f" = uv ] && record_uv; ok "$f" "installed"
+      elif have "$f"; then ok "$f" "already installed"; elif had=0; brew_had --formula "$f" && had=1; retry brew install "$f"; then [ "$had" = 0 ] && { record_install "$fp" brew "$f"; [ "$f" = uv ] && record_uv; }; ok "$f" "installed"
       elif [ "$f" = uv ] && uv_from_pypi; then record_uv; ok "uv" "installed (direct download)"; else fail "$f" "brew install $f failed"; fi
     done
     # R older than 4.5: the course packages no longer come ready-built for it, so all of them fail (class 2026-11-09:
@@ -437,15 +438,18 @@ install_tools() {
       [ -n "$rv" ] && say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays; macOS may ask for your password)."
       local rcmd="install"; [ -n "$rv" ] && brew list --cask r >/dev/null 2>&1 && rcmd="upgrade"   # an old R that brew itself installed
       # recorded only when the setup brought R alone (an old R shares R.framework with the new one)
-      retry brew $rcmd --cask r && { [ -z "$rv" ] && record_install r cask r; ok "R" "installed$([ -n "$rv" ] && echo " (current R; old R $rv kept)")"; } || fail "R" "brew install --cask r failed"
+      local rhad=0; brew_had --cask r && rhad=1
+      retry brew $rcmd --cask r && { [ -z "$rv" ] && [ "$rhad" = 0 ] && record_install r cask r; ok "R" "installed$([ -n "$rv" ] && echo " (current R; old R $rv kept)")"; } || fail "R" "brew install --cask r failed"
     fi
     if ! has_part quarto; then skip "Quarto"
     elif have quarto; then ok "Quarto" "already installed"
-    else retry brew install --cask quarto && { record_install quarto cask quarto; ok "Quarto" "installed"; } || fail "Quarto" "brew install --cask quarto failed"; fi
+    else local qhad=0; brew_had --cask quarto && qhad=1
+      retry brew install --cask quarto && { [ "$qhad" = 0 ] && record_install quarto cask quarto; ok "Quarto" "installed"; } || fail "Quarto" "brew install --cask quarto failed"; fi
     if [ "$SKIP_GUI" = 0 ]; then
       if ! has_part rstudio; then skip "RStudio"
       elif [ -d "/Applications/RStudio.app" ]; then ok "RStudio" "already installed"
-      else retry brew install --cask rstudio && { record_install rstudio cask rstudio; ok "RStudio" "installed"; } || fail "RStudio" "brew install --cask rstudio failed"; fi
+      else local shad=0; brew_had --cask rstudio && shad=1
+        retry brew install --cask rstudio && { [ "$shad" = 0 ] && record_install rstudio cask rstudio; ok "RStudio" "installed"; } || fail "RStudio" "brew install --cask rstudio failed"; fi
     fi
   else
     # only what is missing (a course Codespace already brings current Node.js and R; never replace them)

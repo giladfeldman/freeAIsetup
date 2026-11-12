@@ -21,7 +21,10 @@ if /i "%MS_POL%"=="AllSigned" goto managed
 if /i "%MS_POL%"=="Restricted" goto managed
 rem -Uninstall removes this folder, and with it this file: work outside it (Windows cannot delete a folder a window
 rem works in); the uninstaller deletes the folder only after this cmd has ended (MS_FROM_CMD).
-if /i "%~1"=="-Uninstall" (
+rem -Uninstall may come anywhere among the words after the file name, not only first.
+set "MS_UNINSTALL="
+for %%a in (%*) do if /i "%%~a"=="-Uninstall" set "MS_UNINSTALL=1"
+if defined MS_UNINSTALL (
   cd /d "%TEMP%"
   set "MS_FROM_CMD=1"
   powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup-windows.ps1" %*

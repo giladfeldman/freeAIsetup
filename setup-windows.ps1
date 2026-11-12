@@ -178,7 +178,9 @@ function Winget-Install($id) {
       Log "winget could not be started (try $try); waiting 45 s"; Start-Sleep -Seconds 45; Refresh-Path
     }
     # 0 = installed; 0x8A15002B (no applicable upgrade) and 0x8A150061 (already installed) also count as done
-    if ($code -eq 0 -or $code -eq -1978335189 -or $code -eq -1978335135) { Refresh-Path; return $true }
+    # only exit 0 means THIS run installed it; "already installed" must never reach installed.tsv, or the uninstall
+    # would later remove a program that was here before the setup
+    if ($code -eq 0 -or $code -eq -1978335189 -or $code -eq -1978335135) { $script:WingetFresh = ($code -eq 0); Refresh-Path; return $true }
     Log "winget $id $($scope -join ' ') exit $code"
   }
   return $false
@@ -692,9 +694,10 @@ function Install-Tools {
     }
     if ($DryRun) { Say "  [dry-run] winget install $($t.id) (just for this account if possible)"; continue }
     $ghOnly = $t.name -in 'Git', 'Quarto', 'uv'   # winget fetches these from GitHub
+    $script:WingetFresh = $false
     $wingetOk = (-not ($ghOnly -and $script:Blocked -contains 'github.com')) -and (Winget-Install $t.id)
     if ($wingetOk) { $found = Find-Tool $t }
-    if ($wingetOk -and $found) { Record-Install $t.part 'winget' $t.id; if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
+    if ($wingetOk -and $found) { if ($script:WingetFresh) { Record-Install $t.part 'winget' $t.id }; if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
     elseif ($wingetOk -and $t.name -notin 'uv', 'Git', 'Quarto', 'RStudio') { Fail $t.name "winget reported success but $($t.exe) was not found; see $LogFile" }
     # winget failed, or said "installed" but the program is missing: try the direct download
     elseif ($t.name -eq 'uv' -and (Install-UvDirect)) {
