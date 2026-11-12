@@ -28,6 +28,7 @@ echo "exit=$rc"; echo "--- calls ---"; cat "$CALLS" | grep -v '^uname\|^sw_vers\
 echo "--- checks ---"
 pass=0; failn=0
 t() { if grep -q "$2" "$CALLS"; then echo "PASS $1"; pass=$((pass+1)); else echo "MISS $1"; failn=$((failn+1)); fi; }
+n() { if grep -q "$2" "$CALLS"; then echo "MISS $1"; failn=$((failn+1)); else echo "PASS $1"; pass=$((pass+1)); fi; }
 t "Homebrew asked for git"      "^brew install git"
 t "Homebrew asked for node"     "^brew install node"
 t "Homebrew asked for uv"       "^brew install uv"
@@ -43,11 +44,28 @@ for k in "core	brew	git" "r	cask	r" "quarto	cask	quarto" "rstudio	cask	rstudio";
   if [ -n "$REC" ] && grep -qxF "$k" "$REC"; then echo "PASS recorded: $k"; pass=$((pass+1)); else echo "MISS recorded: $k"; failn=$((failn+1)); fi
 done
 grep -q 'MetaScience setup' "$HOME/.zprofile" && { echo "PASS PATH added to .zprofile"; pass=$((pass+1)); } || { echo "MISS PATH added to .zprofile"; failn=$((failn+1)); }
-# An old R that Homebrew itself installed: Homebrew updates it, and the setup must say so (never "old R kept")
+# An old R (from Homebrew, then from elsewhere): the current R comes from CRAN next to it. The R installer deletes
+# every R it has an install receipt for, so the old R's receipt must be forgotten BEFORE the installer runs, and
+# Homebrew must never upgrade or install R over it (d-8f5f6e).
 printf '#!/bin/bash\necho "R version 4.3.1 (2023-06-16)"\n' > "$STUB/R"; chmod +x "$STUB/R"
-mk brew 'if [ "$1" = --version ]; then echo "Homebrew 5.0.0"; exit 0; fi
-if [ "$*" = "list --cask r" ]; then exit 0; fi; if [ "$1" = list ]; then exit 1; fi; exit 0'
-: > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=r > /tmp/run2.log 2>&1
-t "old brew R: brew upgrade used" "^brew upgrade --cask r$"
-if grep -q "Homebrew replaced R 4.3" /tmp/run2.log && ! grep -q "old R 4.3 kept\|your old R stays" /tmp/run2.log; then echo "PASS old brew R: message says it is replaced"; pass=$((pass+1)); else echo "MISS old brew R: message says it is replaced"; failn=$((failn+1)); fi
+mk pkgutil 'if [ "$1" = --pkgs ]; then printf "com.apple.pkg.CLTools_Executables\norg.R-project.arm64.R.fw.pkg\norg.R-project.arm64.R.GUI.pkg\n"; fi; exit 0'
+mk installer 'exit 0'
+mk curl 'case " $* " in *" -w "*) echo 200; exit 0;; esac; out=""; prev=""; url=""; for a in "$@"; do case "$prev" in -o) out="$a";; esac; case "$a" in http*) url="$a";; esac; prev="$a"; done
+case "$url" in */sonoma-arm64/base/) echo "<a href=\"R-4.6.1-arm64.pkg\">x</a> <a href=\"R-4.6.2-arm64.pkg\">x</a>"; exit 0;; esac
+[ -n "$out" ] && : > "$out"; exit 0'
+for who in brew other; do
+  if [ "$who" = brew ]; then bl='if [ "$*" = "list --cask r" ]; then exit 0; fi'; else bl=''; fi
+  mk brew 'if [ "$1" = --version ]; then echo "Homebrew 5.0.0"; exit 0; fi
+'"$bl"'
+if [ "$1" = list ]; then exit 1; fi; exit 0'
+  : > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=r > /tmp/run2.log 2>&1
+  n "old R ($who): Homebrew never upgrades R"      "^brew upgrade"
+  n "old R ($who): Homebrew never installs R"      "^brew install --cask r$"
+  t "old R ($who): current CRAN R for Apple chips" "^installer -pkg .*sonoma-arm64.*\|^installer -pkg .*R-4.6.2-arm64.pkg -target /"
+  fl="$(grep -n '^pkgutil --forget org.R-project.arm64.R.fw.pkg$' "$CALLS" | head -1 | cut -d: -f1)"
+  il="$(grep -n '^installer -pkg .*R-4.6.2-arm64.pkg' "$CALLS" | head -1 | cut -d: -f1)"
+  if [ -n "$fl" ] && [ -n "$il" ] && [ "$fl" -lt "$il" ]; then echo "PASS old R ($who): receipt forgotten before the installer"; pass=$((pass+1)); else echo "MISS old R ($who): receipt forgotten before the installer"; failn=$((failn+1)); fi
+  n "old R ($who): the R app receipt is kept"      "^pkgutil --forget org.R-project.arm64.R.GUI.pkg"
+  if grep -q "old R 4.3 kept" /tmp/run2.log; then echo "PASS old R ($who): message says the old R stays"; pass=$((pass+1)); else echo "MISS old R ($who): message says the old R stays"; failn=$((failn+1)); fi
+done
 echo "RESULT pass=$pass miss=$failn"; [ $failn = 0 ]

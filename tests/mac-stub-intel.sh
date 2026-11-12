@@ -56,4 +56,12 @@ t "Intel CLI downloaded"             "opencode-darwin-x64-baseline.zip"
 o "Node unpacked and on PATH"        "OK    node  (installed (v22.9.9))"
 o "Homebrew skipped with reason"     "not used on Intel Macs"
 grep -q '.local/share/node/bin' "$HOME/.zprofile" && { echo "PASS node PATH in .zprofile"; pass=$((pass+1)); } || { echo "MISS node PATH in .zprofile"; failn=$((failn+1)); }
+# An old Intel R: its receipt is forgotten before the CRAN installer runs, so the old R stays (d-8f5f6e class)
+printf '#!/bin/bash\necho "R version 4.2.3 (2023-03-15)"\n' > "$STUB/R"; chmod +x "$STUB/R"
+mk pkgutil 'if [ "$1" = --pkgs ]; then printf "org.R-project.x86_64.R.fw.pkg\norg.R-project.R.GUI.pkg\n"; fi; exit 0'
+: > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=r > /tmp/run2.log 2>&1
+fl="$(grep -n '^pkgutil --forget org.R-project.x86_64.R.fw.pkg$' "$CALLS" | head -1 | cut -d: -f1)"
+il="$(grep -n '^installer -pkg .*R-4.6.10-x86_64.pkg' "$CALLS" | head -1 | cut -d: -f1)"
+if [ -n "$fl" ] && [ -n "$il" ] && [ "$fl" -lt "$il" ]; then echo "PASS old Intel R: receipt forgotten before the installer"; pass=$((pass+1)); else echo "MISS old Intel R: receipt forgotten before the installer"; failn=$((failn+1)); fi
+grep -q "old R 4.2 kept" /tmp/run2.log && { echo "PASS old Intel R: message says the old R stays"; pass=$((pass+1)); } || { echo "MISS old Intel R: message says the old R stays"; failn=$((failn+1)); }
 echo "RESULT pass=$pass miss=$failn"; [ $failn = 0 ]

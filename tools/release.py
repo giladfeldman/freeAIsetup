@@ -9,6 +9,10 @@
       Writes VERSION, release/manifest.json (SHA-256 of every pack file) and release/manifest.sig.
       Then commit, tag v<version>, and push the tag (see docs/releasing.md).
 
+  uv run --with cryptography python tools/release.py verify
+      Checks release/manifest.sig against update/pubkey.pem, every listed file's SHA-256, that every pack
+      file is listed, and that VERSION matches. Exit 1 on any mismatch. Run it on the release commit.
+
 The installed pack refuses any update whose manifest signature does not match update/pubkey.*,
 so even someone who takes over the GitHub account cannot push code to students.
 """
@@ -81,6 +85,30 @@ def manifest(version: str, notes: str, key: pathlib.Path = KEY, out_dir: pathlib
     return out
 
 
+def verify(root: pathlib.Path = ROOT) -> int:
+    """0 if the signed manifest matches the files on disk, else 1 (prints what differs)."""
+    from cryptography.exceptions import InvalidSignature
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+    data = (root / "release" / "manifest.json").read_bytes()
+    sig = base64.b64decode((root / "release" / "manifest.sig").read_text())
+    pub = serialization.load_pem_public_key((root / "update" / "pubkey.pem").read_bytes())
+    try:
+        pub.verify(sig, data, padding.PKCS1v15(), hashes.SHA256())
+    except InvalidSignature:
+        print("FAIL signature does not match update/pubkey.pem")
+        return 1
+    doc = json.loads(data)
+    bad = [f for f, h in doc["files"].items()
+           if not (root / f).is_file() or hashlib.sha256((root / f).read_bytes()).hexdigest() != h]
+    unlisted = sorted(set(f.relative_to(root).as_posix() for f in pack_files()) - set(doc["files"])) if root == ROOT else []
+    ver = (root / "VERSION").read_text().strip()
+    problems = ([f"changed or missing: {', '.join(bad)}"] if bad else []) +         ([f"not in manifest: {', '.join(unlisted)}"] if unlisted else []) +         ([f"VERSION {ver} != manifest {doc['version']}"] if ver != doc["version"] else [])
+    print(("FAIL " + "; ".join(problems)) if problems else
+          f"PASS signature OK, {len(doc['files'])} files match, version {doc['version']}")
+    return 1 if problems else 0
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -88,5 +116,8 @@ if __name__ == "__main__":
     m = sub.add_parser("manifest")
     m.add_argument("--version", required=True)
     m.add_argument("--notes", default="")
+    sub.add_parser("verify")
     a = ap.parse_args()
+    if a.cmd == "verify":
+        sys.exit(verify())
     keygen() if a.cmd == "keygen" else manifest(a.version, a.notes)

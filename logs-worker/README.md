@@ -11,6 +11,10 @@ Installer reports carry the version `installer` when no release could be read, a
 - Address: `https://freeaisetup-logs.giladfel.workers.dev/upload` (POST only, write-only; nothing can be read through it).
 - Before sending, the setup replaces the home folder with `~`, and the user name and computer name with `<name>`.
 - Each log is deleted automatically after 180 days. Up to 1.5 MB per log.
+- Stored in the EU only: the KV namespace `freeaisetup-logs-eu` was created with the EU jurisdiction (it can only
+  be set at creation). The Worker itself runs on Cloudflare's worldwide network; choosing its region needs a paid
+  plan. `wrangler kv key list` on an EU namespace shows key names only; `kv key get` and the Cloudflare
+  dashboard show each entry's details and expiry.
 - Cost: none. Free plan limits (100,000 requests and 1,000 stored logs a day); above that, uploads fail.
 - Keys look like `2026-11-09/windows/failed/AB3XYZ` (day / platform / result / code).
 

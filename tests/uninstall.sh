@@ -20,7 +20,8 @@ make_state() {
     "core${T}path${T}$W/quarto/bin" "course${T}dir${T}$W/course" > "$MS_STATE_DIR/installed.tsv"
 }
 un() { # $1 = answers (one per line, | separated), rest = options
-  local a="$1"; shift; printf '%s\n' "$a" | tr '|' '\n' | bash lib/uninstall-mac.sh "$@" > "$W/out.txt" 2>&1; echo $?
+  local a="$1"; shift; rm -f "${TMPDIR:-/tmp}"/metascience-uninstall-*.log  # a run in the same second shares the log name
+  printf '%s\n' "$a" | tr '|' '\n' | bash lib/uninstall-mac.sh "$@" > "$W/out.txt" 2>&1; echo $?
 }
 logof() { cat "$(sed -n 's/.*(log: \(.*\.log\)).*/\1/p' "$W/out.txt" | head -1)" 2>/dev/null; }
 rec() { cat "$MS_STATE_DIR/installed.tsv" 2>/dev/null; }

@@ -4,11 +4,14 @@ compatibility_date = "2026-11-01"
 compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 # Free plan only: Workers 100k requests/day, KV 1,000 writes/day. Over the limit, uploads fail; nothing is billed.
-# Each failed report uses up to 4 KV writes (report, issue state, day counter, alert status).
+# Each failed report uses up to 4 KV writes (report, issue state, day counter, alert status); each counted install 2.
 
+# EU only (2026-11-12): created with `wrangler kv namespace create freeaisetup-logs-eu --jurisdiction=eu`, so the
+# data is stored in the EU. A jurisdiction can only be set when a namespace is created. The earlier namespace
+# (freeaisetup-logs, 68e18a10d41843828b574d19f2cc4320, no jurisdiction) was copied here key by key.
 [[kv_namespaces]]
 binding = "LOGS"
-id = "68e18a10d41843828b574d19f2cc4320"
+id = "302605872288430c81dd4929190cadb9"
 
 # Admin alerts (admin email standard): an email per new failed report (src/alerts.js), and the fortnight digest
 # on the 1st and 15th of each month at 06:00 UTC (07:00/08:00 in Innsbruck).

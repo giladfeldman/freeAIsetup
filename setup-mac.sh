@@ -339,6 +339,25 @@ mac_pkg() { # $1 = official installer package address: download it and install i
   retry curl -fL -m 900 -A "MetaScience-setup" -o "$f" "$1" && run $SUDO installer -pkg "$f" -target /
   rc=$?; rm -rf "$d"; return $rc
 }
+cran_r() { # $1 = the old R version, if any. Installs the newest R from CRAN for this Mac's chip, keeping an old R.
+  # The R installer deletes every R it holds an install receipt for ("R Installation and Administration", section
+  # "Multiple versions"), so the old R's receipt is forgotten first: its files stay in R.framework/Versions/<x.y>.
+  # The new R becomes the one R, RStudio and the terminal start; the old one can still be chosen (e.g. with RSwitch).
+  [ "$DRY_RUN" = 1 ] && { say "  [dry-run] install the current R from CRAN"; CRAN_R="current (dry-run)"; return 0; }
+  local dir arch nv p
+  if [ "$(uname -m)" = arm64 ]; then arch=arm64; dir=big-sur-arm64
+    [ "$(sw_vers -productVersion 2>/dev/null | cut -d. -f1)" -ge 14 ] 2>/dev/null && dir=sonoma-arm64   # R 4.6+ for Apple chips needs macOS 14
+  else arch=x86_64; dir=big-sur-x86_64; fi
+  local rb="$CRAN/bin/macosx/$dir/base"
+  nv="$(curl -fsSL -m 60 "$rb/" 2>>"$LOG_FILE" | grep -oE "R-[0-9]+\.[0-9]+\.[0-9]+-$arch\.pkg" | sed "s/^R-//; s/-$arch\.pkg\$//" | sort -u -t. -k1,1n -k2,2n -k3,3n | tail -1)"
+  [ -n "$nv" ] || return 1
+  if [ -n "$1" ]; then
+    for p in $(pkgutil --pkgs 2>/dev/null | grep -E '^org\.[Rr]-project\.([A-Za-z0-9_]+\.)?R\.fw\.pkg$'); do run $SUDO pkgutil --forget "$p" || return 1; done
+  fi
+  mac_pkg "$rb/R-$nv-$arch.pkg" || return 1
+  add_path /Library/Frameworks/R.framework/Resources/bin
+  CRAN_R="$nv"
+}
 install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the makers' own download pages
   local t; t="$(mktemp -d)"
   # Git comes with Apple's command line tools. /usr/bin/git exists without them (it only opens Apple's install
@@ -380,12 +399,10 @@ install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the ma
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install R"
   else
     [ -n "$rv" ] && say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays)."
-    local rb="$CRAN/bin/macosx/big-sur-x86_64/base" rver
-    rver="$(curl -fsSL -m 60 "$rb/" 2>>"$LOG_FILE" | grep -oE 'R-[0-9]+\.[0-9]+\.[0-9]+-x86_64\.pkg' | sed 's/^R-//; s/-x86_64\.pkg$//' | sort -u -t. -k1,1n -k2,2n -k3,3n | tail -1)"
-    if [ -n "$rver" ] && mac_pkg "$rb/R-$rver-x86_64.pkg"; then add_path /Library/Frameworks/R.framework/Resources/bin
+    if cran_r "$rv"; then
       # an old R shares R.framework with the new one: only an R the setup brought alone may be removed later
       [ -z "$rv" ] && { record_install r pkgdir /Library/Frameworks/R.framework; record_install r pkgdir /Applications/R.app; }
-      ok "R" "installed (R $rver$([ -n "$rv" ] && echo "; old R $rv kept"))"
+      ok "R" "installed (R $CRAN_R$([ -n "$rv" ] && echo "; old R $rv kept"))"
     else fail "R" "download or install of R from CRAN failed"; fi
   fi
   if ! has_part quarto; then skip "Quarto"
@@ -415,7 +432,7 @@ install_tools() {
   step "3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio"
   [ "${MS_TEST_CRASH:-}" = tools ] && { echo "test crash in step 3 (MS_TEST_CRASH)" >> "$LOG_FILE"; exit 3; }   # test hook: a crash mid-run
   [ "${MS_TEST_CRASH:-}" = unbound ] && echo "$MS_TEST_UNSET_VARIABLE"   # test hook: a bash error (set -u) mid-run
-  say "  Rule: this setup never upgrades or removes software that is already on this computer (one exception: an R older than 4.5 that Homebrew installed is updated by Homebrew)."
+  say "  Rule: this setup never upgrades or removes software that is already on this computer."
   if [ "$PLATFORM" = mac ]; then
     # tools another account installed for the whole Mac: make them usable from this account
     local d; for d in /Library/Frameworks/R.framework/Resources/bin /Applications/quarto/bin /opt/homebrew/bin /usr/local/bin; do
@@ -429,20 +446,20 @@ install_tools() {
       elif [ "$f" = uv ] && uv_from_pypi; then record_uv; ok "uv" "installed (direct download)"; else fail "$f" "brew install $f failed"; fi
     done
     # R older than 4.5: the course packages no longer come ready-built for it, so all of them fail (class 2026-11-09:
-    # a MacBook with R 4.0.0 from 2020). The R installer keeps the old version in R.framework/Versions; the new one
-    # becomes the default. Exception to "never upgrade": an R that Homebrew itself installed is replaced by Homebrew's upgrade (d-8f5f6e); any other old R stays.
+    # a MacBook with R 4.0.0 from 2020). Next to an old R the current R comes from CRAN directly (cran_r keeps the old
+    # one), never through Homebrew: its upgrade replaces an R it installed, and its install runs the same R installer,
+    # which deletes an old R it has a receipt for (d-8f5f6e).
     local rv=""; have R && rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
     if ! has_part r; then skip "R"
     elif [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
     else
-      local rcmd="install"; [ -n "$rv" ] && brew list --cask r >/dev/null 2>&1 && rcmd="upgrade"   # an old R that brew itself installed
-      # say what really happens: Homebrew's own upgrade replaces its old R, so the message says so (d-8f5f6e keeps the open question of installing CRAN R beside it)
-      local rnote="old R $rv kept"; [ "$rcmd" = upgrade ] && rnote="Homebrew replaced R $rv"
-      if [ "$rcmd" = upgrade ]; then say "  Your R ($rv) is too old for the course packages. Homebrew installed it, so Homebrew now updates it to the current R (macOS may ask for your password)."
-      elif [ -n "$rv" ]; then say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays; macOS may ask for your password)."; fi
-      # recorded only when the setup brought R alone (an old R shares R.framework with the new one)
-      local rhad=0; brew_had --cask r && rhad=1
-      retry brew $rcmd --cask r && { [ -z "$rv" ] && [ "$rhad" = 0 ] && record_install r cask r; ok "R" "installed$([ -n "$rv" ] && echo " (current R; $rnote)")"; } || fail "R" "brew install --cask r failed"
+      if [ -n "$rv" ]; then
+        say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays; macOS may ask for your password)."
+        if cran_r "$rv"; then ok "R" "installed (R $CRAN_R; old R $rv kept)"; else fail "R" "download or install of R from CRAN failed"; fi
+      else
+        local rhad=0; brew_had --cask r && rhad=1
+        retry brew install --cask r && { [ "$rhad" = 0 ] && record_install r cask r; ok "R" "installed"; } || fail "R" "brew install --cask r failed"
+      fi
     fi
     if ! has_part quarto; then skip "Quarto"
     elif have quarto; then ok "Quarto" "already installed"

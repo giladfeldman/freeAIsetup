@@ -9,8 +9,9 @@ It installs, on Windows, Mac and Linux:
 - a course folder with a real end-to-end check that uses every tool
 
 The setup never upgrades or removes software you already have, and never changes security settings.
-(Next to an R older than 4.5, which the course packages no longer support, it installs the current R for the
-student's account and keeps the old one. On a Mac where Homebrew installed the old R, Homebrew updates it instead.)
+(Next to an R older than 4.5, which the course packages no longer support, it installs the current R (on
+Windows for the student's account only) and keeps the old one. On a Mac the new R becomes the one that starts; the old one stays
+in the R framework and can still be chosen.)
 The AI assistant is always installed; R, RStudio, Quarto, the Python course packages and Node.js are optional (the
 setup asks once, and installs all of them when you press Enter).
 
@@ -91,7 +92,9 @@ OpenRouter, OpenCode is limited to the `:free` models.
 ## Privacy
 
 The setup sends two kinds of messages to the teacher's private log box (a small Cloudflare service, see
-`logs-worker/README.md`). Neither contains personal identifiers or personal information.
+`logs-worker/README.md`). Neither contains personal identifiers or personal information. Both are stored
+only in the EU (a Cloudflare store restricted to the EU); the alert e-mails to the teacher go through Amazon's
+e-mail service in Ireland. The small program that receives the messages runs on Cloudflare's worldwide network.
 
 - **A count of successful installs.** When a setup finishes with everything working, it sends one message
   that says only "an install succeeded", with the platform (Windows, Mac, Linux or Codespace) and the version
