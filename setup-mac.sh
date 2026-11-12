@@ -415,7 +415,7 @@ install_tools() {
   step "3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio"
   [ "${MS_TEST_CRASH:-}" = tools ] && { echo "test crash in step 3 (MS_TEST_CRASH)" >> "$LOG_FILE"; exit 3; }   # test hook: a crash mid-run
   [ "${MS_TEST_CRASH:-}" = unbound ] && echo "$MS_TEST_UNSET_VARIABLE"   # test hook: a bash error (set -u) mid-run
-  say "  Rule: this setup never upgrades or removes software that is already on this computer."
+  say "  Rule: this setup never upgrades or removes software that is already on this computer (one exception: an R older than 4.5 that Homebrew installed is updated by Homebrew)."
   if [ "$PLATFORM" = mac ]; then
     # tools another account installed for the whole Mac: make them usable from this account
     local d; for d in /Library/Frameworks/R.framework/Resources/bin /Applications/quarto/bin /opt/homebrew/bin /usr/local/bin; do
@@ -430,13 +430,13 @@ install_tools() {
     done
     # R older than 4.5: the course packages no longer come ready-built for it, so all of them fail (class 2026-11-09:
     # a MacBook with R 4.0.0 from 2020). The R installer keeps the old version in R.framework/Versions; the new one
-    # becomes the default. This is the one exception to "never upgrade": nothing is removed.
+    # becomes the default. Exception to "never upgrade": an R that Homebrew itself installed is replaced by Homebrew's upgrade (d-8f5f6e); any other old R stays.
     local rv=""; have R && rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
     if ! has_part r; then skip "R"
     elif [ -n "$rv" ] && [ "$(printf '%s\n4.5\n' "$rv" | sort -t. -k1,1n -k2,2n | head -1)" = 4.5 ]; then ok "R" "already installed (R $rv)"
     else
       local rcmd="install"; [ -n "$rv" ] && brew list --cask r >/dev/null 2>&1 && rcmd="upgrade"   # an old R that brew itself installed
-      # say what really happens: Homebrew's own upgrade replaces its old R (decision pending, see TODO)
+      # say what really happens: Homebrew's own upgrade replaces its old R, so the message says so (d-8f5f6e keeps the open question of installing CRAN R beside it)
       local rnote="old R $rv kept"; [ "$rcmd" = upgrade ] && rnote="Homebrew replaced R $rv"
       if [ "$rcmd" = upgrade ]; then say "  Your R ($rv) is too old for the course packages. Homebrew installed it, so Homebrew now updates it to the current R (macOS may ask for your password)."
       elif [ -n "$rv" ]; then say "  Your R ($rv) is too old for the course packages. Installing the current R next to it (your old R stays; macOS may ask for your password)."; fi
