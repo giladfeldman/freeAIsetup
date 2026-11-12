@@ -179,6 +179,13 @@ this order, and try again:
 
 The limit resets after a while (usually the next day). A phone hotspot gives you a different internet address.
 
+**Automatic switch.** After you have connected a free account (Part 3, OpenRouter is the quickest), OpenCode notices
+when the built-in free use is used up and switches the chat by itself to a free model on your own account (OpenRouter
+`:free`, Groq, Google or NVIDIA, whichever you connected). It shows a short note in the chat when it does. If you
+see a **Subscribe** button, do **not** press it: everything in this course is free. In a Codespace, the **Start
+page** (PORTS tab, globe next to "Start page") has a **Connect OpenRouter** button and a **Restart OpenCode** button
+for this.
+
 **Rules the AI follows** are in `AGENTS.md`. Read them. They match the course rules: never invent numbers or citations, quote the source, log what it did in `log/ai-log.md`.
 
 # Part 3 — Optional: more free AI services

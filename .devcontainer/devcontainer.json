@@ -14,9 +14,12 @@
   "containerEnv": { "METASCIENCE_DIR": "/workspaces/MetaScience" },
   "postCreateCommand": "bash .devcontainer/create.sh",
   "postStartCommand": "bash .devcontainer/start.sh",
-  "forwardPorts": [4096, 8787],
+  "forwardPorts": [4000, 4096, 8787],
+  // The start page opens inside the Codespace window (a pop-up blocker on a tablet stopped "openBrowser"); its
+  // buttons open OpenCode and RStudio in new tabs.
   "portsAttributes": {
-    "4096": { "label": "OpenCode (AI assistant)", "onAutoForward": "openBrowser" },
+    "4000": { "label": "Start page (tap here)", "onAutoForward": "openPreview" },
+    "4096": { "label": "OpenCode (AI assistant)", "onAutoForward": "silent" },
     "8787": { "label": "RStudio", "onAutoForward": "notify" }
   },
   "customizations": {

@@ -13,6 +13,12 @@ export PATH="$HOME/.local/bin:$PATH"
 COURSE="${METASCIENCE_DIR:-/workspaces/MetaScience}"
 PACK="${XDG_DATA_HOME:-$HOME/.local/share}/metascience/pack"
 mkdir -p "$COURSE"
+# The start page (port 4000): big buttons for tablets, the AI status, OpenRouter sign-in. It opens inside the
+# Codespace window (devcontainer.json: openPreview), so no pop-up blocker is involved.
+if ! pgrep -f "startpage/server.py" >/dev/null; then
+  setsid -f python3 "$HERE/startpage/server.py" > /tmp/startpage.log 2>&1
+  echo "start page started on 4000"
+fi
 # RStudio Server (the rocker feature installs it; single user, no password inside the private Codespace).
 # Behind the Codespaces proxy RStudio's sign-in redirect points at localhost:8787, so RStudio listens on 8788
 # and a small relay on 8787 (rstudio-nginx.conf) makes its redirects relative. No nginx: RStudio on 8787 directly.
@@ -40,7 +46,7 @@ if [ -x "$PACK/update/update.sh" ]; then
 fi
 # Self-check of what the student opens (the setup's own check tests the command line, not these pages)
 sleep 8
-for p in 4096 8787; do
+for p in 4000 4096 8787; do
   r="$(curl -s -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "http://127.0.0.1:$p/")"
   echo "port $p: ${r:-no answer}"
 done

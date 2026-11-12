@@ -828,7 +828,7 @@ function Setup-CourseFolder {
   Get-ChildItem -LiteralPath $KitDir -Recurse -File | ForEach-Object {
     $rel = $_.FullName.Substring($KitDir.Length + 1)
     $dest = Join-Path $CourseDir $rel
-    $courseFile = ($rel -eq 'AGENTS.md') -or ($rel -eq 'pyproject.toml') -or $rel.StartsWith('check\')
+    $courseFile = ($rel -eq 'AGENTS.md') -or ($rel -eq 'pyproject.toml') -or $rel.StartsWith('check\') -or $rel.StartsWith('.opencode\plugins\')
     $newHash = (Get-FileHash -LiteralPath $_.FullName).Hash
     if (-not (Test-Path -LiteralPath $dest)) {
       New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dest) | Out-Null

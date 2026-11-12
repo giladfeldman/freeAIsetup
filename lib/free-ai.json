@@ -1,0 +1,19 @@
+{
+ "version": 1,
+ "updated": "2026-11-12",
+ "source": "seeded by hand from the pack's own list; later written by tools/sync_free_ai.py from the gateway's student-pack approvals",
+ "opencode_free": ["glm-5.3-flash-free", "deepseek-v4.1-flash-free"],
+ "opencode_free_eu_unavailable": ["inkling-2-small-free", "crouton-alpha-free"],
+ "providers": [
+  {"id": "openrouter", "name": "OpenRouter", "key_page": "https://openrouter.ai/keys", "signup": "email",
+   "free_rule": "suffix::free", "hints": [":free"],
+   "note": "50 free requests a day per account (no card); counted per account, not per internet address"},
+  {"id": "groq", "name": "Groq", "key_page": "https://console.groq.com/keys", "signup": "email",
+   "free_rule": "account", "hints": ["gpt-oss-120b", "gpt-oss", "llama"],
+   "note": "free account limits are small per minute"},
+  {"id": "google", "name": "Google AI Studio (Gemini)", "key_page": "https://aistudio.google.com/apikey", "signup": "google",
+   "free_rule": "account", "hints": ["flash-lite", "flash"], "note": ""},
+  {"id": "nvidia", "name": "NVIDIA (build.nvidia.com)", "key_page": "https://build.nvidia.com/settings/api-keys", "signup": "email+phone",
+   "free_rule": "account", "hints": ["nemotron", "gpt-oss", "llama"], "note": ""}
+ ]
+}

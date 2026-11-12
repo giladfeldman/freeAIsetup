@@ -597,7 +597,7 @@ setup_course_folder() {
   ( cd "$KIT_DIR" && find . -type f ) | while read -r rel; do
     rel="${rel#./}"; f="$COURSE_DIR/$rel"
     if [ ! -e "$f" ]; then run mkdir -p "$(dirname "$f")"; run cp "$KIT_DIR/$rel" "$f"
-    else case "$rel" in AGENTS.md|pyproject.toml|check/*)
+    else case "$rel" in AGENTS.md|pyproject.toml|check/*|.opencode/plugins/*)   # course files the pack keeps current
       cmp -s "$KIT_DIR/$rel" "$f" || { run cp "$f" "$f.bak"; run cp "$KIT_DIR/$rel" "$f"; } ;; esac
     fi
   done
@@ -786,7 +786,13 @@ case "$MODE" in
   fix)   FINISHED=1; add_path "$HOME/.local/bin"; start_doctor; exit 0 ;;
   check) add_path "$HOME/.local/bin"; [ "$PLATFORM" = mac ] && for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$p" ] && eval "$("$p" shellenv)"; done
          load_parts; run_check; summary ;;
-  keys)  add_path "$HOME/.local/bin"; load_parts; key_wizard; run_check; summary ;;
+  keys)  add_path "$HOME/.local/bin"; load_parts; key_wizard; run_check
+         # a Codespace runs OpenCode as a web server that read its settings at start: restart it so it sees the new key
+         if [ -n "${CODESPACES:-}" ] && [ -f "$SCRIPT_DIR/.devcontainer/start.sh" ]; then
+           pkill -f "^opencode web" 2>/dev/null; sleep 1; bash "$SCRIPT_DIR/.devcontainer/start.sh"
+           ok "OpenCode restarted" "reload the OpenCode tab to use the new key"
+         fi
+         summary ;;
   full)  # a stop in step 1 or 2 skips the installs but still ends with the summary and the offer to send the report
          choose_parts
          if precheck && pkg_manager; then

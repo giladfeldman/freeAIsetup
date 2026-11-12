@@ -30,6 +30,10 @@ except (OSError, IndexError):
     SETUP_VERSION = "dev"
 KEY_DIR = pathlib.Path.home() / ".config" / "metascience" / "keys"
 
+# The approved free AIs live in lib/free-ai.json (signed with the pack; written by tools/sync_free_ai.py from the
+# owner's student-pack approvals in the AI gateway). The lists below are the fallback when that file is missing or
+# fails its checks, so a damaged file can never stop the setup.
+FREE_AI_FILE = pathlib.Path(__file__).with_name("free-ai.json")
 # Preferred default models, best first. All are OpenCode free models that need no account.
 # Chosen because OpenCode's model page (checked 2026-11-07) says their provider keeps no data
 # and does not train on it, and they are available in the EU.
@@ -46,6 +50,59 @@ PROVIDERS = [
     ("google", "Google AI Studio (Gemini)", "https://aistudio.google.com/apikey", ["flash-lite", "flash"]),
     ("nvidia", "NVIDIA (build.nvidia.com)", "https://build.nvidia.com/settings/api-keys", ["nemotron", "gpt-oss", "llama"]),
 ]
+# The add-on in the course folder (.opencode/plugins/free-ai-switch.js) reads this: the free models from the
+# student's own accounts that answered the setup's test, best first.
+FALLBACK_FILE = pathlib.Path.home() / ".config" / "metascience" / "free-ai-fallback.json"
+
+
+def free_ai_problems(doc) -> list[str]:
+    """Why lib/free-ai.json cannot be used (empty list = fine). Its own guards, whatever the file says."""
+    import re
+    bad = []
+    if not isinstance(doc, dict):
+        return ["not a JSON object"]
+    ids = re.compile(r"^[a-z0-9][a-z0-9.-]{0,40}$")
+    of = doc.get("opencode_free")
+    if not isinstance(of, list) or not of or not all(isinstance(m, str) and m.endswith("-free") for m in of):
+        bad.append("opencode_free must be a non-empty list of OpenCode model ids ending in -free")
+    provs = doc.get("providers")
+    if not isinstance(provs, list):
+        return bad + ["providers must be a list"]
+    for pr in provs:
+        if not isinstance(pr, dict) or not ids.match(str(pr.get("id", ""))):
+            bad.append(f"provider without a valid id: {pr!r:.60}")
+            continue
+        pid = pr["id"]
+        if re.search(r"anthropic|claude", pid + " " + str(pr.get("hints", "")), re.I):
+            bad.append(f"{pid}: Anthropic/Claude is never offered")
+        if "card" in str(pr.get("signup", "")).lower():
+            bad.append(f"{pid}: a provider that needs a card is never offered")
+        if not str(pr.get("key_page", "")).startswith("https://"):
+            bad.append(f"{pid}: key_page must be an https address")
+        h = pr.get("hints")
+        if not isinstance(h, list) or not h or not all(isinstance(x, str) and x for x in h):
+            bad.append(f"{pid}: hints must be a non-empty list")
+        if pid == "openrouter" and h != [":free"]:
+            bad.append("openrouter: only its :free models may be used")
+    return bad
+
+
+def load_free_ai() -> None:
+    """Replace the built-in lists with lib/free-ai.json when that file passes free_ai_problems."""
+    global DEFAULT_MODEL_PREFERENCE, EU_UNAVAILABLE, PROVIDERS
+    try:
+        doc = json.loads(FREE_AI_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return
+    if free_ai_problems(doc):
+        return
+    DEFAULT_MODEL_PREFERENCE = ["opencode/" + m for m in doc["opencode_free"]]
+    EU_UNAVAILABLE = [m for m in doc.get("opencode_free_eu_unavailable", []) if isinstance(m, str)]
+    PROVIDERS = [(p["id"], p.get("name") or p["id"], p["key_page"], list(p["hints"])) for p in doc["providers"]]
+
+
+load_free_ai()
+
 
 # MCP tools: configured but switched OFF. A student switches one on by changing "enabled" to true.
 # Each entry: name -> (command list, what it does). Commands run with uvx / npx / Rscript.
@@ -201,9 +258,15 @@ def write_config(course: pathlib.Path, log=print) -> pathlib.Path:
 # ----------------------------------------------------------------------------- keys
 def save_key(pid: str, key: str) -> None:
     KEY_DIR.mkdir(parents=True, exist_ok=True)
-    key_path(pid).write_text(key, encoding="utf-8")
-    if not IS_WIN:
-        os.chmod(key_path(pid), 0o600)
+    if IS_WIN:
+        key_path(pid).write_text(key, encoding="utf-8")
+        return
+    # created private from the first byte (write_text then chmod left a moment with the default permissions)
+    os.chmod(KEY_DIR, 0o700)
+    fd = os.open(key_path(pid), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        f.write(key)
+    os.chmod(key_path(pid), 0o600)
 
 
 def clean_key(raw: str) -> str:
@@ -357,6 +420,55 @@ PARTS = ("r", "rstudio", "quarto", "python", "node")
 PART_NAMES = {"r": "R", "quarto": "Quarto", "python": "Python course packages", "node": "Node.js"}
 
 
+def test_keys(course: pathlib.Path, t: "Table", record) -> list[dict]:
+    """Test each saved free key with one short question; write the backup list the course add-on switches to."""
+    backups = []   # free models from the student's own accounts that answered: the add-on switches to these
+    for pid, name, _url, hints in PROVIDERS:
+        if not key_path(pid).is_file():
+            continue
+        listed = list_models(pid, course, record)
+        model = pick(listed, hints)
+        if not model:
+            # an optional key never turns the setup red (class 2026-11-09; student report 2026-11-12)
+            keys_cmd = "install-windows.cmd -Keys" if IS_WIN else "bash setup-mac.sh --keys"
+            why = (f"OpenCode shows no models for it yet; the built-in free models still work. Later, run: {keys_cmd}"
+                   if not listed else
+                   f"OpenCode lists {len(listed)} models for it but none of the free ones the course uses; see the log")
+            t.add("WARN", f"Key: {name}", why)
+            continue
+        code, out = sh(["opencode", "run", "-m", model, "Reply with exactly the word PONG"], cwd=course, timeout=180)
+        record(f"key {pid}", code, out)
+        # optional keys never turn the setup red: a key that does not answer is a warning (class 2026-11-09)
+        if "PONG" in out:
+            t.add("OK", f"Key: {name}", f"answered ({model})")
+            prov, _, mid = model.partition("/")
+            backups.append({"providerID": prov, "modelID": mid, "name": f"{name}: {mid}", "free": True})
+        else:
+            low = out.lower()
+            if pid == "openrouter" and ("data policy" in low or "no endpoints found" in low):
+                why = "OpenRouter blocks free models for this account: open https://openrouter.ai/settings/privacy and allow free models"
+            elif "401" in out or "invalid" in low or "unauthorized" in low or "user not found" in low:
+                why = "the key was not accepted; run the key step again and connect or paste a new key"
+            else:
+                why = "saved but did not answer (the service may be busy); see the log"
+            t.add("WARN", f"Key: {name}", why)
+
+    try:   # written every check, so a key that stopped working (or was removed) leaves the list
+        FALLBACK_FILE.parent.mkdir(parents=True, exist_ok=True)
+        FALLBACK_FILE.write_text(json.dumps(backups, indent=1), encoding="utf-8")
+    except OSError as e:
+        record("write backup list", 1, str(e))
+    if backups:
+        t.add("OK", "Automatic AI switch", f"when the built-in free models are used up: {backups[0]['name']}"
+              + (f" (+{len(backups) - 1} more)" if len(backups) > 1 else ""))
+    else:
+        keys_cmd = "install-windows.cmd -Keys" if IS_WIN else "bash setup-mac.sh --keys"
+        t.add("WARN" if os.environ.get("CODESPACES") else "OK", "Automatic AI switch",
+              "no free backup account connected; in a Codespace connect one (start page, or " + keys_cmd + ")"
+              if os.environ.get("CODESPACES") else "no backup account (optional; add one with " + keys_cmd + ")")
+    return backups
+
+
 def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tuple[str, ...] = PARTS) -> int:
     t = Table()
 
@@ -491,33 +603,7 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
         else:
             skip("Report step", "quarto" if "quarto" not in parts else "r", " (the check report needs Quarto and R)")
 
-    for pid, name, _url, hints in PROVIDERS:
-        if not key_path(pid).is_file():
-            continue
-        listed = list_models(pid, course, record)
-        model = pick(listed, hints)
-        if not model:
-            # an optional key never turns the setup red (class 2026-11-09; student report 2026-11-12)
-            keys_cmd = "install-windows.cmd -Keys" if IS_WIN else "bash setup-mac.sh --keys"
-            why = (f"OpenCode shows no models for it yet; the built-in free models still work. Later, run: {keys_cmd}"
-                   if not listed else
-                   f"OpenCode lists {len(listed)} models for it but none of the free ones the course uses; see the log")
-            t.add("WARN", f"Key: {name}", why)
-            continue
-        code, out = sh(["opencode", "run", "-m", model, "Reply with exactly the word PONG"], cwd=course, timeout=180)
-        record(f"key {pid}", code, out)
-        # optional keys never turn the setup red: a key that does not answer is a warning (class 2026-11-09)
-        if "PONG" in out:
-            t.add("OK", f"Key: {name}", f"answered ({model})")
-        else:
-            low = out.lower()
-            if pid == "openrouter" and ("data policy" in low or "no endpoints found" in low):
-                why = "OpenRouter blocks free models for this account: open https://openrouter.ai/settings/privacy and allow free models"
-            elif "401" in out or "invalid" in low or "unauthorized" in low or "user not found" in low:
-                why = "the key was not accepted; run the key step again and connect or paste a new key"
-            else:
-                why = "saved but did not answer (the service may be busy); see the log"
-            t.add("WARN", f"Key: {name}", why)
+    test_keys(course, t, record)
 
     code, out = sh(["opencode", "mcp", "list"], cwd=course, timeout=60)
     record("mcp list", code, out)
@@ -543,7 +629,7 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("command", choices=["config", "keys", "check"])
+    ap.add_argument("command", choices=["config", "keys", "check", "backups"])
     ap.add_argument("--course", required=True)
     ap.add_argument("--skip-ai", action="store_true")
     ap.add_argument("--log", default=None)
@@ -559,6 +645,15 @@ def main() -> int:
         key_wizard(course)
         return 0
     log_file = pathlib.Path(a.log) if a.log else course / "setup-check.log"
+    if a.command == "backups":   # only the key test (the Codespace start page runs this after a new key)
+        t = Table()
+        with open(log_file, "a", encoding="utf-8") as log:
+            def record(name: str, code: int, out: str) -> None:
+                log.write(f"\n===== {name} (exit {code}) =====\n{out}\n")
+            got = test_keys(course, t, record)
+        for st, item, detail in t.rows:
+            print(f"{st:<5} {item:<22} {detail}")
+        return 0 if got else 1
     return check(course, a.skip_ai, log_file, parts)
 
 

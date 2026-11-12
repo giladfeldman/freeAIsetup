@@ -11,19 +11,16 @@ the left (/workspaces/MetaScience/setup-report.txt). Open it: every line should 
 Everything is then installed: OpenCode with free AI models, R, RStudio, Python, Quarto, Git and Node.js.
 Your course folder is /workspaces/MetaScience
 
-FREE AI KEY (only if needed)
-  If OpenCode or setup-report.txt says "Free usage limit reached", add your own free key once.
-  Open the TERMINAL panel at the bottom (menu > Terminal > New Terminal) and paste:
-      bash setup-mac.sh --keys
-  It connects a free OpenRouter account (about 2 minutes, no payment, no card) and then checks
-  that the AI works.
+THE START PAGE: EVERYTHING WITH ONE TAP
+  A "Start page" opens inside this window by itself. Its big buttons open OpenCode (already in your
+  course folder) and RStudio in new tabs, show whether the AI is ready, and restart OpenCode.
+  If you closed it: tap PORTS at the bottom of this screen, then the globe next to "Start page".
 
-OPEN THE PROGRAMS
-  Tap PORTS at the bottom of this screen, then the globe icon next to a name:
-  - OpenCode (AI assistant): port 4096. Choose the folder /workspaces/MetaScience
-  - RStudio: port 8787
-  If a tab does not open, allow pop-ups for github.dev, or press and hold the address in PORTS
-  and open it in a new tab.
+  FIRST TIME: on the start page, tap "Connect a free OpenRouter account" (about 2 minutes, no card).
+  Why: the built-in free AI counts its free use per internet connection, and a Codespace shares its
+  connection with many other people, so it can run out early. With your own free account, OpenCode
+  switches to it by itself when that happens and tells you so in the chat. Nothing else to do.
+  (Without the start page: menu > Terminal > New Terminal, paste  bash setup-mac.sh --keys )
 
 GOOD TO KNOW
   - Your work stays here between sessions. Your course files are also in the MetaScience folder in the
@@ -34,7 +31,7 @@ GOOD TO KNOW
   - It is deleted if you do not open it for 30 days, so download what you hand in.
 
 MONEY: ALL FREE
-  Never add a credit card or payment method to GitHub, OpenRouter or any other site. Without one,
+  Never press "Subscribe" in OpenCode. Never add a credit card or payment method to GitHub, OpenRouter or any other site. Without one,
   nothing can charge you: when the free hours or requests run out, things simply stop until the
   next month or day. A "$0.00" shown on these sites is normal.
   If your GitHub account ALREADY has a card: github.com/settings/billing -> Budgets and alerts ->

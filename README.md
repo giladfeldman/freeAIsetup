@@ -38,6 +38,12 @@ The Codespace is a small cloud computer that GitHub builds in **your** account f
 repository. It is free for about 60 hours a month, switches off after 30 minutes without use, and is
 deleted if not opened for 30 days, so download what you hand in. Nobody else can see it.
 
+When the Codespace opens, a **Start page** appears with big buttons: open OpenCode in your course folder, open
+RStudio, connect a free OpenRouter account by signing in (no key to copy), restart OpenCode, and see whether the AI
+is ready. OpenCode's built-in free AI counts its free use per internet address, and a Codespace shares its address
+with many others, so it can run out early. Once you have connected your own free account, OpenCode then switches to
+a free model on that account by itself and says so in the chat. Never press **Subscribe**.
+
 Then follow the student guide: `guide/walkthrough.docx`. The same files are also in
 `metascience-setup.zip` on the [latest release](https://github.com/giladfeldman/freeAIsetup/releases/latest).
 
