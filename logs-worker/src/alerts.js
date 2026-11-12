@@ -100,6 +100,8 @@ export async function onFailedReport(env, { key, platform, version, country, bod
       count: issue.count, countSinceAlert: (state?.countSinceAlert || 0) + 1, lastAlertedAt: state?.lastAlertedAt || null,
       lastKey: key, environment, platform, version };
     let outcome = "recorded";
+    // Record the report on its issue BEFORE sending: a failed send must still leave it in the digest.
+    await kv.put(stateKey, JSON.stringify(next), { expirationTtl: STATE_TTL });
     if (policy.send && shouldAlert(issue.priority, state?.lastAlertedAt ? new Date(state.lastAlertedAt) : null, today.sent, now)) {
       if (today.sent === 9) {   // the 10th email of the day says the cap is reached (standard §5)
         issue.explanation += " Alert cap reached: this is the 10th alert email today; the rest go into the fortnight digest.";

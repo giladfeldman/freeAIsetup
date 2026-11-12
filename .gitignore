@@ -11,3 +11,4 @@ archive/
 logs-worker/.wrangler/
 logs-worker/node_modules/
 /.claude/
+communications/

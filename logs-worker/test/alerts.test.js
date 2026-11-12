@@ -85,6 +85,10 @@ test("a failing sender never throws into the upload and is recorded for the dige
   assert.match(out, /^error: .*SES answered 403/);
   const meta = JSON.parse(await e.LOGS.get("alerts/meta"));
   assert.equal(meta.sendFailures, 1);
+  // the report still lands on its issue, so the digest lists it and the next report retries the alert
+  const states = [...e.LOGS.m.keys()].filter((k) => k.startsWith("alerts/state/production/"));
+  assert.equal(states.length, 1);
+  assert.equal(JSON.parse(e.LOGS.m.get(states[0])).lastAlertedAt, null);
 });
 
 test("missing settings fail loudly (recorded), never a silent default recipient", async () => {
