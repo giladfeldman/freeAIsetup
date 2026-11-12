@@ -1,7 +1,10 @@
 // Receives a student's setup log (only after the student said yes) and keeps it for 180 days.
 // Write-only: there is no way to read logs through this address. The teacher reads them with
 // `wrangler kv key list/get` using his own Cloudflare login (see README.md).
-const MAX_BYTES = 1_500_000;          // a full setup log is ~100-400 KB
+// A failed report also triggers an admin alert email (src/alerts.js).
+import { onFailedReport, environmentOf, sendDigest } from "./alerts.js";
+
+const MAX_BYTES = 1_500_000;         // a full setup log is ~100-400 KB
 const KEEP_SECONDS = 180 * 24 * 3600; // deleted automatically after 180 days
 const PLATFORMS = new Set(["windows", "mac", "linux", "codespace"]);
 
@@ -12,7 +15,7 @@ function code() {
 }
 
 export default {
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     if (req.method !== "POST" || url.pathname !== "/upload") {
       return new Response("freeAIsetup log upload. Nothing to see here.\n", { status: 404 });
@@ -33,6 +36,25 @@ export default {
       expirationTtl: KEEP_SECONDS,
       metadata: { version, platform, result, country: req.cf?.country || "", bytes: body.length },
     });
+    if (result === "failed") {
+      // The alert runs after the answer: the student gets the code at once, whatever SES does.
+      ctx.waitUntil(onFailedReport(env, { key, platform, version, country: req.cf?.country || "", body, environment: environmentOf(req) }));
+    }
     return new Response(id + "\n", { headers: { "content-type": "text/plain" } });
+  },
+
+  // Cron on the 1st and 15th of each month (wrangler.toml): the fortnight digest.
+  async scheduled(event, env, ctx) {
+    const now = new Date(event.scheduledTime);
+    ctx.waitUntil((async () => {
+      try { await sendDigest(env, now); }
+      catch (e) {
+        const meta = JSON.parse((await env.LOGS.get("alerts/meta")) || "{}");
+        meta.lastError = `${now.toISOString()} digest: ${String((e && e.message) || e).slice(0, 300)}`;
+        meta.sendFailures = (meta.sendFailures || 0) + 1;
+        await env.LOGS.put("alerts/meta", JSON.stringify(meta));
+        console.error(meta.lastError);
+      }
+    })());
   },
 };

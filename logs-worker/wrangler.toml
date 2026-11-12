@@ -1,9 +1,21 @@
 name = "freeaisetup-logs"
 main = "src/index.js"
 compatibility_date = "2026-11-01"
+compatibility_flags = ["nodejs_compat"]
 workers_dev = true
 # Free plan only: Workers 100k requests/day, KV 1,000 writes/day. Over the limit, uploads fail; nothing is billed.
+# Each failed report uses up to 4 KV writes (report, issue state, day counter, alert status).
 
 [[kv_namespaces]]
 binding = "LOGS"
 id = "68e18a10d41843828b574d19f2cc4320"
+
+# Admin alerts (admin email standard): an email per new failed report (src/alerts.js), and the fortnight digest
+# on the 1st and 15th of each month at 06:00 UTC (07:00/08:00 in Innsbruck).
+# Secrets (wrangler secret put): ADMIN_NOTIFY_EMAIL, SES_FROM, SES_ACCESS_KEY_ID, SES_SECRET_ACCESS_KEY,
+# ADMIN_EMAIL_SESSION_FOLDER, ADMIN_LOG_URL. Without them the reports are still stored, and the failure is recorded.
+[triggers]
+crons = ["0 6 1,15 * *"]
+
+[vars]
+SES_REGION = "eu-west-1"

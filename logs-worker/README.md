@@ -18,3 +18,21 @@ npx wrangler kv key delete "2026-11-09/mac/failed/AB3XYZ" --binding LOGS --remot
 ```
 
 Deploy after a change: `npx wrangler deploy`.
+
+## Admin alerts (email)
+
+Each failed report also sends the teacher an alert email (admin email standard): priority, what failed,
+the report key, and a button that opens a Claude Code session on it. The same failure is emailed at most
+once per 24 hours (later ones are counted), at most 10 alert emails a day. A digest of everything arrives
+on the 1st and 15th of each month, even when quiet (it proves the alerts still work). Code: `src/alerts.js`;
+tests: `npm test` (no network).
+
+Uploads that send the header `x-freeaisetup-env: local` (tests) are stored but not emailed. Students'
+setups send no such header, so their reports count as production.
+
+Settings (Cloudflare secrets, set once with `npx wrangler secret put <NAME>`): `ADMIN_NOTIFY_EMAIL`,
+`SES_FROM`, `SES_ACCESS_KEY_ID`, `SES_SECRET_ACCESS_KEY` (a send-only Amazon SES user, EU region
+`SES_REGION`), `ADMIN_EMAIL_SESSION_FOLDER` (this project's folder on the teacher's computer),
+`ADMIN_LOG_URL`. If a setting is missing or SES refuses, reports are still stored and the failure is recorded in `alerts/meta`
+(the next digest shows it, once sending works again).
+Alert status: `npx wrangler kv key get alerts/meta --binding LOGS --remote`.

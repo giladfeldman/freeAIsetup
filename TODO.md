@@ -6,6 +6,7 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 
 - [ ] [HIGH · now · val:high · S · sonnet-medium] Document OpenCode free-model usage limits and a fallback order (GLM/DeepSeek/MiMo hit 'Free usage limit reached'; Nemotron still worked) (src: hackathon-2 test 2026-11-08: 12 parallel opencode runs exhausted free limit) ^d-98e4c9
 - [ ] [MED · soon · val:med · S · sonnet-medium] Update guide Part 3 to OpenCode desktop 2.2.6 UI: 'Add project' (not 'Open folder'), models show a 'Free' tag (not '-free'), auto-accept switch in Settings > Preferences (src: Lectures/03-Hackathon-2-Build-simulations/TEST-RESULTS.md section 5) ^d-db5234
+- [ ] [HIGH · now · val:high · S · sonnet-medium] Tell students who see the installer's code printed on screen that the line was run without its ending '| iex' (top comment of install.ps1 + walkthrough troubleshooting note); check install.sh/Mac for the same failure (src: archive/2026-11-12-08-20-studenterrorlog.txt is install.ps1 verbatim (diff identical)) ^d-4a5d64
 
 ## Windows setup
 
@@ -13,6 +14,9 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 - [x] [HIGH · soon · val:med · M · opus-medium] pymupdf import fails (DLL load failed: _extra) in the GitHub-blocked VM case; find the missing runtime DLL (likely MSVC C++ runtime) and supply it without admin (src: VM case H1-github-blocked 2026-11-09) ^d-39f03c (fixed 2026-11-09: 6da99b1; VM exp7-msvc.ps1: copy next to pymupdf -> import ok)
 - [ ] [HIGH · soon · val:high · S · sonnet-medium] Add 'gh release create' with metascience-setup.zip to the release steps so releases/latest/download link stays current (src: first Release created by hand for v2026.11.8.6 on 2026-11-09) ^d-d2924e
 - [ ] [HIGH · soon · val:high · M · opus-medium] Windows: install current R next to an R older than 4.5 (winget --no-upgrade keeps the old R; packages then fail) (src: class 2026-11-09 Mac with R 4.0.0; same gap in setup-windows.ps1 Find-Tool R) ^d-872f0e
+- [ ] [HIGH · now · val:high · M · opus-medium] Report installer-stage failures to the log box too: install.ps1 stops (no download, failed signature/checksum, group policy) and never reaches setup-windows.ps1, so nothing is uploaded (src: archive/2026-11-12-08-20-studenterrorlog.txt (student 2026-11-12; KV held 0 student logs)) ^d-be2fdc
+- [ ] [HIGH · soon · val:high · M · opus-medium] Check the log box against the EU directive: student setup logs sit in Cloudflare KV (freeaisetup-logs), whose storage region is not pinned to the EU on the free plan as far as known; confirm, then move or document (src: logs-worker/wrangler.toml (KV namespace 68e18a10, no jurisdiction set)) ^d-d375f9
+- [ ] [HIGH · now · val:high · M · opus-medium] Offer the log upload on every failing exit, not only after a full run: Precheck/pkg_manager failures exit 1 before the offer (setup-windows.ps1:777, setup-mac.sh:563-564), and a crash mid-run never reaches it; test each exit path (src: setup-windows.ps1:777, setup-mac.sh:563) ^d-03d284
 
 ## Codespaces
 
