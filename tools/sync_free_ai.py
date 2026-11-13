@@ -57,7 +57,7 @@ def main() -> int:
         print("run with --write to update lib/free-ai.json, then release it with /ship")
         return 2
     doc = {"version": new.get("version"), "updated": new.get("updated"),
-           "source": f"tools/sync_free_ai.py from {URL}", **{k: new.get(k) for k in KEEP if k in new}}
+           "source": "tools/sync_free_ai.py from the student-pack approvals list (its address stays off this public repo)", **{k: new.get(k) for k in KEEP if k in new}}
     FREE_AI_FILE.write_text(json.dumps(doc, indent=1, ensure_ascii=False) + "\n", encoding="utf-8", newline="\n")
     print(f"wrote {FREE_AI_FILE}; release it with /ship")
     return 0
