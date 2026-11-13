@@ -188,7 +188,9 @@ function Winget-Install($id) {
 function Install-QuartoDirect {
   # Second route for Quarto: its official zip, unpacked into this account's own Programs folder.
   # Needed because Quarto's Windows installer only installs for the whole computer, which a
-  # standard (non-admin) account cannot do. First source quarto.org (not GitHub), then GitHub.
+  # standard (non-admin) account cannot do. Sources: quarto.org (which sends the download on to GitHub, checked
+  # 2026-11-13), then GitHub, then the Quarto inside RStudio (Install-QuartoFromRStudio).
+  # Returns the folder that holds quarto.exe, or $null.
   $dest = Join-Path $env:LOCALAPPDATA 'Programs\Quarto'
   $zip = Join-Path $env:TEMP 'quarto-win.zip'
   $urls = @('https://quarto.org/download/latest/quarto-win.zip')
@@ -212,23 +214,51 @@ function Install-QuartoDirect {
       try { Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force } catch { Log "Quarto unpack failed: $_" }
     }
     Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath (Join-Path $dest 'bin\quarto.exe')) { return $true }
+    if (Test-Path -LiteralPath (Join-Path $dest 'bin\quarto.exe')) { return (Join-Path $dest 'bin') }
   }
-  return $false
+  return (Install-QuartoFromRStudio)
 }
-function Install-RStudioDirect {
-  # Second route for RStudio: Posit's official zip (no installer), unpacked into this account's own Programs
-  # folder, plus a Start-menu entry. Needs no admin and no winget (winget often cannot start for minutes on a
-  # fresh laptop, and RStudio's installer only installs for the whole computer).
-  $dest = Join-Path $env:LOCALAPPDATA 'Programs\RStudio'
+function Install-QuartoFromRStudio {
+  # Quarto without GitHub (d-e4a52e; networks that block GitHub, common in mainland China): RStudio ships a whole
+  # Quarto inside it (resources\app\bin\quarto), and RStudio comes from Posit's own server. Use the one in an
+  # installed RStudio; otherwise download RStudio's zip and unpack only that Quarto. Returns its bin folder, or $null.
+  $rs = Find-Tool (Tool-Def 'RStudio')
+  if ($rs) {
+    $q = Join-Path $rs 'resources\app\bin\quarto\bin'
+    if (Test-Path -LiteralPath (Join-Path $q 'quarto.exe')) { Log "Quarto: the one inside RStudio ($q)"; return $q }
+  }
+  $dest = Join-Path $env:LOCALAPPDATA 'Programs\Quarto'
+  $zip = Join-Path $env:TEMP 'rstudio-win.zip'
+  $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+  if (-not (Test-Path -LiteralPath $tar)) { Log 'Quarto from RStudio: tar.exe missing'; return $null }
+  Say '  Downloading Quarto as part of RStudio''s download (about 700 MB, from Posit; only Quarto is kept)...'
+  foreach ($u in (RStudio-ZipUrls)) {
+    if (-not (Download $u $zip)) { continue }
+    New-Item -ItemType Directory -Force -Path $dest | Out-Null
+    $code = Run-Native $tar @('-xf', "`"$zip`"", '-C', "`"$dest`"", '--strip-components', '4', 'resources/app/bin/quarto/*') 1800
+    Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath (Join-Path $dest 'bin\quarto.exe')) { Log "Quarto unpacked from $u"; return (Join-Path $dest 'bin') }
+    Log "Quarto from RStudio's zip: not unpacked (tar exit $code)"
+  }
+  return $null
+}
+function RStudio-ZipUrls {   # Posit's own server (not GitHub), then its Amazon copy
   $urls = @()
   try {
     $j = Invoke-RestMethod -Uri 'https://www.rstudio.com/wp-content/downloads.json' -UseBasicParsing -UserAgent 'MetaScience-setup' -TimeoutSec 30
     $a = $j.rstudio.open_source.stable.desktop.archive.windows
     if ($a.url) { $urls += $a.url }; if ($a.s3_url) { $urls += $a.s3_url }
   } catch { Log "RStudio version lookup failed: $_" }
-  if (-not $urls.Count) { $urls = @('https://download1.rstudio.org/electron/windows/RStudio-2026.10.1-239.zip',
-                                    'https://s3.amazonaws.com/rstudio-desktop/electron/windows/RStudio-2026.10.1-239.zip') }
+  if (-not $urls.Count) { $urls = @('https://download1.rstudio.org/electron/windows/RStudio-2026.11.0-203.zip',
+                                    'https://s3.amazonaws.com/rstudio-desktop/electron/windows/RStudio-2026.11.0-203.zip') }
+  return $urls
+}
+function Install-RStudioDirect {
+  # Second route for RStudio: Posit's official zip (no installer), unpacked into this account's own Programs
+  # folder, plus a Start-menu entry. Needs no admin and no winget (winget often cannot start for minutes on a
+  # fresh laptop, and RStudio's installer only installs for the whole computer).
+  $dest = Join-Path $env:LOCALAPPDATA 'Programs\RStudio'
+  $urls = RStudio-ZipUrls
   $zip = Join-Path $env:TEMP 'rstudio-win.zip'
   Say '  Downloading RStudio for this account only (about 700 MB; on slow Wi-Fi this can take 20 minutes)...'
   foreach ($u in $urls) {
@@ -365,7 +395,7 @@ function Setup-Proxy {
 function Setup-Network {
   # what each site is needed for; a blocked site is replaced by a mirror where one exists
   $sites = [ordered]@{
-    'github.com'          = 'OpenCode, Git, Quarto, Python'
+    'github.com'          = 'OpenCode, Git, Python; Quarto then comes from inside RStudio'
     'opencode.ai'         = 'the free AI models'
     'cloud.r-project.org' = 'R and R packages'
     'pypi.org'            = 'Python packages'
@@ -586,8 +616,9 @@ function Tool-Defs {
     @{ id = 'OpenJS.NodeJS.LTS'; name = 'Node.js'; part = 'node';    cmd = 'node';    exe = 'node.exe';    dirs = @('nodejs') },
     @{ id = 'astral-sh.uv';      name = 'uv';      part = 'core';    cmd = 'uv';      exe = 'uv.exe';      dirs = @() },
     @{ id = 'RProject.R';        name = 'R';       part = 'r';       cmd = 'Rscript'; exe = 'Rscript.exe'; dirs = @('R\R-*\bin') },
-    @{ id = 'Posit.Quarto';      name = 'Quarto';  part = 'quarto';  cmd = 'quarto';  exe = 'quarto.exe';  dirs = @('Quarto\bin') },
-    @{ id = 'Posit.RStudio';     name = 'RStudio'; part = 'rstudio'; cmd = '';        exe = 'rstudio.exe'; dirs = @('RStudio') }
+    @{ id = 'Posit.RStudio';     name = 'RStudio'; part = 'rstudio'; cmd = '';        exe = 'rstudio.exe'; dirs = @('RStudio') },
+    # after RStudio: without GitHub, Quarto can come from the RStudio installed just before (d-e4a52e)
+    @{ id = 'Posit.Quarto';      name = 'Quarto';  part = 'quarto';  cmd = 'quarto';  exe = 'quarto.exe';  dirs = @('Quarto\bin') }
   )
 }
 function Tool-Def($name) { Tool-Defs | Where-Object { $_.name -eq $name } | Select-Object -First 1 }
@@ -663,7 +694,7 @@ function Choose-Parts {
 
 # ---------- 3. core tools ----------------------------------------------------
 function Install-Tools {
-  Step '3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio'
+  Step '3/9  Core tools: Git, Node.js, uv (Python), R, RStudio, Quarto'
   if ($env:MS_TEST_CRASH -eq 'tools') { throw 'test crash in step 3 (MS_TEST_CRASH)' }   # test hook: a crash mid-run
   Say '  Rule: this setup never upgrades or removes software that is already on this computer.'
   Say '  Windows may ask "Do you want to allow this app to make changes?" - click Yes each time.'
@@ -709,7 +740,11 @@ function Install-Tools {
       Record-Install 'rstudio' 'file' (Join-Path ([Environment]::GetFolderPath('Programs')) 'RStudio.lnk')
       Ok 'RStudio' 'installed for this account (direct download; in the Start menu)' }
     elseif ($t.name -eq 'R' -and ($rdir = Install-RDirect)) { Record-Install 'r' 'inno' $rdir; Add-UserPath (Join-Path $rdir 'bin'); Ok 'R' 'installed for this account (direct download from CRAN)' }
-    elseif ($t.name -eq 'Quarto' -and (Install-QuartoDirect)) { Record-Install 'quarto' 'dir' (Join-Path $env:LOCALAPPDATA 'Programs\Quarto'); Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\Quarto\bin'); Ok 'Quarto' 'installed for this account (direct download)' }
+    elseif ($t.name -eq 'Quarto' -and ($qbin = Install-QuartoDirect)) {
+      if ($qbin -like "$env:LOCALAPPDATA\Programs\Quarto\*") { Record-Install 'quarto' 'dir' (Join-Path $env:LOCALAPPDATA 'Programs\Quarto') }
+      else { Record-Install 'quarto' 'path' $qbin }   # the Quarto inside RStudio: only the PATH entry is this setup's
+      Add-UserPath $qbin
+      Ok 'Quarto' "installed for this account ($(if ($qbin -like '*RStudio*') { 'the Quarto inside RStudio' } else { 'direct download' }))" }
     else { Fail $t.name "winget could not install $($t.id); see $LogFile" }
   }
   if ($DryRun) { return }

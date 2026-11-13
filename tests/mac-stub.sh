@@ -68,4 +68,25 @@ if [ "$1" = list ]; then exit 1; fi; exit 0'
   n "old R ($who): the R app receipt is kept"      "^pkgutil --forget org.R-project.arm64.R.GUI.pkg"
   if grep -q "old R 4.3 kept" /tmp/run2.log; then echo "PASS old R ($who): message says the old R stays"; pass=$((pass+1)); else echo "MISS old R ($who): message says the old R stays"; failn=$((failn+1)); fi
 done
+# Quarto without GitHub (d-e4a52e): Homebrew's Quarto comes from GitHub; when it fails, the Quarto inside RStudio is
+# used (PATH entry only, recorded as such); with no Quarto inside RStudio the failure is still reported.
+rm -f "$STUB/quarto"
+mk brew 'if [ "$1" = --version ]; then echo "Homebrew 5.0.0"; exit 0; fi
+if [ "$1" = list ]; then exit 1; fi
+case "$*" in "install --cask quarto") exit 1;; esac; exit 0'
+Q=/Applications/RStudio.app/Contents/Resources/app/quarto/bin
+for has in yes no; do
+  rm -rf /Applications/RStudio.app "$HOME"; mkdir -p /Applications/RStudio.app/Contents/Resources/app/bin "$HOME"
+  [ $has = yes ] && { mkdir -p "$Q"; printf '#!/bin/bash\necho 1.8.25\n' > "$Q/quarto"; chmod +x "$Q/quarto"; }
+  : > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=quarto,rstudio > /tmp/run3.log 2>&1
+  REC="$HOME/Library/Application Support/MetaScience/installed.tsv"
+  if [ $has = yes ]; then
+    grep -q "OK.*Quarto.*the Quarto inside RStudio" /tmp/run3.log && { echo "PASS no GitHub: the Quarto inside RStudio is used"; pass=$((pass+1)); } || { echo "MISS no GitHub: the Quarto inside RStudio is used"; failn=$((failn+1)); }
+    grep -q "FAIL.*Quarto" /tmp/run3.log && { echo "MISS no GitHub: no Quarto failure reported"; failn=$((failn+1)); } || { echo "PASS no GitHub: no Quarto failure reported"; pass=$((pass+1)); }
+    grep -qF "$Q" "$HOME/.zprofile" 2>/dev/null && { echo "PASS no GitHub: RStudio's Quarto on PATH"; pass=$((pass+1)); } || { echo "MISS no GitHub: RStudio's Quarto on PATH"; failn=$((failn+1)); }
+    grep -qxF "core	path	$Q" "$REC" 2>/dev/null && ! grep -q "RStudio.app/Contents" <(grep -v "	path	" "$REC") && { echo "PASS no GitHub: only the PATH entry recorded"; pass=$((pass+1)); } || { echo "MISS no GitHub: only the PATH entry recorded"; failn=$((failn+1)); }
+  else
+    grep -q "FAIL.*Quarto.*no Quarto inside RStudio" /tmp/run3.log && { echo "PASS no GitHub, no Quarto in RStudio: failure reported"; pass=$((pass+1)); } || { echo "MISS no GitHub, no Quarto in RStudio: failure reported"; failn=$((failn+1)); }
+  fi
+done
 echo "RESULT pass=$pass miss=$failn"; [ $failn = 0 ]

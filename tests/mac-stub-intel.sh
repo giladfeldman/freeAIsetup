@@ -64,4 +64,22 @@ fl="$(grep -n '^pkgutil --forget org.R-project.x86_64.R.fw.pkg$' "$CALLS" | head
 il="$(grep -n '^installer -pkg .*R-4.6.10-x86_64.pkg' "$CALLS" | head -1 | cut -d: -f1)"
 if [ -n "$fl" ] && [ -n "$il" ] && [ "$fl" -lt "$il" ]; then echo "PASS old Intel R: receipt forgotten before the installer"; pass=$((pass+1)); else echo "MISS old Intel R: receipt forgotten before the installer"; failn=$((failn+1)); fi
 grep -q "old R 4.2 kept" /tmp/run2.log && { echo "PASS old Intel R: message says the old R stays"; pass=$((pass+1)); } || { echo "MISS old Intel R: message says the old R stays"; failn=$((failn+1)); }
+# Quarto without GitHub (d-e4a52e), Intel route: Quarto's package comes from GitHub; when that fails, the Quarto
+# inside the RStudio installed next is used; with no Quarto inside RStudio the failure is still reported.
+rm -f "$STUB/quarto"
+mk curl 'case " $* " in *" -w "*) echo 200; exit 0;; esac; url=""; out=""; prev=""; for a in "$@"; do case "$prev" in -o) out="$a";; esac; case "$a" in http*) url="$a";; esac; prev="$a"; done
+case "$url" in *github.com*) exit 22;; esac; [ -n "$out" ] && : > "$out"; exit 0'
+mk ditto 'mkdir -p "${@: -1}"; [ -d "$1" ] && cp -R "$1/." "${@: -1}/"; exit 0'
+for has in yes no; do
+  rm -rf /Applications/RStudio.app "$HOME"; mkdir -p "$HOME"
+  if [ $has = yes ]; then mk hdiutil 'if [ "$1" = attach ]; then mkdir -p "$5/RStudio.app/Contents/Resources/app/quarto/bin"; printf "#!/bin/bash\necho 1.8.25\n" > "$5/RStudio.app/Contents/Resources/app/quarto/bin/quarto"; chmod +x "$5/RStudio.app/Contents/Resources/app/quarto/bin/quarto"; fi; exit 0'
+  else mk hdiutil 'if [ "$1" = attach ]; then mkdir -p "$5/RStudio.app/Contents"; fi; exit 0'; fi
+  : > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=quarto,rstudio > /tmp/run3.log 2>&1
+  if [ $has = yes ]; then
+    grep -q "OK.*Quarto.*the Quarto inside RStudio" /tmp/run3.log && { echo "PASS Intel, no GitHub: the Quarto inside RStudio is used"; pass=$((pass+1)); } || { echo "MISS Intel, no GitHub: the Quarto inside RStudio is used"; failn=$((failn+1)); }
+    grep -qF "RStudio.app/Contents/Resources/app/quarto/bin" "$HOME/.zprofile" 2>/dev/null && { echo "PASS Intel, no GitHub: RStudio's Quarto on PATH"; pass=$((pass+1)); } || { echo "MISS Intel, no GitHub: RStudio's Quarto on PATH"; failn=$((failn+1)); }
+  else
+    grep -q "FAIL.*Quarto.*no Quarto inside RStudio" /tmp/run3.log && { echo "PASS Intel, no GitHub, no Quarto in RStudio: failure reported"; pass=$((pass+1)); } || { echo "MISS Intel, no GitHub, no Quarto in RStudio: failure reported"; failn=$((failn+1)); }
+  fi
+done
 echo "RESULT pass=$pass miss=$failn"; [ $failn = 0 ]

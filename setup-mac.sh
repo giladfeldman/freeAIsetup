@@ -157,7 +157,7 @@ setup_network() {
     site_ok "https://$h" && continue
     bad=$((bad+1)); BLOCKED="$BLOCKED$h "
     case "$h" in
-      github.com) need="OpenCode, Homebrew, Quarto, Python" ;; opencode.ai) need="the free AI models" ;;
+      github.com) need="OpenCode, Homebrew, Python; Quarto then comes from inside RStudio, if RStudio is installed" ;; opencode.ai) need="the free AI models" ;;
       cloud.r-project.org) need="R and R packages" ;; pypi.org) need="Python packages" ;; *) need="OpenCode (second source)" ;;
     esac
     warn "Blocked site" "$h cannot be reached from this network (needed for $need)"
@@ -410,7 +410,7 @@ install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the ma
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Quarto"
   elif mac_pkg "https://github.com/quarto-dev/quarto-cli/releases/download/v$QUARTO_VERSION/quarto-$QUARTO_VERSION-macos.pkg"; then
     record_install quarto pkgdir /Applications/quarto; add_path /Applications/quarto/bin; ok "Quarto" "installed"
-  else fail "Quarto" "download or install failed"; fi
+  else quarto_later "download or install failed"; fi
   if [ "$SKIP_GUI" = 0 ] && ! has_part rstudio; then skip "RStudio"
   elif [ "$SKIP_GUI" = 0 ]; then
     if [ -d "/Applications/RStudio.app" ] || [ -d "$HOME/Applications/RStudio.app" ]; then ok "RStudio" "already installed"
@@ -424,6 +424,23 @@ install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the ma
   fi
   rm -rf "$t"
 }
+# Quarto without GitHub (d-e4a52e): Quarto's own downloads (and Homebrew's) come from GitHub, which some networks
+# block (common in mainland China). RStudio, from Posit's own server, carries a whole Quarto inside it; when the
+# Quarto install fails, the setup uses that one after the RStudio step (only a PATH entry is recorded: RStudio's
+# files stay RStudio's).
+quarto_later() { QUARTO_LATER="$1"; say "  Quarto: $1; the Quarto inside RStudio is tried after the RStudio step"; }
+quarto_in_rstudio() { # the folder holding the quarto inside an installed RStudio, if any
+  local a f; for a in /Applications/RStudio.app "$HOME/Applications/RStudio.app"; do
+    [ -d "$a/Contents" ] || continue
+    f="$(find "$a/Contents" -type f -path '*/quarto/bin/quarto' 2>/dev/null | head -1)"
+    [ -n "$f" ] && [ -x "$f" ] && { dirname "$f"; return 0; }
+  done; return 1; }
+quarto_after_rstudio() {
+  [ -n "${QUARTO_LATER:-}" ] || return 0
+  local q; q="$(quarto_in_rstudio)"
+  if [ -n "$q" ]; then add_path "$q"; ok "Quarto" "the Quarto inside RStudio"
+  else fail "Quarto" "$QUARTO_LATER (and no Quarto inside RStudio)"; fi
+  QUARTO_LATER=""; }
 record_uv() { # uv installed by this setup: its files, and the Python and downloads it keeps, may go with the uninstall
   local f; for f in uv uvx; do [ -e "$HOME/.local/bin/$f" ] && record_install core file "$HOME/.local/bin/$f"; done
   record_install core uvdata "Python and downloads kept by uv"
@@ -438,7 +455,7 @@ install_tools() {
     local d; for d in /Library/Frameworks/R.framework/Resources/bin /Applications/quarto/bin /opt/homebrew/bin /usr/local/bin; do
       [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) { [ -x "$d/Rscript" ] || [ -x "$d/quarto" ] || [ -x "$d/git" ]; } && add_path "$d" ;; esac
     done
-    if [ "$NO_BREW" = 1 ]; then install_tools_direct; add_path "$HOME/.local/bin"; return 0; fi
+    if [ "$NO_BREW" = 1 ]; then install_tools_direct; quarto_after_rstudio; add_path "$HOME/.local/bin"; return 0; fi
     local f fp; for f in git node uv; do
       fp=core; [ "$f" = node ] && fp=node
       if [ "$f" = node ] && ! has_part node; then skip "node"
@@ -464,13 +481,14 @@ install_tools() {
     if ! has_part quarto; then skip "Quarto"
     elif have quarto; then ok "Quarto" "already installed"
     else local qhad=0; brew_had --cask quarto && qhad=1
-      retry brew install --cask quarto && { [ "$qhad" = 0 ] && record_install quarto cask quarto; ok "Quarto" "installed"; } || fail "Quarto" "brew install --cask quarto failed"; fi
+      retry brew install --cask quarto && { [ "$qhad" = 0 ] && record_install quarto cask quarto; ok "Quarto" "installed"; } || quarto_later "brew install --cask quarto failed"; fi
     if [ "$SKIP_GUI" = 0 ]; then
       if ! has_part rstudio; then skip "RStudio"
       elif [ -d "/Applications/RStudio.app" ]; then ok "RStudio" "already installed"
       else local shad=0; brew_had --cask rstudio && shad=1
         retry brew install --cask rstudio && { [ "$shad" = 0 ] && record_install rstudio cask rstudio; ok "RStudio" "installed"; } || fail "RStudio" "brew install --cask rstudio failed"; fi
     fi
+    quarto_after_rstudio
   else
     # only what is missing (a course Codespace already brings current Node.js and R; never replace them)
     local want="curl ca-certificates unzip python3" added="" a
