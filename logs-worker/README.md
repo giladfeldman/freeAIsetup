@@ -60,7 +60,10 @@ Each failed report also sends the teacher an alert email (admin email standard):
 the report key, and a button that opens a Claude Code session on it. The same failure is emailed at most
 once per 24 hours (later ones are counted), at most 10 alert emails a day. A digest of everything arrives
 on the 1st and 15th of each month, even when quiet (it proves the alerts still work). Code: `src/alerts.js`;
-tests: `npm test` (no network). The deploy's own confirming upload (version `DEPLOY-CHECK`) is emailed
+tests: `npm test` (no network). All alert work (each failed report and the digest) runs in one Durable Object,
+`AlertGate`, one job at a time, so two reports arriving together cannot both send an email, pass the daily cap or
+lose a count (`test/race.test.js`). It is created in the EU jurisdiction, sleeps when idle, and is part of the
+Workers Free plan. `wrangler dev` cannot set a jurisdiction, so locally it runs without one and says so in a warning. The deploy's own confirming upload (version `DEPLOY-CHECK`) is emailed
 like a student's, and its text says it is the deploy check.
 
 Uploads that send the header `x-freeaisetup-env: local` (tests) are stored but not emailed, and their

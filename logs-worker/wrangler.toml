@@ -13,6 +13,18 @@ workers_dev = true
 binding = "LOGS"
 id = "302605872288430c81dd4929190cadb9"
 
+# One at a time (d-09bd19): every alert decision and the digest run in ONE Durable Object (AlertGate, src/index.js),
+# so two reports at the same moment cannot both send an email or overwrite each other's counts. Created in the EU
+# jurisdiction (src/index.js). SQLite-backed, which the Workers Free plan includes; it sleeps when idle (no
+# always-on cost). Each failed report adds a few small writes to its storage (free plan: 100k a day).
+[[durable_objects.bindings]]
+name = "ALERTS"
+class_name = "AlertGate"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AlertGate"]
+
 # Admin alerts (admin email standard): an email per new failed report (src/alerts.js), and the fortnight digest
 # on the 1st and 15th of each month at 06:00 UTC (07:00/08:00 in Innsbruck).
 # Secrets (wrangler secret put): ADMIN_NOTIFY_EMAIL, SES_FROM, SES_ACCESS_KEY_ID, SES_SECRET_ACCESS_KEY,

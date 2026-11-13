@@ -99,6 +99,49 @@ export async function sendEmail(env, { subject, html, text }) {
 
 async function getJson(kv, k) { const v = await kv.get(k); return v ? JSON.parse(v) : null; }
 
+// ---- One at a time (d-09bd19) --------------------------------------------------------------------------------
+// Every alert decision reads its state (issue, day counter, muted list, alerts/meta) and writes it back. Two
+// reports at the same moment would both read the old state: two emails for one issue, an 11th email past the cap,
+// a lost count, a lost lastDigest. So reports and the digest all run in ONE Durable Object (AlertGate in
+// src/index.js), one after the other (makeQueue), reading their state from that object's own storage, which is
+// strongly consistent (consistentKv); KV stays the store the digest and the teacher read. The object keeps a
+// written value only for KEEP_LOCAL_MS, the time KV may take to show a write everywhere (about 60 s), so a key
+// deleted from KV by hand (the deploy check cleans up after itself) is gone for the alerts too a minute later.
+export function makeQueue() {
+  let tail = Promise.resolve();
+  return (fn) => { const run = tail.then(fn, fn); tail = run.catch(() => {}); return run; };
+}
+export const KEEP_LOCAL_MS = 90 * 1000;
+export function consistentKv(kv, storage, clock = Date.now) {
+  return {
+    async get(k) {
+      const s = await storage.get(k);
+      if (s && s.exp > clock()) return s.v;
+      if (s) await storage.delete(k);   // KV shows the write everywhere by now: read KV
+      return kv.get(k);
+    },
+    async put(k, v, opts = {}) {
+      await kv.put(k, v, opts);
+      const ttl = opts.expirationTtl ? opts.expirationTtl * 1000 : Infinity;
+      await storage.put(k, { v, exp: clock() + Math.min(ttl, KEEP_LOCAL_MS) });
+    },
+    list: (o) => kv.list(o),
+  };
+}
+
+// The digest, recording its own failure for the next digest (was inline in src/index.js scheduled()).
+export async function runDigest(env, now, send = sendEmail) {
+  try { return await sendDigest(env, now, send); }
+  catch (e) {
+    const meta = (await getJson(env.LOGS, "alerts/meta")) || {};
+    meta.lastError = `${now.toISOString()} digest: ${String((e && e.message) || e).slice(0, 300)}`;
+    meta.sendFailures = (meta.sendFailures || 0) + 1;
+    await env.LOGS.put("alerts/meta", JSON.stringify(meta));
+    console.error(meta.lastError);
+    return { error: meta.lastError };
+  }
+}
+
 // Called after a failed report is stored. Never throws: the student's upload must succeed regardless.
 export async function onFailedReport(env, { key, platform, version, country, body, environment }, now = new Date(), send = sendEmail) {
   const kv = env.LOGS;

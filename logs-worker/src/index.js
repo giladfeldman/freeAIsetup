@@ -2,11 +2,47 @@
 // Write-only: there is no way to read logs through this address. The teacher reads them with
 // `wrangler kv key list/get` using his own Cloudflare login (see README.md).
 // A failed report also triggers an admin alert email (src/alerts.js).
-import { onFailedReport, environmentOf, sendDigest, countKey, COUNT_TTL, COUNT_DAY_CAP } from "./alerts.js";
+import { onFailedReport, environmentOf, runDigest, countKey, COUNT_TTL, COUNT_DAY_CAP, sendEmail, makeQueue, consistentKv } from "./alerts.js";
 
 const MAX_BYTES = 1_500_000;         // a full setup log is ~100-400 KB
 const KEEP_SECONDS = 180 * 24 * 3600; // deleted automatically after 180 days
 const PLATFORMS = new Set(["windows", "mac", "linux", "codespace"]);
+
+// All alert work runs in ONE Durable Object, one job at a time (d-09bd19; see src/alerts.js "One at a time").
+// Created in the EU jurisdiction, like the KV store. It sleeps when idle: no always-on cost (free plan).
+export class AlertGate {
+  constructor(state, env) { this.state = state; this.env = env; this.queue = makeQueue(); this.send = sendEmail; }
+  async fetch(req) {
+    const job = await req.json();
+    const env = { ...this.env, LOGS: consistentKv(this.env.LOGS, this.state.storage) };
+    const now = new Date(job.now);
+    const out = await this.queue(() => (job.kind === "digest" ? runDigest(env, now, this.send) : onFailedReport(env, job.args, now, this.send)));
+    return new Response(typeof out === "string" ? out : JSON.stringify(out));
+  }
+}
+// async: any failure here is a rejected promise (recorded by gateFailed), never a thrown error that would turn the
+// student's upload into an error 500 (seen in the local smoke 2026-11-13)
+async function toGate(env, job) {
+  if (!env.ALERTS) throw new Error("ALERTS binding (AlertGate Durable Object) missing in wrangler.toml");
+  let ns;
+  try { ns = env.ALERTS.jurisdiction("eu"); }
+  catch (e) {   // only the local runtime (wrangler dev) lacks jurisdictions; anywhere else this is a real error
+    if (!/not implemented in workerd/.test(String((e && e.message) || e))) throw e;
+    console.warn("local runtime: Durable Object without the EU jurisdiction (wrangler dev cannot set it)");
+    ns = env.ALERTS;
+  }
+  return ns.get(ns.idFromName("alerts")).fetch(new Request("https://alert-gate/", { method: "POST", body: JSON.stringify(job) }));
+}
+
+async function gateFailed(env, what, e) {   // recorded for the digest, never silent
+  const msg = `${new Date().toISOString()} ${what}: ${String((e && e.message) || e).slice(0, 300)}`;
+  console.error(msg);
+  try {
+    const meta = JSON.parse((await env.LOGS.get("alerts/meta")) || "{}");
+    meta.lastError = msg; meta.sendFailures = (meta.sendFailures || 0) + 1;
+    await env.LOGS.put("alerts/meta", JSON.stringify(meta));
+  } catch { /* KV down: nothing more we can do */ }
+}
 
 function code() {
   const a = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";   // no 0/O/1/I: easy to read aloud
@@ -56,7 +92,9 @@ export default {
     });
     if (result === "failed") {
       // The alert runs after the answer: the student gets the code at once, whatever SES does.
-      ctx.waitUntil(onFailedReport(env, { key, platform, version, country: req.cf?.country || "", body, environment: environmentOf(req) }));
+      ctx.waitUntil(toGate(env, { kind: "report", now: new Date().toISOString(),
+        args: { key, platform, version, country: req.cf?.country || "", body, environment: environmentOf(req) } })
+        .catch((e) => gateFailed(env, "alert gate", e)));
     }
     return new Response(id + "\n", { headers: { "content-type": "text/plain" } });
   },
@@ -64,15 +102,7 @@ export default {
   // Cron on the 1st and 15th of each month (wrangler.toml): the fortnight digest.
   async scheduled(event, env, ctx) {
     const now = new Date(event.scheduledTime);
-    ctx.waitUntil((async () => {
-      try { await sendDigest(env, now); }
-      catch (e) {
-        const meta = JSON.parse((await env.LOGS.get("alerts/meta")) || "{}");
-        meta.lastError = `${now.toISOString()} digest: ${String((e && e.message) || e).slice(0, 300)}`;
-        meta.sendFailures = (meta.sendFailures || 0) + 1;
-        await env.LOGS.put("alerts/meta", JSON.stringify(meta));
-        console.error(meta.lastError);
-      }
-    })());
+    ctx.waitUntil(toGate(env, { kind: "digest", now: now.toISOString() })
+      .catch((e) => gateFailed(env, "digest gate", e)));
   },
 };
