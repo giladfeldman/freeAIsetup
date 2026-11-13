@@ -93,6 +93,15 @@ check "ai only, RStudio stays: says the pack stays" 'grep -q "The course pack st
 rc="$(un '' --parts=all --yes)"
 check "ai only, then all: RStudio, the pack and the state folder gone ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/RStudio.app" ] && [ ! -e "$MS_STATE_DIR" ] && [ -f "$W/course/my-notes.txt" ]'
 
+# 10. each word works with each entry point (2026-11-13: on Windows -Parts was ignored through the setup)
+make_state; rc="$(un '' --components=rstudio --yes)"
+check "uninstaller with --components=rstudio: exit 0, RStudio gone, quarto stays ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/RStudio.app" ] && [ -d "$W/quarto" ]'
+make_state; rc="$(un '' --yes)"
+check "--yes without parts: the message names --components ($rc)" '[ "$rc" = 2 ] && grep -q -- "--components" "$W/out.txt"'
+make_state; cp lib/uninstall-mac.sh setup-mac.sh VERSION "$MS_STATE_DIR/pack/" 2>/dev/null; cp lib/uninstall-mac.sh "$MS_STATE_DIR/pack/lib/"
+bash "$MS_STATE_DIR/pack/setup-mac.sh" --uninstall --parts=rstudio --yes > "$W/out.txt" 2>&1; rc=$?
+check "setup-mac.sh --uninstall --parts=rstudio: exit 0, RStudio gone ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/RStudio.app" ] && [ -d "$W/quarto" ]'
+
 # 8. setup-mac.sh: record_install and the part choice
 (
   STATE_DIR="$W/rs"; DRY_RUN=0

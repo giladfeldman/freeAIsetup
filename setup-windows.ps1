@@ -23,7 +23,7 @@ param(
   [switch]$NoAutoUpdate, # do not set up (or remove) the automatic daily update check
   [switch]$FromUpdate, # internal: run by the updater after new files arrived (quiet, no AI check)
   [switch]$Choose,    # ask again which parts to install
-  [string]$Components = '', # the parts to install, without asking: r,rstudio,quarto,python,node (or all / none)
+  [Alias('Parts')][string]$Components = '', # the parts to install (or with -Uninstall: to remove), without asking: r,rstudio,quarto,python,node (or all / none)
   [switch]$Uninstall  # remove some or all of what this setup installed (lib\uninstall-windows.ps1)
 )
 $ErrorActionPreference = 'Continue'

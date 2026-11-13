@@ -6,11 +6,12 @@
 #
 #  Start it with:  powershell -ExecutionPolicy Bypass -File "$env:LOCALAPPDATA\MetaScience\pack\setup-windows.ps1" -Uninstall
 #  (setup-windows.ps1 runs a copy of this file from the temp folder, because Windows cannot delete the pack folder
-#  while a program runs from it). Options: [-Parts rstudio,quarto|all] [-Yes] [-DryRun] [-RemoveCourse]
+#  while a program runs from it). Options: [-Components rstudio,quarto|all] [-Yes] [-DryRun] [-RemoveCourse]
+#  (-Parts is the same as -Components, in both places: before 2026-11-13 the setup ignored -Parts)
 #  Parts: rstudio, r, quarto, node, ai (the AI assistant, Git, uv, this pack and its daily update), all.
 # =============================================================================
 param(
-  [string]$Parts = '',   # what to remove without asking for the list (all = everything except the course folder)
+  [Alias('Components')][string]$Parts = '',   # what to remove without asking for the list (all = everything except the course folder)
   [switch]$Yes,          # do not ask (needs -Parts)
   [switch]$DryRun,       # show what would be removed, change nothing
   [switch]$RemoveCourse, # also delete the course folder (only together with -Yes; otherwise you are asked)
@@ -105,7 +106,7 @@ if ($Parts) {
     else { Say "Unknown part: $w. Use any of: rstudio, r, quarto, node, ai, all."; exit 2 }
   }
   $chosen = @($present | Where-Object { $chosen -contains $_ })
-} elseif ($Yes) { Say 'Say what to remove with -Parts (for example -Parts rstudio,quarto, or -Parts all).'; exit 2 }
+} elseif ($Yes) { Say 'Say what to remove with -Components (for example -Components rstudio,quarto, or -Components all).'; exit 2 }
 else {
   Say ''
   Say 'The setup installed these on this computer. Things that were here before the setup are not listed and are never touched.'

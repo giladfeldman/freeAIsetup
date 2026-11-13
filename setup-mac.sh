@@ -49,7 +49,7 @@ for arg in "$@"; do
     --no-auto-update) NO_AUTO_UPDATE=1 ;;
     --from-update) FROM_UPDATE=1; ASSUME_YES=1 ;;   # internal: run by the updater after new files arrived
     --choose)  CHOOSE=1 ;;
-    --components=*) COMPONENTS="${arg#*=}" ;;
+    --components=*|--parts=*) COMPONENTS="${arg#*=}" ;;   # --parts= is the uninstaller's word for the same
     --uninstall) MODE="uninstall" ;;
     --help|-h) sed -n '2,19p' "$0"; exit 0 ;;
     *) echo "Unknown option: $arg (try --help)"; exit 2 ;;

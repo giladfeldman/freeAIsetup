@@ -6,7 +6,7 @@
 #  Your course folder is kept unless you type DELETE when asked (or pass --remove-course together with --yes).
 #
 #  Start it with:  bash setup-mac.sh --uninstall     (from the pack folder ~/Library/Application Support/MetaScience/pack)
-#  or:             bash lib/uninstall-mac.sh [--parts=rstudio,quarto|all] [--yes] [--dry-run]
+#  or:             bash lib/uninstall-mac.sh [--components=rstudio,quarto|all] [--yes] [--dry-run]   (--parts= is the same)
 #  Parts: rstudio, r, quarto, node, ai (the AI assistant, Git, uv, this pack and its daily update), all.
 #  Written for bash 3.2 (the macOS default).
 # =============================================================================
@@ -14,7 +14,7 @@ set -u
 PARTS_ARG=""; YES=0; DRY_RUN=0; REMOVE_COURSE=0
 for arg in "$@"; do
   case "$arg" in
-    --parts=*) PARTS_ARG="${arg#*=}" ;;
+    --parts=*|--components=*) PARTS_ARG="${arg#*=}" ;;
     --yes|-y) YES=1 ;;
     --dry-run) DRY_RUN=1 ;;
     --remove-course) REMOVE_COURSE=1 ;;
@@ -73,7 +73,7 @@ if [ -n "$PARTS_ARG" ]; then
     case "$w" in all) CHOSEN="$CHOSEN $PRESENT" ;; ai|core) CHOSEN="$CHOSEN core" ;; rstudio|r|quarto|node) CHOSEN="$CHOSEN $w" ;; python) ;;
       *) say "Unknown part: $w. Use any of: rstudio, r, quarto, node, ai, all."; exit 2 ;; esac
   done
-elif [ "$YES" = 1 ]; then say "Say what to remove with --parts (for example --parts=rstudio,quarto, or --parts=all)."; exit 2
+elif [ "$YES" = 1 ]; then say "Say what to remove with --components (for example --components=rstudio,quarto, or --components=all)."; exit 2
 else
   say ""; say "The setup installed these on this computer. Things that were here before the setup are not listed and are never touched."
   i=0; for g in $PRESENT; do i=$((i+1)); extra=""

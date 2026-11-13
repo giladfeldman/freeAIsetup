@@ -1,4 +1,4 @@
-# The uninstall removes what the setup recorded installing and nothing else, keeps the course folder unless the
+﻿# The uninstall removes what the setup recorded installing and nothing else, keeps the course folder unless the
 # student types DELETE, and keeps its record and the chosen parts true afterwards. Runs on this computer and removes
 # nothing real: the record points at scratch folders, and other programs' uninstallers (winget, R, the update task)
 # are only named in the log (MS_TEST_FAKE_UNINSTALL). Also checks the setup's own Record-Install.
@@ -112,10 +112,20 @@ try {
   $code = Run-Un @('-Parts', 'all', '-Yes')
   Check 'ai only, then all: RStudio, the pack and the state folder gone' ($code -eq 0 -and -not (Test-Path (D 'rstudio')) -and -not (Test-Path $state) -and (Test-Path (D 'course\my-notes.txt'))) "exit $code $(Out)"
 
+  # 8a. the uninstaller started directly also takes the setup's word, -Components
+  Make-State
+  $code = Run-Un @('-Components', 'rstudio', '-Yes')
+  Check 'direct, -Components rstudio: RStudio gone, the rest stays' ($code -eq 0 -and -not (Test-Path (D 'rstudio')) -and (Test-Path $state)) "exit $code $(Out)"
+  Make-State
+  $code = Run-Un @('-Yes')
+  Check '-Yes without parts: the message names -Components, the word install-windows.cmd takes' ($code -eq 2 -and (Out) -match '-Components') "exit $code $(Out)"
+
   # 8. the real route, from an installed pack: Windows cannot delete a folder a window works in (install-windows.cmd
   #    works in the pack folder), so the setup runs a copy from the temp folder and the rest goes when the window closes
   #    ('cmd, -Uninstall not first': the cmd must find -Uninstall in any place, not only as the first word)
-  foreach ($route in 'powershell', 'cmd', 'cmd, -Uninstall not first') {
+  # 'powershell -Parts' / 'cmd -Parts': the uninstaller's own word for it works through the setup too (it was ignored, and
+  #  the uninstaller then asked for -Parts again: a loop; found 2026-11-13)
+  foreach ($route in 'powershell', 'cmd', 'cmd, -Uninstall not first', 'powershell -Parts', 'cmd -Parts') {
     Make-State
     $pack = Join-Path $state 'pack'
     foreach ($f in 'install-windows.cmd', 'setup-windows.ps1', 'VERSION') { Copy-Item -LiteralPath (Join-Path $root $f) -Destination $pack }
@@ -123,6 +133,8 @@ try {
     Set-Content -LiteralPath (Join-Path $state 'installed.tsv') -Value @("core`tpack`t$pack") -Encoding UTF8
     $in = D 'in.txt'; Set-Content -LiteralPath $in -Value @('', '') -Encoding ASCII
     $argv = if ($route -eq 'cmd') { @('/c', "`"`"$pack\install-windows.cmd`" -Uninstall -Components ai -Yes`"") }
+            elseif ($route -eq 'cmd -Parts') { @('/c', "`"`"$pack\install-windows.cmd`" -Uninstall -Parts ai -Yes`"") }
+            elseif ($route -eq 'powershell -Parts') { @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$pack\setup-windows.ps1`"", '-Uninstall', '-Parts', 'ai', '-Yes') }
             elseif ($route -like 'cmd*') { @('/c', "`"`"$pack\install-windows.cmd`" -Yes -Uninstall -Components ai`"") }
             else { @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$pack\setup-windows.ps1`"", '-Uninstall', '-Components', 'ai', '-Yes') }
     $exe = if ($route -like 'cmd*') { 'cmd.exe' } else { 'powershell.exe' }
