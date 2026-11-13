@@ -227,9 +227,17 @@ def write_config(course: pathlib.Path, log=print) -> pathlib.Path:
             if pid == "openrouter":
                 # OpenCode shows only these: OpenRouter's free models (363 -> 12 on 2026-11-10, OpenCode 1.19.5).
                 # A paid OpenRouter model then cannot even be chosen, also by a student who has bought credits.
-                # Listed outside the course folder, so an older list there does not hide newly free models.
-                wl = [m.split("/", 1)[1] for m in list_models("openrouter", pathlib.Path(tempfile.gettempdir()))
-                      if m.endswith(":free")]
+                # Listed outside the course folder, so an older list there does not hide newly free models, but in a
+                # folder whose settings name the key: without it a fresh computer has no OpenRouter at all and the
+                # list came out empty, which hid every OpenRouter model (real Codespace, 2026-11-13; developer
+                # machines passed only because OpenCode had its own OpenRouter sign-in stored).
+                # ignore_cleanup_errors: on Windows a killed (timed-out) opencode can still hold the folder, and a
+                # failed removal must never stop the settings from being written; the folder holds no key, only its path
+                with tempfile.TemporaryDirectory(prefix="ms-openrouter-", ignore_cleanup_errors=True) as tmp:
+                    (pathlib.Path(tmp) / "opencode.json").write_text(json.dumps(
+                        {"provider": {"openrouter": {"options": {"apiKey": providers[pid]["options"]["apiKey"]}}}}),
+                        encoding="utf-8")
+                    wl = [m.split("/", 1)[1] for m in list_models("openrouter", pathlib.Path(tmp)) if m.endswith(":free")]
                 if not wl:
                     # the listing failed (slow network, timeout): an empty whitelist would hide every OpenRouter model,
                     # so keep the list from the previous opencode.json
@@ -238,6 +246,8 @@ def write_config(course: pathlib.Path, log=print) -> pathlib.Path:
                     except (OSError, ValueError, KeyError, TypeError):
                         wl = []
                     log(f"note: OpenRouter's free models could not be listed now; kept {len(wl)} from the previous settings")
+                if not wl:
+                    log("WARNING: no OpenRouter free models found; OpenRouter stays hidden until the next run of the setup")
                 providers[pid]["whitelist"] = wl
     if providers:
         cfg["provider"] = providers
