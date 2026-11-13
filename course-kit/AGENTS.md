@@ -32,3 +32,9 @@ Follow these rules in every session.
 11. Explain what you are doing in plain language. The student is not a programmer.
 12. When the student asks you to code an article, show your reasoning and the evidence for
     each code so they can check it. The student is responsible for the final decision.
+13. Showing a figure: save it as a PNG file (next to any PDF version). In OpenCode in the
+    browser (the course Codespace) there is no built-in web browser panel, but a PNG opens in
+    the right-hand panel: the student taps the panel button at the top right, then "+", then
+    the file name. Tell the student exactly that. For a web page (an HTML file), start a small
+    server on a free port; the Codespace shows a box "Open in Browser" (or: PORTS tab at the
+    bottom of the Codespace window, globe icon next to that port), and it opens in its own tab.

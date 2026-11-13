@@ -51,18 +51,20 @@ OPENCODE_LOCAL = os.environ.get("MS_OPENCODE_LOCAL", "http://127.0.0.1:4096")
 def opencode_url() -> str | None:
     """The newest chat in the course folder (a new one if there is none), as an address the browser opens directly
     in that folder. OpenCode 1.19's web page cannot be sent to a folder by address alone (checked 2026-11-12: it goes
-    to a blank 'New project' page), but an address with a chat id in that folder opens it. None: OpenCode not running."""
+    to a blank 'New project' page), but an address with a chat id in that folder opens it. None: OpenCode not running.
+    Generous time limits: the first request after OpenCode starts loads the folder and its add-on, which took over
+    10 s in a test run (2026-11-13); a short limit showed "not running" for an OpenCode that was only starting."""
     import urllib.request
     d = urllib.parse.quote(str(COURSE))
     try:
-        with urllib.request.urlopen(f"{OPENCODE_LOCAL}/session?directory={d}", timeout=5) as r:
+        with urllib.request.urlopen(f"{OPENCODE_LOCAL}/session?directory={d}", timeout=60) as r:
             chats = [c for c in json.load(r) if not c.get("parentID")]
         if chats:
             sid = max(chats, key=lambda c: (c.get("time") or {}).get("updated", 0))["id"]
         else:
             req = urllib.request.Request(f"{OPENCODE_LOCAL}/session?directory={d}", data=b"{}", method="POST",
                                          headers={"Content-Type": "application/json"})
-            with urllib.request.urlopen(req, timeout=10) as r:
+            with urllib.request.urlopen(req, timeout=60) as r:
                 sid = json.load(r)["id"]
     except Exception:
         return None
@@ -177,6 +179,13 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def cookie(self, name: str) -> str:
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            k, _, v = part.strip().partition("=")
+            if k == name:
+                return v
+        return ""
+
     def do_GET(self):  # noqa: N802
         u = urllib.parse.urlparse(self.path)
         if u.path == "/":
@@ -197,16 +206,24 @@ class H(BaseHTTPRequestHandler):
                 PKCE.pop(next(iter(PKCE)))
             PKCE[state] = verifier
             challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
-            cb = f"{forwarded(PORT)}/callback/openrouter?s={state}"
+            # OpenRouter drops any ?query of the return address and adds only ?code= (real Codespace 2026-11-13), so the
+            # sign-in's id travels in the path, and in a cookie as a second way back
+            cb = f"{forwarded(PORT)}/callback/openrouter/{state}"
             q = urllib.parse.urlencode({"callback_url": cb, "code_challenge": challenge,
                                         "code_challenge_method": "S256", "key_label": "MetaScience course"})
-            return self.send(302, "", headers={"Location": f"{cs.OPENROUTER_AUTH}?{q}"})
-        if u.path == "/callback/openrouter":
+            return self.send(302, "", headers={"Location": f"{cs.OPENROUTER_AUTH}?{q}",
+                "Set-Cookie": f"ms_or={state}; Path=/callback; Max-Age=1800; HttpOnly; Secure; SameSite=Lax"})
+        if u.path == "/callback/openrouter" or u.path.startswith("/callback/openrouter/"):
             q = urllib.parse.parse_qs(u.query)
-            verifier = PKCE.pop((q.get("s") or [""])[0], "")
             code = (q.get("code") or [""])[0]
-            if not verifier or not code:
-                return self.send(400, DONE.format(title="That did not work", text="The sign-in came back without a code. Go back to the start page and tap Connect again."))
+            ids = [u.path[len("/callback/openrouter/"):], (q.get("s") or [""])[0], self.cookie("ms_or")]
+            verifier = next((PKCE.pop(i) for i in ids if i and i in PKCE), "")
+            if not code:
+                return self.send(400, DONE.format(title="That did not work", text="The sign-in came back without a code "
+                                 "(was Deny pressed?). Go back to the start page and tap Connect again."))
+            if not verifier:
+                return self.send(400, DONE.format(title="That did not work", text="This sign-in is unknown or was already "
+                                 "used (for example after a restart of the Codespace). Go back to the start page and tap Connect again."))
             try:
                 key = cs.openrouter_exchange(code, verifier)
             except Exception as e:

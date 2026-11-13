@@ -13,8 +13,8 @@ export PATH="$HOME/.local/bin:$PATH"
 COURSE="${METASCIENCE_DIR:-/workspaces/MetaScience}"
 PACK="${XDG_DATA_HOME:-$HOME/.local/share}/metascience/pack"
 mkdir -p "$COURSE"
-# The start page (port 4000): big buttons for tablets, the AI status, OpenRouter sign-in. It opens inside the
-# Codespace window (devcontainer.json: openPreview), so no pop-up blocker is involved.
+# The start page (port 4000): big buttons for tablets, the AI status, OpenRouter sign-in. The Codespace offers it in
+# a box with an "Open in Browser" button (devcontainer.json: notify); a tap opens it in its own tab.
 if ! pgrep -f "startpage/server.py" >/dev/null; then
   setsid -f python3 "$HERE/startpage/server.py" > /tmp/startpage.log 2>&1
   echo "start page started on 4000"

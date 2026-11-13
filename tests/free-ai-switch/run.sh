@@ -55,13 +55,25 @@ ask() { # session-id text -> waits until the session is idle with an answer or 6
     grep -q BACKUP-ANSWER "$T/msgs.json" && [ "$(grep -o BACKUP-ANSWER "$T/msgs.json" | wc -l)" -ge "${3:-1}" ] && return 0; done
   return 1
 }
-newsession() { curl -s -m 10 -X POST "$API/session" -H 'Content-Type: application/json' -d '{}' | "$PY" -c 'import json,sys;print(json.load(sys.stdin)["id"])'; }
+newsession() { # the first chat of a fresh server can take well over 10 s (OpenCode loads the folder and its add-on)
+  local id=""
+  for _ in 1 2 3; do
+    id="$(curl -s -m 60 -X POST "$API/session" -H 'Content-Type: application/json' -d '{}' | "$PY" -c 'import json,sys
+try: print(json.load(sys.stdin)["id"])
+except Exception: pass')"
+    [ -n "$id" ] && break; sleep 2
+  done
+  [ -n "$id" ] || echo "FAIL could not create a chat" >&2
+  echo "$id"
+}
 
 # --- case 3 first (control): no backup listed
 echo '[]' > "$MS_FREE_AI_FALLBACK"
 start
 S="$(newsession)"
-ask "$S" "hello" >/dev/null; sleep 3
+ask "$S" "hello" >/dev/null
+# wait for the add-on's record instead of a fixed pause (3 s was too short on a busy computer, 2026-11-13)
+for _ in $(seq 1 20); do grep -q "no free backup" "$MS_FREE_AI_STATE" 2>/dev/null && break; sleep 1; done
 if grep -q "no free backup" "$MS_FREE_AI_STATE" 2>/dev/null && ! grep -q BACKUP-ANSWER "$T/msgs.json"; then
   pass "3 no backup: retrying stopped, state says no backup connected"
 else fail "3 no backup: state=$(cat "$MS_FREE_AI_STATE" 2>/dev/null)"; fi

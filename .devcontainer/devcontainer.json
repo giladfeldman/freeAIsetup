@@ -15,12 +15,15 @@
   "postCreateCommand": "bash .devcontainer/create.sh",
   "postStartCommand": "bash .devcontainer/start.sh",
   "forwardPorts": [4000, 4096, 8787],
-  // The start page opens inside the Codespace window (a pop-up blocker on a tablet stopped "openBrowser"); its
-  // buttons open OpenCode and RStudio in new tabs.
+  // The start page is offered as a box with an "Open in Browser" button: a tap opens it in its own tab.
+  // Not "openPreview": the preview inside the window is refused by Firefox and Safari (iPad) because the private
+  // port's sign-in runs through github.com, which may not be shown inside another page (real Codespace 2026-11-13).
+  // Not "openBrowser": a tablet's pop-up blocker stops a tab opened without a tap. Its buttons open OpenCode and
+  // RStudio in new tabs, so those two stay silent.
   "portsAttributes": {
-    "4000": { "label": "Start page (tap here)", "onAutoForward": "openPreview" },
+    "4000": { "label": "Start page (tap here)", "onAutoForward": "notify" },
     "4096": { "label": "OpenCode (AI assistant)", "onAutoForward": "silent" },
-    "8787": { "label": "RStudio", "onAutoForward": "notify" }
+    "8787": { "label": "RStudio", "onAutoForward": "silent" }
   },
   "customizations": {
     "codespaces": { "openFiles": [".devcontainer/START-HERE.txt"] },

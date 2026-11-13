@@ -186,6 +186,10 @@ see a **Subscribe** button, do **not** press it: everything in this course is fr
 page** (PORTS tab, globe next to "Start page") has a **Connect OpenRouter** button and a **Restart OpenCode** button
 for this.
 
+**Seeing a figure in the browser version.** OpenCode in a Codespace has no built-in web browser panel, but a picture
+(PNG) the AI made opens next to the chat: tap the panel button at the top right of OpenCode, then **+**, then the file
+name. The course rules (`AGENTS.md`) tell the AI to save figures as PNG and to explain this.
+
 **Rules the AI follows** are in `AGENTS.md`. Read them. They match the course rules: never invent numbers or citations, quote the source, log what it did in `log/ai-log.md`.
 
 # Part 3 — Optional: more free AI services

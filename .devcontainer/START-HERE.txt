@@ -12,9 +12,12 @@ Everything is then installed: OpenCode with free AI models, R, RStudio, Python, 
 Your course folder is /workspaces/MetaScience
 
 THE START PAGE: EVERYTHING WITH ONE TAP
-  A "Start page" opens inside this window by itself. Its big buttons open OpenCode (already in your
-  course folder) and RStudio in new tabs, show whether the AI is ready, and restart OpenCode.
-  If you closed it: tap PORTS at the bottom of this screen, then the globe next to "Start page".
+  A box appears at the bottom right: "Your application running on port 4000 is available".
+  Tap "Open in Browser" there: the start page opens in its own tab. Its big buttons open OpenCode
+  (already in your course folder) and RStudio in new tabs, show whether the AI is ready, and restart
+  OpenCode. Keep that tab open and come back to it any time.
+  No box, or you closed it: tap PORTS at the bottom of this screen, then the globe next to
+  "Start page (tap here)". (Not the preview inside this window: Firefox and iPads refuse to show it.)
 
   FIRST TIME: on the start page, tap "Connect a free OpenRouter account" (about 2 minutes, no card).
   Why: the built-in free AI counts its free use per internet connection, and a Codespace shares its
