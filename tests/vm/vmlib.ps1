@@ -3,7 +3,7 @@ $VB   = "C:\Program Files\Oracle\VirtualBox\VBoxManage.exe"
 $VM   = "MS-Test-Win11"
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Kit  = Split-Path -Parent (Split-Path -Parent $Here)          # student-setup
-$Acct = Join-Path (Split-Path -Parent $Kit) 'vm-test-accounts.txt'
+$Acct = if ($env:MSVM_ACCOUNTS) { $env:MSVM_ACCOUNTS } else { Join-Path (Split-Path -Parent $Kit) 'vm-test-accounts.txt' }   # a worktree has no course folder above it
 $Results = Join-Path $Here 'results'
 New-Item -ItemType Directory -Force $Results | Out-Null
 function Pw($user) {
