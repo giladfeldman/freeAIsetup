@@ -16,6 +16,7 @@ import json
 import os
 import pathlib
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -479,6 +480,37 @@ def test_keys(course: pathlib.Path, t: "Table", record) -> list[dict]:
     return backups
 
 
+# The setup never upgrades a tool that is already on the computer, so an old one is kept as it is (d-f160b5).
+# The oldest version that does what the course needs, and what fails below it. Sources (2026-11-13):
+#   git 2.34: OpenCode 1.19 saves its undo snapshots with "git add --sparse" (Git release notes 2.34.0)
+#   node 20: the browser tool (@playwright/mcp) needs Node 20 or newer (its npm "engines" field)
+#   uv 0.3: "uv sync" / "uv run" for the course folder left preview in uv 0.3.0 (uv changelog)
+#   Rscript 4.5: the course R packages no longer come ready-built for older R (d-872f0e)
+#   quarto 1.0: Quarto 1.0.38 and 1.3.450 both rendered the check report (tested 2026-11-13); 1.0 was the first release
+MIN_VERSIONS = {
+    "git": ((2, 34), "OpenCode cannot save undo points of your files"),
+    "node": ((20,), "the browser tool will not start"),
+    "uv": ((0, 3), "the course Python environment may not build"),
+    "Rscript": ((4, 5), "the course R packages will not install"),
+    "quarto": ((1, 0), "reports may not render"),
+}
+
+
+def too_old(tool: str, first_line: str) -> str:
+    """The reason a found tool is too old for the course, or "" (unknown version or tool: never a warning)."""
+    if tool not in MIN_VERSIONS:
+        return ""
+    m = re.search(r"(\d+)\.(\d+)(?:\.(\d+))?", first_line)
+    if not m:
+        return ""
+    have = tuple(int(x) for x in m.groups() if x is not None)
+    need, what = MIN_VERSIONS[tool]
+    if have[:len(need)] >= need:
+        return ""
+    want = ".".join(str(x) for x in need)
+    return f"version {m.group(0)} is older than {want}: {what}. Update it, or uninstall it and run the setup again"
+
+
 def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tuple[str, ...] = PARTS) -> int:
     t = Table()
 
@@ -501,7 +533,9 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
         code, out = sh([tool, *args], timeout=60)
         record(tool, code, out)
         first = out.strip().splitlines()[0] if out.strip() else ""
-        if code == 0:
+        if code == 0 and too_old(tool, first):
+            t.add("WARN", tool, too_old(tool, first))
+        elif code == 0:
             t.add("OK", tool, first[:60])
         elif tool == "node":
             t.add("WARN", tool, "not found (only some MCP tools need it)")
