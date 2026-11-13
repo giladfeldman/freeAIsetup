@@ -1,9 +1,9 @@
 {
- "version": "2026.11.13.1",
- "published": "2026-11-13T11:54:30Z",
- "notes": "Codespace start page opens via an Open in Browser box (works in Firefox and on iPad); OpenRouter sign-in in a Codespace fixed; AI tells students how to see figures",
+ "version": "2026.11.13.2",
+ "published": "2026-11-13T14:27:11Z",
+ "notes": "OpenRouter backup works on fresh machines: setup lists its free models with the student's key",
  "files": {
-  "VERSION": "753a5ce23d2c12f51d8ca70b594d620ce258fd4786a5f420aeb73ede358e15d9",
+  "VERSION": "07148b0efac979fd458c652e2f8a86894b01ed262443104f582addbc195ebb52",
   "course-kit/.opencode/plugins/free-ai-switch.js": "df81a21afa77418374839479ed9be2f22a02da789ad9e6d167ab8233582c1137",
   "course-kit/AGENTS.md": "c1234c751e3968538d9558529705bc2cc3320650c6bcbac814ee6bca8855ed3d",
   "course-kit/analysis/README.txt": "cbe12f2958efd7a8f3793f6fb77b058546b5a1264b92cc39c79f2c606ebf0a0d",
@@ -20,7 +20,7 @@
   "guide/walkthrough.docx": "c044e5b11b2ac06ba419e297baf0769c2f24498e8b14f076d1940673757bfb74",
   "guide/walkthrough.md": "993b7b612017e231af551178dfecd7f5f67f8394058bb0289078ed646ea15e71",
   "install-windows.cmd": "b577faf85779a23a510266297e3ce836e63236a11ea7faacbc2e887e6cea042b",
-  "lib/course_setup.py": "37b7547c87431a553f2ecb4dce65ef539081a089deb8593539fc51ef762ce614",
+  "lib/course_setup.py": "927a7073d2c10e02e02b1ef4357a8751a709cd777bff921e2ec8809dce173053",
   "lib/fix_pandoc.R": "50a974630f74f4fdbd4de2418b96f94348f2bbc15cfd46b0e71309e14371769d",
   "lib/free-ai.json": "dc154395e1c3db627f06a5cef0aa71b3dd1498842092d531d21712e9cd339f49",
   "lib/uninstall-mac.sh": "ce4fcee8d96642297f48e8ed8025d8a2b42c106aac4d14605db4a75f49203d4a",
