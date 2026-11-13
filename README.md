@@ -79,7 +79,7 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 
 - **Parts:** the setup asks once which optional parts to install and remembers the answer. To choose again:
   `install-windows.cmd -Choose` (Windows) or `bash setup-mac.sh --choose` (Mac). Without asking:
-  `-Components r,quarto` / `--components=r,quarto` (any of `r`, `rstudio`, `quarto`, `python`, `node`, `all`, `none`).
+  `-Components r,quarto` (`-Parts` works too) / `--components=r,quarto` (`--parts=` works too) (any of `r`, `rstudio`, `quarto`, `python`, `node`, `all`, `none`).
 - **Disk space:** before installing, the setup adds up what the chosen parts that are not on the computer yet need,
   says how much it will use, stops if that plus 2 GB for the downloads is not free, and warns when less than 3 GB
   would be left. The sizes were measured on one Windows 11 computer; Mac sizes are not yet measured.
