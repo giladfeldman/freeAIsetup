@@ -1,3 +1,8 @@
+<!--
+  YOU ARE SEEING THE PLAIN TEXT OF THIS PAGE (lines with # and **).
+  Tap START-HERE.md in the file list on the left: it opens as a page with a big link to the start page.
+  (A new Codespace opens this file once as plain text, before it applies the course settings.)
+-->
 # MetaScience course
 
 ## ▶ [Tap here: open the start page](http://localhost:4000/)
