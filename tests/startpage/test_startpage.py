@@ -18,7 +18,7 @@ import urllib.request
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 TMP = pathlib.Path(tempfile.mkdtemp())
 os.environ.update(MS_STARTPAGE_PORT="18600", METASCIENCE_DIR="/workspaces/MetaScience",
-                  MS_FREE_AI_STATE=str(TMP / "state.json"), MS_FREE_AI_FALLBACK=str(TMP / "fallback.json"),
+                  MS_FREE_AI_STATE=str(TMP / "state.json"), MS_FREE_AI_FALLBACK=str(TMP / "fallback.json"), MS_SETUP_MARK=str(TMP / "setup-running"),
                   CODESPACE_NAME="test-space", GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN="app.github.dev",
                   HOME=str(TMP), USERPROFILE=str(TMP))
 spec = importlib.util.spec_from_file_location("startpage", ROOT / ".devcontainer/startpage/server.py")
@@ -146,6 +146,41 @@ check(code == 400 and not saved and "Connect again" in body, "callback: no code 
 
 code, _, h = get("/restart", "POST")
 check(code == 303 and h.get("Location") == "/", "restart button starts the job and returns to the page")
+
+# --- the first setup (15-25 minutes): the start page already runs and says so (2026-11-15: a new Codespace showed
+# --- only the editor, and the start page appeared nowhere a student would look)
+check(json.loads(get("/status")[1])["setup"] is None, "status: no setup running -> no setup notice")
+sp.SETUP_MARK.parent.mkdir(parents=True, exist_ok=True)
+sp.SETUP_MARK.write_text("x")
+os.utime(sp.SETUP_MARK, (sp.time.time() - 600, sp.time.time() - 600))
+check(json.loads(get("/status")[1])["setup"] == 10, "status: setup running for 10 minutes")
+code, body, _ = get("/open/opencode")
+check(code == 503 and "Still setting up" in body, "Open OpenCode during the setup: 'still setting up', not 'restart'")
+check('id="setup"' in get("/")[1], "page has the setup notice")
+check(get("/connect/openrouter")[0] == 503, "Connect OpenRouter during the setup: 'still setting up' (no race with the setup)")
+jobs_before = len(jobs)
+check(get("/restart", "POST")[0] == 503 and len(jobs) == jobs_before, "Restart during the setup: refused, no restart job")
+os.utime(sp.SETUP_MARK, (sp.time.time() - 3 * 3600, sp.time.time() - 3 * 3600))
+check(json.loads(get("/status")[1])["setup"] is None, "a left-over setup marker (3 hours old) is ignored")
+check(get("/open/opencode")[0] != 503 or "Still setting up" not in get("/open/opencode")[1],
+      "Open OpenCode with a left-over marker: not blocked by 'still setting up'")
+sp.SETUP_MARK.unlink()
+
+# --- the first screen of the Codespace: START-HERE.md, shown as a page with a one-tap link to the start page
+dc = (ROOT / ".devcontainer/devcontainer.json").read_text(encoding="utf-8")
+check('"openFiles": ["START-HERE.md"]' in dc, "first screen: the Codespace opens START-HERE.md (top of the file list)")
+start_here = (ROOT / "START-HERE.md").read_text(encoding="utf-8")
+first_link = start_here.split("](", 1)[1].split(")", 1)[0] if "](" in start_here else ""
+check(first_link == "http://localhost:4000/", "first screen: its first link is the start page (port 4000)")
+vs = (ROOT / ".vscode/settings.json").read_text(encoding="utf-8")
+check('"START-HERE.md": "vscode.markdown.preview.editor"' in vs, "first screen: START-HERE.md opens as a page, not source")
+check('"chat.disableAIFeatures": true' in vs, "first screen: no Copilot chat panel")
+create = (ROOT / ".devcontainer/create.sh").read_text(encoding="utf-8")
+check(0 <= create.find("startpage/server.py") < create.find("bash setup-mac.sh"),
+      "first setup: the start page starts before the 15-25 minute setup")
+check("trap 'rm -f \"$SETUP_MARK\"' EXIT" in create, "first setup: the notice ends when create.sh ends, also on failure")
+start_sh = (ROOT / ".devcontainer/start.sh").read_text(encoding="utf-8")
+check('rm -f "$SETUP_MARK"' in start_sh and "pgrep" in start_sh, "every start: a marker without a running setup is removed")
 
 srv.shutdown()
 print("ALL PASS" if not FAIL else "SOME FAILED")

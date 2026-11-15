@@ -15,7 +15,8 @@
   "postCreateCommand": "bash .devcontainer/create.sh",
   "postStartCommand": "bash .devcontainer/start.sh",
   "forwardPorts": [4000, 4096, 8787],
-  // The start page is offered as a box with an "Open in Browser" button: a tap opens it in its own tab.
+  // The start page: START-HERE.md (opened first) has a one-tap link to it (http://localhost:4000/, which the Codespace
+  // turns into the start page's own address), and a box with an "Open in Browser" button offers it as well.
   // Not "openPreview": the preview inside the window is refused by Firefox and Safari (iPad) because the private
   // port's sign-in runs through github.com, which may not be shown inside another page (real Codespace 2026-11-13).
   // Not "openBrowser": a tablet's pop-up blocker stops a tab opened without a tap. Its buttons open OpenCode and
@@ -26,11 +27,12 @@
     "8787": { "label": "RStudio", "onAutoForward": "silent" }
   },
   "customizations": {
-    "codespaces": { "openFiles": [".devcontainer/START-HERE.txt"] },
+    "codespaces": { "openFiles": ["START-HERE.md"] },
     "vscode": {
       // no R editor extension (it pops up errors, and students use RStudio in the browser instead).
-      // The "Do you trust the authors" box and Markdown preview cannot be set from here in the browser editor
-      // (real Codespace 2026-11-09), so START-HERE is plain text and explains the trust box.
+      // The "Do you trust the authors" box cannot be set from here, so START-HERE explains it. START-HERE.md opens as a
+      // page with a one-tap link to the start page through .vscode/settings.json: the browser editor ignores that
+      // setting here (real Codespace 2026-11-09) but applies it from the workspace file (2026-11-15).
       "settings": { "workbench.startupEditor": "none" },
       "extensions": ["-REditorSupport.r"]
     }

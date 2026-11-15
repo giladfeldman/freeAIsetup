@@ -1,0 +1,10 @@
+{
+  // Settings for the course Codespace's editor (a student opening this repository in the browser).
+  // Set here, not in devcontainer.json: the browser editor ignored the Markdown preview setting there (2026-11-09);
+  // from this file all three below work (checked in a real Codespace 2026-11-15).
+  // START-HERE.md opens as a readable page whose start-page link works with one tap, not as Markdown source.
+  "workbench.editorAssociations": { "START-HERE.md": "vscode.markdown.preview.editor" },
+  // no Copilot chat panel: students use OpenCode, and Copilot's panel offers paid plans
+  "chat.disableAIFeatures": true,
+  "workbench.secondarySideBar.defaultVisibility": "hidden"
+}

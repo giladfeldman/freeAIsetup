@@ -1,6 +1,6 @@
 """The Codespace start page: one page with big buttons, made for tablets (no terminal, no tiny icons).
 
-Runs on port 4000 (started by start.sh); the Codespace opens it inside its own window. It shows:
+Runs on port 4000 (started by create.sh before the first setup, and by start.sh at every start); START-HERE.md links to it. It shows:
   - Open OpenCode (already in the course folder), Open RStudio
   - the AI status in plain words: are the built-in free models available on this connection, which backup is used
   - Connect a free OpenRouter account: sign in, press Allow, done (the key comes back to this page by itself)
@@ -33,6 +33,8 @@ import course_setup as cs  # noqa: E402
 COURSE = pathlib.Path(os.environ.get("METASCIENCE_DIR", "/workspaces/MetaScience"))
 STATE = pathlib.Path(os.environ.get("MS_FREE_AI_STATE", pathlib.Path.home() / ".local/state/metascience/free-ai-state.json"))
 FALLBACK = pathlib.Path(os.environ.get("MS_FREE_AI_FALLBACK", cs.FALLBACK_FILE))
+# written by create.sh while the first setup runs (15-25 minutes); the page says so instead of offering dead buttons
+SETUP_MARK = pathlib.Path(os.environ.get("MS_SETUP_MARK", pathlib.Path.home() / ".local/state/metascience/setup-running"))
 JOB_LOG = pathlib.Path("/tmp/startpage-job.log") if os.name != "nt" else pathlib.Path(os.environ.get("TEMP", ".")) / "startpage-job.log"
 
 PKCE: dict[str, str] = {}   # state -> verifier, for the OpenRouter sign-in in progress
@@ -79,6 +81,15 @@ def read_json(p: pathlib.Path, default):
         return default
 
 
+def setup_minutes() -> int | None:
+    """Minutes since the first setup started, or None when it is not running."""
+    try:
+        minutes = int((time.time() - SETUP_MARK.stat().st_mtime) // 60)
+    except OSError:
+        return None
+    return minutes if minutes < 120 else None   # a setup takes 15-25 minutes; an older marker is left over
+
+
 def ai_status() -> dict:
     st = read_json(STATE, {})
     backups = read_json(FALLBACK, [])
@@ -87,7 +98,8 @@ def ai_status() -> dict:
     keys = [name for pid, name, _u, _h in cs.PROVIDERS if cs.key_path(pid).is_file()]
     until = time.strftime("%H:%M", time.localtime(st["limitedUntil"] / 1000)) if limited else ""
     return {"limited": limited, "until": until, "backups": [b.get("name") for b in backups if isinstance(b, dict)],
-            "keys": keys, "last": st.get("lastEvent", ""), "job": JOB}
+            "keys": keys, "last": st.get("lastEvent", ""), "job": JOB,
+            "setup": setup_minutes()}
 
 
 def run_job(title: str, steps: list[list[str]]) -> None:
@@ -131,12 +143,13 @@ PAGE = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 </style></head><body>
 <h1>MetaScience course</h1>
 <p>Tap a button. Each one opens in a new tab; come back to this tab any time.</p>
-<a class="btn main" href="/open/opencode" target="_blank" rel="noopener"><b>Open OpenCode (AI assistant)</b><span>Already in your course folder</span></a>
-<a class="btn" href="{rs}" target="_blank" rel="noopener"><b>Open RStudio</b><span>R in the browser</span></a>
+<div id="setup" class="card warn" hidden></div>
+<a class="btn main during-setup-off" href="/open/opencode" target="_blank" rel="noopener"><b>Open OpenCode (AI assistant)</b><span>Already in your course folder</span></a>
+<a class="btn during-setup-off" href="{rs}" target="_blank" rel="noopener"><b>Open RStudio</b><span>R in the browser</span></a>
 <div id="ai" class="card">Checking the AI status...</div>
-<a class="btn" href="/connect/openrouter" target="_blank" rel="noopener"><b>Connect a free OpenRouter account</b>
+<a class="btn during-setup-off" href="/connect/openrouter" target="_blank" rel="noopener"><b>Connect a free OpenRouter account</b>
  <span>Your own free backup for the AI: sign in (Google or GitHub is quickest), press Allow. No card, no payment.</span></a>
-<form method="post" action="/restart"><button class="btn" type="submit"><b>Restart OpenCode</b><span>If OpenCode does not open or seems stuck</span></button></form>
+<form method="post" action="/restart" class="during-setup-off"><button class="btn" type="submit"><b>Restart OpenCode</b><span>If OpenCode does not open or seems stuck</span></button></form>
 <div class="card"><b>Your files</b><p>They are in the MetaScience folder in the file list on the left of the Codespace window.
 To download one: press and hold it there, then Download.</p>
 <p><b>Money:</b> everything here is free. Never add a card anywhere, and never press "Subscribe" in OpenCode.</p></div>
@@ -154,7 +167,14 @@ async function upd(){
    if(!s.backups.length)c='warn';}
   if(s.job.running)h+='<p>Working: '+s.job.title+' ...</p>';
   else if(s.job.done)h+='<p><small>'+s.job.title+': '+(s.job.ok?'done':'did not fully work, see /tmp/startpage-job.log')+' ('+s.job.done+')</small></p>';
-  el.className='card '+c;el.innerHTML=h;}catch(e){}
+  if(s.setup!==null){c='warn';h='<b>AI:</b> its status shows here once the setup is finished.';}
+  el.className='card '+c;el.innerHTML=h;
+  const su=document.getElementById('setup');su.hidden=s.setup===null;
+  if(s.setup!==null)su.innerHTML='<b>The setup is still running</b> (started '+s.setup+' minutes ago; it takes about 15-25 minutes). '+
+   'Nothing to do: OpenCode and RStudio open once it is finished, and this page updates by itself.'+
+   (s.setup>=45?'<p>Taking much longer than usual? In the Codespace: menu (top left) &gt; Terminal &gt; New Terminal, then paste <b>tail /tmp/metascience-create.log</b> and show the last lines to your teacher.</p>':'');
+  for(const b of document.querySelectorAll('.during-setup-off'))b.style.display=s.setup===null?'':'none';
+ }catch(e){}
 }
 upd();setInterval(upd,5000);
 </script></body></html>"""
@@ -162,6 +182,10 @@ upd();setInterval(upd,5000);
 DONE = """<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <style>body{{font-family:system-ui,sans-serif;padding:24px;font-size:1.2rem;line-height:1.5}}</style></head>
 <body><h2>{title}</h2><p>{text}</p><p><a href="/">Back to the start page</a></p></body></html>"""
+
+
+SETTING_UP = ("OpenCode is still being installed (the first setup takes about 15-25 minutes). The start page says when "
+              "it is finished; then tap the button again.")
 
 
 class H(BaseHTTPRequestHandler):
@@ -191,6 +215,8 @@ class H(BaseHTTPRequestHandler):
         if u.path == "/":
             return self.send(200, PAGE.replace("{rs}", html.escape(forwarded(8787) + "/")))
         if u.path == "/open/opencode":
+            if setup_minutes() is not None:
+                return self.send(503, DONE.format(title="Still setting up", text=SETTING_UP))
             url = opencode_url()
             if url:
                 return self.send(302, "", headers={"Location": url})
@@ -199,6 +225,8 @@ class H(BaseHTTPRequestHandler):
                      "Open OpenCode again; if it still does not open, tap Restart OpenCode there."))
         if u.path == "/status":
             return self.send(200, json.dumps(ai_status()), "application/json")
+        if u.path == "/connect/openrouter" and setup_minutes() is not None:
+            return self.send(503, DONE.format(title="Still setting up", text=SETTING_UP))
         if u.path == "/connect/openrouter":
             verifier = secrets.token_urlsafe(64)
             state = secrets.token_urlsafe(16)
@@ -241,6 +269,8 @@ class H(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802
         if self.headers.get("Sec-Fetch-Site", "same-origin") not in ("same-origin", "none"):
             return self.send(403, "not allowed", "text/plain")   # another web page may not press our buttons
+        if self.path == "/restart" and setup_minutes() is not None:
+            return self.send(503, DONE.format(title="Still setting up", text=SETTING_UP))
         if self.path == "/restart":
             if not JOB["running"]:
                 run_job("restarting OpenCode", restart_opencode_steps())

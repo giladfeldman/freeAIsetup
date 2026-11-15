@@ -184,8 +184,8 @@ The limit resets after a while (usually the next day). A phone hotspot gives you
 when the built-in free use is used up and switches the chat by itself to a free model on your own account (OpenRouter
 `:free`, Groq, Google or NVIDIA, whichever you connected). It shows a short note in the chat when it does. If you
 see a **Subscribe** button, do **not** press it: everything in this course is free. In a Codespace, the **Start
-page** (PORTS tab, globe next to "Start page") has a **Connect OpenRouter** button and a **Restart OpenCode** button
-for this.
+page** (the first link on the **Start here** page the Codespace opens with; or the PORTS tab, globe next to "Start
+page") has a **Connect OpenRouter** button and a **Restart OpenCode** button for this.
 
 **Seeing a figure in the browser version.** OpenCode in a Codespace has no built-in web browser panel, but a picture
 (PNG) the AI made opens next to the chat: tap the panel button at the top right of OpenCode, then **+**, then the file
@@ -209,7 +209,7 @@ To add keys:
 - **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Keys`
 - **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --keys`
 
-**OpenRouter (recommended, one click):** the setup opens OpenRouter's page. Sign in with Google or GitHub and press **Allow**; the key arrives by itself. In a Codespace, OpenRouter shows a short code instead: copy it and paste it into the terminal. If OpenRouter later says it blocks free models for your account, open https://openrouter.ai/settings/privacy and allow free models.
+**OpenRouter (recommended, one click):** the setup opens OpenRouter's page. Sign in with Google or GitHub and press **Allow**; the key arrives by itself. In a Codespace, the easier way is the **Connect a free OpenRouter account** button on the start page; in the terminal, OpenRouter shows a short code instead: copy it and paste it into the terminal. If OpenRouter later says it blocks free models for your account, open https://openrouter.ai/settings/privacy and allow free models.
 
 **Other services (optional):** answer **y** to *"other free services too?"*. For each one the setup opens the sign-up page and waits. Create a key, copy it, paste it into the window (it stays hidden), and press Enter. Press Enter without pasting to skip a service.
 

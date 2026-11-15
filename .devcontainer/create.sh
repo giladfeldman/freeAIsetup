@@ -8,6 +8,13 @@ cd "$(dirname "$0")/.." || exit 1
 sudo mkdir -p /workspaces/MetaScience && sudo chown "$(id -u):$(id -g)" /workspaces/MetaScience
 # a shortcut in the file list on the left, so students can open and download their course files there
 ln -sfn /workspaces/MetaScience MetaScience
+# The start page right away (not only after the setup): the link in START-HERE.md works during the 15-25 minute setup,
+# and the page says the setup is still running while this marker exists. setsid -f: it must outlive this script.
+SETUP_MARK="$HOME/.local/state/metascience/setup-running"   # outside the course folder: students never see it
+mkdir -p "$(dirname "$SETUP_MARK")"
+date -u +%FT%TZ > "$SETUP_MARK"
+trap 'rm -f "$SETUP_MARK"' EXIT   # also when the setup fails or is stopped
+pgrep -f "startpage/server.py" >/dev/null || setsid -f python3 .devcontainer/startpage/server.py > /tmp/startpage.log 2>&1
 bash setup-mac.sh --yes --no-gui --no-auto-update 2>&1 | tee /tmp/metascience-create.log
 # RStudio opens in the course folder
 mkdir -p "$HOME/.config/rstudio"

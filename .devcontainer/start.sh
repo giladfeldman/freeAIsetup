@@ -13,6 +13,12 @@ export PATH="$HOME/.local/bin:$PATH"
 COURSE="${METASCIENCE_DIR:-/workspaces/MetaScience}"
 PACK="${XDG_DATA_HOME:-$HOME/.local/share}/metascience/pack"
 mkdir -p "$COURSE"
+# The start page's "setup still running" notice (create.sh) must not outlive the setup: a Codespace stopped during
+# its first setup does not run create.sh again, so a marker without a live setup is removed here.
+SETUP_MARK="$HOME/.local/state/metascience/setup-running"
+if [ -f "$SETUP_MARK" ] && ! pgrep -f "setup-mac.sh|devcontainer/create.sh" >/dev/null; then
+  rm -f "$SETUP_MARK"; echo "removed a setup marker without a running setup"
+fi
 # The start page (port 4000): big buttons for tablets, the AI status, OpenRouter sign-in. The Codespace offers it in
 # a box with an "Open in Browser" button (devcontainer.json: notify); a tap opens it in its own tab.
 if ! pgrep -f "startpage/server.py" >/dev/null; then
