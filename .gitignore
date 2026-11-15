@@ -1,5 +1,6 @@
 dist/
 tests/vm/results/
+tests/vm/metascience-setup.zip
 __pycache__/
 *.pyc
 *.log

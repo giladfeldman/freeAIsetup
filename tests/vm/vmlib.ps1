@@ -20,7 +20,12 @@ function VM-Stop {
   Start-Sleep 3
 }
 $CPUS = if ($env:MSVM_CPUS) { [int]$env:MSVM_CPUS } else { 1 }   # several cores freeze this VM in VirtualBox's Hyper-V mode
-function VM-Restore($snap) { VM-Stop; & $VB snapshot $VM restore $snap 2>&1 | Out-Null; & $VB modifyvm $VM --cpus $CPUS 2>&1 | Out-Null; "restored $snap ($CPUS cpu)" }
+$MEM  = if ($env:MSVM_MEM) { [int]$env:MSVM_MEM } else { 0 }   # MB; 0 keeps the snapshot's 8 GB. A busy host can run the VM in 3072: slower, it pages
+function VM-Restore($snap) {
+  VM-Stop; & $VB snapshot $VM restore $snap 2>&1 | Out-Null; & $VB modifyvm $VM --cpus $CPUS 2>&1 | Out-Null
+  $m = ''; if ($MEM) { & $VB modifyvm $VM --memory $MEM 2>&1 | Out-Null; $m = ", $MEM MB" }
+  "restored $snap ($CPUS cpu$m)"
+}
 function VM-Start {
   # the VM process needs a few seconds to release its lock after a shutdown: retry
   for ($i = 0; $i -lt 12; $i++) {
