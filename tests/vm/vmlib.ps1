@@ -59,16 +59,18 @@ function GA([string]$ps, [int]$timeoutSec = 900) {
   # run PowerShell code inside the guest WITH administrator rights: the built-in Administrator account gets a full token
   G $ps 'Administrator' $timeoutSec
 }
-function Wait-GA([int]$maxSec = 900) {
+$WAIT = if ($env:MSVM_WAIT) { [int]$env:MSVM_WAIT } else { 900 }   # seconds; a VM in 3 GB on a busy host needs ~2400 to sign in
+function Wait-GA([int]$maxSec = $WAIT) {
   $t = Get-Date
   while (((Get-Date) - $t).TotalSeconds -lt $maxSec) {
-    $r = G 'Write-Output GUEST-OK-4711' 'vmadmin' 30
+    $r = G 'Write-Output GUEST-OK-4711' 'vmadmin' $(if ($WAIT -gt 900) { 120 } else { 30 })
     if ($r -ccontains 'GUEST-OK-4711') { return $true }
     Start-Sleep 10
   }
   return $false
 }
 function Wait-Login($user, [int]$maxSec = 900) {
+  $maxSec = [math]::Max($maxSec, $WAIT)
   $t = Get-Date
   while (((Get-Date) - $t).TotalSeconds -lt $maxSec) {
     $u = & $VB guestproperty get $VM /VirtualBox/GuestInfo/OS/LoggedInUsersList
