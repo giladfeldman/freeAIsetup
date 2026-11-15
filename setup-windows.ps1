@@ -7,7 +7,7 @@
 #
 #  Start it by double-clicking install-windows.cmd (recommended), or:
 #    powershell -ExecutionPolicy Bypass -File setup-windows.ps1 [-Check] [-Keys] [-Fix] [-DryRun] [-SkipAI]
-#                [-Choose] [-Components r,rstudio,quarto,python,node|all|none] [-Uninstall]
+#                [-Choose] [-Components r,rstudio,quarto,python,node|all|none] [-Uninstall [-RemoveCourse]]
 #  Written for Windows PowerShell 5.1 (the Windows default).
 # =============================================================================
 param(
@@ -24,7 +24,8 @@ param(
   [switch]$FromUpdate, # internal: run by the updater after new files arrived (quiet, no AI check)
   [switch]$Choose,    # ask again which parts to install
   [Alias('Parts')][string]$Components = '', # the parts to install (or with -Uninstall: to remove), without asking: r,rstudio,quarto,python,node (or all / none)
-  [switch]$Uninstall  # remove some or all of what this setup installed (lib\uninstall-windows.ps1)
+  [switch]$Uninstall, # remove some or all of what this setup installed (lib\uninstall-windows.ps1)
+  [switch]$RemoveCourse # with -Uninstall -Yes: also delete the course folder (otherwise the student is asked)
 )
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = 'SilentlyContinue'      # makes downloads much faster in PowerShell 5.1
@@ -121,11 +122,11 @@ function Repair-UserPath {
 }
 function Add-UserPath($dir) {
   if (-not (Test-Path -LiteralPath $dir)) { return }
-  $parts = @(Split-PathList (Get-UserPathRaw))      # @() matters: one entry must stay a list, not become a string
-  $have = @($parts | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\').ToLowerInvariant() })
+  $pathParts = @(Split-PathList (Get-UserPathRaw))      # @() matters: one entry must stay a list, not become a string
+  $have = @($pathParts | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\').ToLowerInvariant() })
   if ($have -notcontains $dir.TrimEnd('\').ToLowerInvariant()) {
     if ($DryRun) { Say "  [dry-run] add $dir to your PATH"; return }
-    Set-UserPathRaw ((@($parts) + @($dir)) -join ';')
+    Set-UserPathRaw ((@($pathParts) + @($dir)) -join ';')
     Log "added to user PATH: $dir"
     Record-Install 'core' 'path' $dir
   }
@@ -565,13 +566,13 @@ function Find-CurrentR {   # the bin folder of the newest R 4.5 or newer on this
   return $best
 }
 function Put-PathFirst($dir) {   # this folder first on this account's PATH and in this window (an older R further down stays)
-  $parts = @(Split-PathList (Get-UserPathRaw))
+  $pathParts = @(Split-PathList (Get-UserPathRaw))
   $key = $dir.TrimEnd('\').ToLowerInvariant()
-  $norm = @($parts | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\').ToLowerInvariant() })
+  $norm = @($pathParts | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\').ToLowerInvariant() })
   if (-not $norm.Count -or $norm[0] -ne $key) {
     if ($DryRun) { Say "  [dry-run] put $dir first on your PATH" }
     else {
-      $rest = @(); for ($i = 0; $i -lt $parts.Count; $i++) { if ($norm[$i] -ne $key) { $rest += $parts[$i] } }
+      $rest = @(); for ($i = 0; $i -lt $pathParts.Count; $i++) { if ($norm[$i] -ne $key) { $rest += $pathParts[$i] } }
       Set-UserPathRaw ((@($dir) + $rest) -join ';'); Log "put first on user PATH: $dir"
       if ($norm -notcontains $key) { Record-Install 'core' 'path' $dir }
     }
@@ -1092,7 +1093,7 @@ if ($Uninstall) {
   Copy-Item -LiteralPath (Join-Path $ScriptDir 'lib\uninstall-windows.ps1') -Destination $unCopy -Force
   Set-Location -LiteralPath $env:TEMP; [Environment]::CurrentDirectory = $env:TEMP
   $un = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $unCopy)
-  if ($Components) { $un += @('-Parts', $Components) }; if ($Yes) { $un += '-Yes' }; if ($DryRun) { $un += '-DryRun' }
+  if ($Components) { $un += @('-Parts', $Components) }; if ($Yes) { $un += '-Yes' }; if ($DryRun) { $un += '-DryRun' }; if ($RemoveCourse) { $un += '-RemoveCourse' }
   if ($env:MS_FROM_CMD) {   # started by install-windows.cmd, which runs from the pack folder: the pack goes once it has ended
     try { $cmdPid = (Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction Stop).ParentProcessId; if ($cmdPid) { $un += @('-WaitPid', "$cmdPid") } } catch { Log "parent process unknown: $_" }
   }

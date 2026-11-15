@@ -101,6 +101,18 @@ check "--yes without parts: the message names --components ($rc)" '[ "$rc" = 2 ]
 make_state; cp lib/uninstall-mac.sh setup-mac.sh VERSION "$MS_STATE_DIR/pack/" 2>/dev/null; cp lib/uninstall-mac.sh "$MS_STATE_DIR/pack/lib/"
 bash "$MS_STATE_DIR/pack/setup-mac.sh" --uninstall --parts=rstudio --yes > "$W/out.txt" 2>&1; rc=$?
 check "setup-mac.sh --uninstall --parts=rstudio: exit 0, RStudio gone ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/RStudio.app" ] && [ -d "$W/quarto" ]'
+# --remove-course reaches the uninstaller through the setup (it was not passed on; found 2026-11-15)
+make_state; cp lib/uninstall-mac.sh setup-mac.sh VERSION "$MS_STATE_DIR/pack/" 2>/dev/null; cp lib/uninstall-mac.sh "$MS_STATE_DIR/pack/lib/"
+bash "$MS_STATE_DIR/pack/setup-mac.sh" --uninstall --parts=rstudio --yes --remove-course > "$W/out.txt" 2>&1; rc=$?
+check "setup-mac.sh --uninstall --yes --remove-course: the course folder is deleted ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/course" ]'
+
+# 11. a folder the setup put on PATH goes once it is empty (Windows VM 2026-11-15: uv's .local\bin stayed, with its
+#     PATH entry); one holding anything else stays
+make_state; mkdir -p "$W/localbin" "$W/keepbin"; : > "$W/localbin/uv2"; : > "$W/keepbin/other"
+printf '%s\n' "core${T}file${T}$W/localbin/uv2" "core${T}path${T}$W/localbin" "core${T}path${T}$W/keepbin" >> "$MS_STATE_DIR/installed.tsv"
+rc="$(un '' --parts=all --yes)"
+check "all: a PATH folder the setup made, empty now, is removed ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/localbin" ]'
+check "all: a PATH folder holding something else stays" '[ -f "$W/keepbin/other" ]'
 
 # 8. setup-mac.sh: record_install and the part choice
 (

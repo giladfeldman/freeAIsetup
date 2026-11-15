@@ -62,7 +62,11 @@ function Remove-Folder($path) {   # $true when gone now or as soon as it is free
 }
 $script:Later = @()
 function Run-Exe($exe, [string[]]$argList, $timeoutSec = 900) {
-  if ($Fake) { Log "would run: $exe $($argList -join ' ')"; return 0 }
+  if ($Fake) {   # MS_TEST_FAKE_EXIT='<text>=<code>': a command line holding <text> returns <code> (tests of the fallbacks)
+    $cl = "$exe $($argList -join ' ')"; Log "would run: $cl"
+    if ($env:MS_TEST_FAKE_EXIT -match '^(.+)=(-?\d+)$' -and $cl.Contains($Matches[1])) { return [int]$Matches[2] }
+    return 0
+  }
   try {
     $p = Start-Process -FilePath $exe -ArgumentList $argList -PassThru -WindowStyle Hidden `
          -RedirectStandardOutput "$LogFile.out" -RedirectStandardError "$LogFile.err"
@@ -71,6 +75,11 @@ function Run-Exe($exe, [string[]]$argList, $timeoutSec = 900) {
     foreach ($f in "$LogFile.out", "$LogFile.err") { if (Test-Path -LiteralPath $f) { Log (Get-Content -Raw -LiteralPath $f); Remove-Item -LiteralPath $f -Force } }
     return $p.ExitCode
   } catch { Log "could not start $exe : $_"; return 1 }
+}
+function Winget-ArpKeys($id) {
+  # the entries winget wrote into Windows' list of programs for a portable package: key name <id>_<source>
+  $roots = if ($env:MS_TEST_ARP_ROOT) { @($env:MS_TEST_ARP_ROOT) } else { @('HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall') }
+  foreach ($r in $roots) { Get-ChildItem -LiteralPath $r -ErrorAction SilentlyContinue | Where-Object { $_.PSChildName -like "${id}_*" } | ForEach-Object PSChildName }
 }
 
 # ---- what the setup installed -------------------------------------------------------------------------------
@@ -125,23 +134,23 @@ else {
     $chosen = @($present | Where-Object { $chosen -contains $_ })
   }
 }
-$removeCourse = $false
+$delCourse = $false
 if ($course.Count -and (Test-Path -LiteralPath $course[0].target)) {
-  if ($Yes) { $removeCourse = [bool]$RemoveCourse }
+  if ($Yes) { $delCourse = [bool]$RemoveCourse }
   elseif (-not $DryRun) {
     Say ''
     Say "Your course folder $($course[0].target) holds your course work, notes and the Python course packages."
     $a = "$(Read-Host 'To delete it too, type DELETE (this cannot be undone). Press Enter to keep it')".Trim()
-    $removeCourse = ($a -ceq 'DELETE')
+    $delCourse = ($a -ceq 'DELETE')
   }
 }
-if (-not $chosen.Count -and -not $removeCourse) { Say 'Nothing was removed.'; exit 0 }
+if (-not $chosen.Count -and -not $delCourse) { Say 'Nothing was removed.'; exit 0 }
 # The course pack holds this uninstall. If other parts the setup installed stay on this computer, the pack and its
 # daily update stay too, so the student can come back and remove those parts later.
 $keepPack = ($chosen -contains 'core') -and [bool]@($present | Where-Object { $_ -ne 'core' -and $chosen -notcontains $_ }).Count
 if ($keepPack) { Say ''; Say 'The course pack stays until the other parts are removed, so you can run the uninstall again.' }
 if (-not $Yes -and -not $DryRun) {
-  $what = @($chosen | ForEach-Object { $Groups[$_] }); if ($removeCourse) { $what += 'your course folder' }
+  $what = @($chosen | ForEach-Object { $Groups[$_] }); if ($delCourse) { $what += 'your course folder' }
   Say ''
   $a = "$(Read-Host "Remove: $($what -join '; ')? Windows may ask for permission for some programs. [y/N]")".Trim()
   if ($a -notmatch '^(y|yes)$') { Say 'Nothing was removed.'; exit 0 }
@@ -152,7 +161,7 @@ if (-not $Yes -and -not $DryRun) {
 # pack itself, and last the PATH entries whose folders are now gone
 $order = @{ rpkg = 0; uvdata = 1; app = 2; task = 3; winget = 4; inno = 4; dir = 5; file = 5; pack = 6; path = 7 }
 $todo = @($items | Where-Object { $chosen -contains $_.part -and -not ($keepPack -and $_.kind -in 'pack', 'task') } | Sort-Object { $order[$_.kind] })
-if ($removeCourse) { $todo += $course[0] }
+if ($delCourse) { $todo += $course[0] }
 $done = @()
 Say ''
 $pk = @($todo | Where-Object { $_.kind -eq 'rpkg' })
@@ -192,7 +201,15 @@ foreach ($it in $todo) {
     }
     'winget' {
       if (-not $Fake -and -not (Get-Command winget -ErrorAction SilentlyContinue)) { Fail $t 'winget (the Windows package installer) is missing; remove it in Settings > Apps'; break }
-      $code = Run-Exe 'winget' @('uninstall', '--id', $t, '--exact', '--silent', '--accept-source-agreements', '--disable-interactivity')
+      $wq = @('--silent', '--accept-source-agreements', '--disable-interactivity')
+      $code = Run-Exe 'winget' (@('uninstall', '--id', $t, '--exact') + $wq)
+      # -1978335212 = "no installed package found". VM 2026-11-15: Node.js (a portable winget package) got it in a full
+      # uninstall although it was installed; the same command alone removed it. Try once more, then by the entry
+      # winget itself wrote into Windows' list of programs (its key name starts with the package id).
+      if ($code -eq -1978335212) { Start-Sleep -Seconds $(if ($Fake) { 0 } else { 30 }); $code = Run-Exe 'winget' (@('uninstall', '--id', $t, '--exact') + $wq) }
+      if ($code -eq -1978335212) {
+        foreach ($k in @(Winget-ArpKeys $t)) { $code = Run-Exe 'winget' (@('uninstall', '--product-code', $k) + $wq); if ($code -ne 0) { break } }
+      }
       if ($code -eq 0) { Ok $t 'removed'; $done += $it } else { Fail $t "winget could not remove it (exit $code); remove it in Settings > Apps" }
     }
     'inno' {   # a program the setup installed with its maker's installer (R next to an older R): its own uninstaller
@@ -207,6 +224,13 @@ foreach ($it in $todo) {
       if (Remove-Folder $t) { Ok $t $(if ($script:Later -contains $t) { 'removed as soon as this command has finished' } else { 'removed' }); $done += $it }
       else { Fail $t "could not remove it (is a program from it still open?); see $LogFile" }
     }
+  }
+}
+# a folder the setup put on PATH that is empty now (uv's .local\bin once uv.exe, uvx.exe and uvw.exe are gone; VM
+# test 2026-11-15: it stayed, and so did its PATH entry): remove it. An empty folder holds nothing of the student's.
+foreach ($pth in @($todo | Where-Object { $_.kind -eq 'path' })) {
+  if (-not $DryRun -and (Test-Path -LiteralPath $pth.target -PathType Container) -and -not @(Get-ChildItem -LiteralPath $pth.target -Force -ErrorAction SilentlyContinue).Count) {
+    Remove-Item -LiteralPath $pth.target -Force -ErrorAction SilentlyContinue; Log "removed the empty folder $($pth.target)"
   }
 }
 # PATH entries the setup added, whose folders are gone now

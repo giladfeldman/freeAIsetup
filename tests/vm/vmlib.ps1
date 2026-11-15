@@ -47,6 +47,8 @@ function VM-Cycle {
 function Enc-Boot($path) { [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes("iex ([IO.File]::ReadAllText('$path'))")) }
 function G([string]$ps, $user = 'vmadmin', [int]$timeoutSec = 600) {
   # run PowerShell code inside the guest as $user (non-interactive logon). Returns output lines.
+  # A VM in 4 GB on a busy host took 223 s just to start PowerShell (2026-11-15): with MSVM_WAIT set, every limit x3, at least 600 s
+  if ($WAIT -gt 900) { $timeoutSec = [math]::Max(600, $timeoutSec * 3) }
   $f = Join-Path $env:TEMP ("g-{0}.ps1" -f [guid]::NewGuid().ToString('N').Substring(0, 8))
   Set-Content -LiteralPath $f -Value $ps -Encoding UTF8
   $dest = "C:\Users\Public\mstest\" + (Split-Path -Leaf $f)
@@ -63,7 +65,7 @@ $WAIT = if ($env:MSVM_WAIT) { [int]$env:MSVM_WAIT } else { 900 }   # seconds; a 
 function Wait-GA([int]$maxSec = $WAIT) {
   $t = Get-Date
   while (((Get-Date) - $t).TotalSeconds -lt $maxSec) {
-    $r = G 'Write-Output GUEST-OK-4711' 'vmadmin' $(if ($WAIT -gt 900) { 120 } else { 30 })
+    $r = G 'Write-Output GUEST-OK-4711' 'vmadmin' 30   # G stretches this on a slow VM (MSVM_WAIT)
     if ($r -ccontains 'GUEST-OK-4711') { return $true }
     Start-Sleep 10
   }

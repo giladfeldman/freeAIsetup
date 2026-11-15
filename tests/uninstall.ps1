@@ -61,6 +61,34 @@ try {
   Check 'all: course folder kept (no -RemoveCourse)' (Test-Path (D 'course\my-notes.txt'))
   Check 'all: the state folder is gone (nothing of the setup left)' (-not (Test-Path $state))
 
+  # 2b. -RemoveCourse with -Yes deletes the course folder (a variable of the same name, in other letters, had overwritten
+  #     the switch: PowerShell names ignore case; found 2026-11-15). A folder the setup put on PATH goes once it is empty
+  #     (VM 2026-11-15: uv's .local\bin stayed, and so did its PATH entry); one holding anything else stays.
+  Make-State
+  foreach ($d in 'localbin', 'keepbin') { New-Item -ItemType Directory -Force -Path (D $d) | Out-Null }
+  Set-Content -LiteralPath (D 'localbin\uv2.exe') -Value 'x'; Set-Content -LiteralPath (D 'keepbin\other.exe') -Value 'x'
+  Add-Content -LiteralPath (Join-Path $state 'installed.tsv') -Value @("core`tfile`t$(D 'localbin\uv2.exe')", "core`tpath`t$(D 'localbin')", "core`tpath`t$(D 'keepbin')") -Encoding UTF8
+  $code = Run-Un @('-Parts', 'all', '-Yes', '-RemoveCourse')
+  Check 'all -RemoveCourse: exit 0' ($code -eq 0) "exit $code $(Out)"
+  Check 'all -RemoveCourse: the course folder is deleted' (-not (Test-Path (D 'course'))) (Out)
+  Check 'all: a PATH folder the setup made, empty now, is removed' (-not (Test-Path (D 'localbin'))) (Out)
+  Check 'all: a PATH folder holding something else stays' (Test-Path (D 'keepbin\other.exe'))
+  Check 'all -RemoveCourse: something that was here before is untouched' (Test-Path (D 'was-here-before\keep.txt'))
+
+  # 2c. winget says "no installed package found" (-1978335212) for Node.js although it is installed (VM 2026-11-15):
+  #     one more try, then the entry winget wrote into Windows' list of programs; with no such entry it stays a FAIL
+  $arp = "HKCU:\Software\MetaScienceUninstallTest-$([guid]::NewGuid().ToString('N').Substring(0, 8))"
+  $env:MS_TEST_FAKE_EXIT = 'uninstall --id OpenJS.NodeJS.LTS=-1978335212'; $env:MS_TEST_ARP_ROOT = $arp
+  try {
+    New-Item -Path "$arp\OpenJS.NodeJS.LTS_Microsoft.Winget.Source_8wekyb3d8bbwe" -Force | Out-Null
+    Make-State; $code = Run-Un @('-Parts', 'node', '-Yes'); $log = LogOf
+    Check 'node not found by id: tried twice, then by its entry in the programs list' (([regex]::Matches($log, 'would run: winget uninstall --id OpenJS\.NodeJS\.LTS')).Count -eq 2 -and $log -match 'would run: winget uninstall --product-code OpenJS\.NodeJS\.LTS_Microsoft\.Winget\.Source_8wekyb3d8bbwe') $log
+    Check 'node not found by id, removed by its entry: exit 0, no FAIL, record forgets it' ($code -eq 0 -and (Out) -notmatch 'FAIL' -and -not ((Rec) -match '^node')) "exit $code $(Out)"
+    Remove-Item -LiteralPath $arp -Recurse -Force
+    Make-State; $code = Run-Un @('-Parts', 'node', '-Yes')
+    Check 'node not found and no entry in the programs list: still a FAIL, record keeps it' ($code -ne 0 -and (Out) -match 'FAIL\s+OpenJS\.NodeJS\.LTS' -and ((Rec) -match '^node')) "exit $code $(Out)"
+  } finally { Remove-Item Env:\MS_TEST_FAKE_EXIT, Env:\MS_TEST_ARP_ROOT -ErrorAction SilentlyContinue; Remove-Item -LiteralPath $arp -Recurse -Force -ErrorAction SilentlyContinue }
+
   # 3. asked: pick 2 (R), keep the course folder, confirm
   Make-State
   $code = Run-Un @() @('2', '', 'y')
@@ -147,6 +175,18 @@ try {
     Check "uninstall started with $route : no FAIL line, no 'batch file cannot be found'" ($o -notmatch 'FAIL' -and $o -notmatch 'cannot be found') $o
     Check "uninstall started with $route : exit code 0 passed on" ($p.ExitCode -eq 0) "exit $($p.ExitCode)"
   }
+  # 8b. -RemoveCourse reaches the uninstaller through the setup (it was not passed on; found 2026-11-15)
+  Make-State
+  $pack = Join-Path $state 'pack'
+  foreach ($f in 'install-windows.cmd', 'setup-windows.ps1', 'VERSION') { Copy-Item -LiteralPath (Join-Path $root $f) -Destination $pack }
+  Copy-Item -LiteralPath (Join-Path $root 'lib\uninstall-windows.ps1') -Destination (Join-Path $pack 'lib')
+  Set-Content -LiteralPath (Join-Path $state 'installed.tsv') -Value @("core`tpack`t$pack", "course`tdir`t$(D 'course')") -Encoding UTF8
+  $in = D 'in.txt'; Set-Content -LiteralPath $in -Value @('', '') -Encoding ASCII
+  $p = Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$pack\setup-windows.ps1`"", '-Uninstall', '-Components', 'ai', '-Yes', '-RemoveCourse') `
+       -WorkingDirectory $env:USERPROFILE -RedirectStandardInput $in -RedirectStandardOutput (D 'out.txt') -RedirectStandardError (D 'err.txt') -PassThru -WindowStyle Hidden
+  $null = $p.Handle; $p.WaitForExit()
+  for ($i = 0; $i -lt 12 -and (Test-Path -LiteralPath $state); $i++) { Start-Sleep -Seconds 5 }
+  Check 'setup -Uninstall -RemoveCourse -Yes: the course folder is deleted' (-not (Test-Path (D 'course'))) ((Get-Content -LiteralPath (D 'out.txt') -Raw) + (Get-Content -LiteralPath (D 'err.txt') -Raw))
 
   # 7. the setup's own Record-Install: one line per thing, no duplicates, nothing in a dry run
   $tokens = $null; $errs = $null

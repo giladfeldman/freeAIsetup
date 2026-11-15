@@ -2,26 +2,27 @@
 # disk space of each part (d-d30643). Results in tests\vm\results\<Tag>\ (host.txt, measure-*.txt, uninstall-*.txt).
 #   $env:MSVM_ACCOUNTS = "<path to vm-test-accounts.txt>"; powershell -ExecutionPolicy Bypass -File tests\vm\real-install.ps1
 # Needs dist\metascience-setup.zip (python make_zip.py) copied to tests\vm\metascience-setup.zip.
-param([string]$Tag = 'RI1', [int]$MaxMin = 240)
+param([string]$Tag = 'RI1', [int]$MaxMin = 240, [switch]$Running)   # -Running: use the VM as it runs now (already restored and signed in)
 . "$PSScriptRoot\vmlib.ps1"
 $res = Join-Path $Results $Tag
-function Note($t) { $l = (Get-Date -Format HH:mm:ss) + " [$Tag] $t"; Write-Output $l; Add-Content -LiteralPath (Join-Path $res 'host.txt') -Value $l }
+function Note($t) { $line = (Get-Date -Format HH:mm:ss) + " [$Tag] $t"; Write-Output $line; Add-Content -LiteralPath (Join-Path $res 'host.txt') -Value $line }
 
 # What is on disk, as the student: free space, the install record, and the size of each part's folders.
 $measure = @'
-function Gb($p) { if (Test-Path -LiteralPath $p) { [math]::Round(((Get-ChildItem -LiteralPath $p -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum) / 1GB, 2) } else { 'absent' } }
+function Gb($path) { if (Test-Path -LiteralPath $path) { [math]::Round(((Get-ChildItem -LiteralPath $path -Recurse -Force -File -ErrorAction SilentlyContinue | Measure-Object Length -Sum).Sum) / 1GB, 2) } else { 'absent' } }
 $L = $env:LOCALAPPDATA; $P = $env:ProgramFiles; $U = $env:USERPROFILE
 'free C: GB ' + [math]::Round((Get-PSDrive C).Free / 1GB, 2)
 '--- installed.tsv'
 Get-Content -LiteralPath "$L\MetaScience\installed.tsv" -Encoding UTF8 -ErrorAction SilentlyContinue
 '--- each recorded path exists?'
-foreach ($l in @(Get-Content -LiteralPath "$L\MetaScience\installed.tsv" -Encoding UTF8 -ErrorAction SilentlyContinue)) {
-  $f = $l -split "`t"; if ($f[1] -in 'dir', 'file', 'inno') { "{0,-6} {1}  {2}" -f $(if (Test-Path -LiteralPath $f[2]) { 'yes' } else { 'NO' }), $f[1], $f[2] } }
+# PowerShell names ignore case: a loop variable named l or p would overwrite L or P (it did: RI1, 2026-11-15)
+foreach ($rec in @(Get-Content -LiteralPath "$L\MetaScience\installed.tsv" -Encoding UTF8 -ErrorAction SilentlyContinue)) {
+  $f = $rec -split "`t"; if ($f[1] -in 'dir', 'file', 'inno') { "{0,-6} {1}  {2}" -f $(if (Test-Path -LiteralPath $f[2]) { 'yes' } else { 'NO' }), $f[1], $f[2] } }
 '--- sizes (GB)'
-foreach ($p in "$L\Programs\R", "$P\R", "$L\Programs\RStudio", "$P\RStudio", "$L\Programs\Quarto", "$P\Quarto", "$L\Programs\nodejs", "$P\nodejs",
+foreach ($dir in "$L\Programs\R", "$P\R", "$L\Programs\RStudio", "$P\RStudio", "$L\Programs\Quarto", "$P\Quarto", "$L\Programs\nodejs", "$P\nodejs",
   "$L\Microsoft\WinGet\Packages", "$L\Programs\MinGit", "$P\Git", "$L\Programs\Git", "$U\.local\bin", "$L\uv", "$U\MetaScience\.venv",
   "$L\Programs\opencode-cli", "$L\Programs\OpenCode", "$L\Programs\opencode", "$U\.local\share\opencode", "$U\.cache\opencode", "$L\MetaScience",
-  "$U\MetaScience", "$L\R", "$U\Documents\R") { '{0,-8} {1}' -f (Gb $p), $p }
+  "$U\MetaScience", "$L\R", "$U\Documents\R") { '{0,-8} {1}' -f (Gb $dir), $dir }
 '--- R library folders'
 foreach ($r in @(Get-ChildItem "$L\R\win-library", "$U\Documents\R\win-library" -Directory -ErrorAction SilentlyContinue)) { '{0,-8} {1}' -f (Gb $r.FullName), $r.FullName }
 '--- winget list (this account and machine)'
@@ -37,7 +38,7 @@ Get-ChildItem "$env:TEMP\metascience-setup-*.log" -ErrorAction SilentlyContinue 
 
 # free space and folder sizes before anything is installed
 New-Item -ItemType Directory -Force $res | Out-Null
-Note (VM-Restore 'student-ready2'); VM-Start
+if ($Running) { Note "using the running VM ($(VMState))" } else { Note (VM-Restore 'student-ready2'); VM-Start }
 if (-not (Wait-GA)) { Note 'BLOCKED: guest additions not ready'; VM-Stop; exit 2 }
 if (-not (Wait-Login 'student' 900)) { Note 'BLOCKED: student never logged in'; VM-Stop; exit 2 }
 G $measure 'student' 600 | Set-Content -LiteralPath (Join-Path $res 'measure-0-before.txt') -Encoding UTF8

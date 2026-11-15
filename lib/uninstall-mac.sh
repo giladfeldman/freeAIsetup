@@ -169,6 +169,14 @@ while IFS="$TAB" read -r part kind target; do
 done <<EOF
 $TODO
 EOF
+# a folder the setup put on PATH that is empty now (uv's ~/.local/bin once uv and uvx are gone; Windows VM test
+# 2026-11-15: it stayed, and so did its PATH entry): rmdir removes only an empty folder
+if [ "$DRY_RUN" = 0 ]; then while IFS="$TAB" read -r part kind target; do
+  [ "$kind" = path ] && [ -d "$target" ] && rmdir "$target" 2>/dev/null && echo "removed the empty folder $target" >> "$LOG_FILE"
+done <<EOF
+$TODO
+EOF
+fi
 # PATH lines the setup added to the shell start-up files, whose folders are gone now
 gone=""; while IFS="$TAB" read -r part kind target; do
   [ "$kind" = path ] && [ ! -d "$target" ] && { gone="$gone

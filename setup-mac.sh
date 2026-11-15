@@ -14,6 +14,7 @@
 #          bash setup-mac.sh --choose   ask again which parts to install
 #          bash setup-mac.sh --components=r,rstudio,quarto,python,node   (or all / none) the parts, without asking
 #          bash setup-mac.sh --uninstall   remove some or all of what this setup installed
+#                                          (with --yes --remove-course: the course folder too)
 #          bash setup-mac.sh --help
 #  Written for bash 3.2 (the macOS default): no associative arrays, no ${x,,}.
 # =============================================================================
@@ -51,7 +52,8 @@ for arg in "$@"; do
     --choose)  CHOOSE=1 ;;
     --components=*|--parts=*) COMPONENTS="${arg#*=}" ;;   # --parts= is the uninstaller's word for the same
     --uninstall) MODE="uninstall" ;;
-    --help|-h) sed -n '2,19p' "$0"; exit 0 ;;
+    --remove-course) REMOVE_COURSE=1 ;;   # with --uninstall --yes: also delete the course folder
+    --help|-h) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "Unknown option: $arg (try --help)"; exit 2 ;;
   esac
 done
@@ -800,7 +802,7 @@ case "$MODE" in
   update)   FINISHED=1; bash "$updater"; exit $? ;;
   rollback) FINISHED=1; bash "$updater" --rollback; exit $? ;;
   uninstall) FINISHED=1; un=(); [ -n "$COMPONENTS" ] && un+=("--parts=$COMPONENTS"); [ "$ASSUME_YES" = 1 ] && un+=(--yes)
-             [ "$DRY_RUN" = 1 ] && un+=(--dry-run); bash "$SCRIPT_DIR/lib/uninstall-mac.sh" ${un[@]+"${un[@]}"}; exit $? ;;
+             [ "$DRY_RUN" = 1 ] && un+=(--dry-run); [ "${REMOVE_COURSE:-0}" = 1 ] && un+=(--remove-course); bash "$SCRIPT_DIR/lib/uninstall-mac.sh" ${un[@]+"${un[@]}"}; exit $? ;;
   fix)   FINISHED=1; add_path "$HOME/.local/bin"; start_doctor; exit 0 ;;
   check) add_path "$HOME/.local/bin"; [ "$PLATFORM" = mac ] && for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$p" ] && eval "$("$p" shellenv)"; done
          load_parts; run_check; summary ;;
