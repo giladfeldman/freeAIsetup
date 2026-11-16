@@ -21,12 +21,12 @@ foreach ($rec in @(Get-Content -LiteralPath "$L\MetaScience\installed.tsv" -Enco
 '--- sizes (GB)'
 foreach ($dir in "$L\Programs\R", "$P\R", "$L\Programs\RStudio", "$P\RStudio", "$L\Programs\Quarto", "$P\Quarto", "$L\Programs\nodejs", "$P\nodejs",
   "$L\Microsoft\WinGet\Packages", "$L\Programs\MinGit", "$P\Git", "$L\Programs\Git", "$U\.local\bin", "$L\uv", "$U\MetaScience\.venv",
-  "$L\Programs\opencode-cli", "$L\Programs\OpenCode", "$L\Programs\opencode", "$U\.local\share\opencode", "$U\.cache\opencode", "$L\MetaScience",
+  "$L\Programs\Microsoft VS Code", "$U\.vscode", "$env:APPDATA\Code", "$L\Programs\opencode-cli", "$L\Programs\OpenCode", "$L\Programs\opencode", "$U\.local\share\opencode", "$U\.cache\opencode", "$L\MetaScience",
   "$U\MetaScience", "$L\R", "$U\Documents\R") { '{0,-8} {1}' -f (Gb $dir), $dir }
 '--- R library folders'
 foreach ($r in @(Get-ChildItem "$L\R\win-library", "$U\Documents\R\win-library" -Directory -ErrorAction SilentlyContinue)) { '{0,-8} {1}' -f (Gb $r.FullName), $r.FullName }
 '--- winget list (this account and machine)'
-winget list --accept-source-agreements 2>$null | Select-String 'Git|Node|uv|R for|RStudio|Quarto|OpenCode' | ForEach-Object { $_.Line.Trim() }
+winget list --accept-source-agreements 2>$null | Select-String 'Git|Node|uv|R for|RStudio|Quarto|OpenCode|Visual Studio Code' | ForEach-Object { $_.Line.Trim() }
 '--- PATH (user)'
 [Environment]::GetEnvironmentVariable('Path', 'User')
 '--- scheduled tasks'

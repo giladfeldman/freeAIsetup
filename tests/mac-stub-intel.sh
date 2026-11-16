@@ -10,6 +10,14 @@ NT=/tmp/nodetar; mkdir -p "$NT/node-v22.9.9-darwin-x64/bin"
 printf '#!/bin/bash\necho v22.9.9\n' > "$NT/node-v22.9.9-darwin-x64/bin/node"; chmod +x "$NT/node-v22.9.9-darwin-x64/bin/node"
 tar -czf "$NT/node-v22.9.9-darwin-x64.tar.gz" -C "$NT" node-v22.9.9-darwin-x64
 NSUM="$(sha256sum "$NT/node-v22.9.9-darwin-x64.tar.gz" | cut -d' ' -f1)"
+# a stand-in for VS Code's code command: keeps a list of add-ons (the Python add-on brings two more)
+cat > /tmp/code-fake <<'CODE'
+#!/bin/bash
+echo "code $*" >> /tmp/calls.log
+L=/tmp/codelist; case " $* " in *" --list-extensions "*) cat "$L" 2>/dev/null; exit 0 ;; esac
+prev=""; for a in "$@"; do [ "$prev" = --install-extension ] && { echo "$a" >> "$L"; [ "$a" = ms-python.python ] && printf 'ms-python.vscode-pylance\nms-python.debugpy\n' >> "$L"; }; prev="$a"; done; exit 0
+CODE
+chmod +x /tmp/code-fake; rm -f /tmp/codelist
 mk uname 'case "$1" in -s) echo Darwin;; -m) echo x86_64;; *) echo Darwin;; esac'
 mk sw_vers 'echo 15.8.2'
 mk sudo 'if [ "$1" = -v ] || [ "$1" = -n ]; then exit 0; fi; "$@"'
@@ -18,7 +26,7 @@ mk xcode-select '[ -f /tmp/clt-installed ] && { echo /Library/Developer/CommandL
 mk softwareupdate 'case "$1" in -l) echo "   * Label: Command Line Tools for Xcode-16.4";; -i) touch /tmp/clt-installed;; esac; exit 0'
 mk installer 'case "$2" in *R-*) printf "#!/bin/bash\necho \"R version 4.6.2 (2026-10-31)\"\n" > '"$STUB"'/R; cp '"$STUB"'/R '"$STUB"'/Rscript; chmod +x '"$STUB"'/R '"$STUB"'/Rscript;; *quarto*) printf "#!/bin/bash\necho 1.8.25\n" > '"$STUB"'/quarto; chmod +x '"$STUB"'/quarto;; esac; exit 0'
 mk hdiutil 'if [ "$1" = attach ]; then mkdir -p "$5/RStudio.app"; fi; exit 0'
-mk ditto 'mkdir -p "${@: -1}"'
+mk ditto 'mkdir -p "${@: -1}"; if [ "$1" = -x ]; then case "$3" in *vscode.zip) b="$4/Visual Studio Code.app/Contents/Resources/app/bin"; mkdir -p "$b"; cp /tmp/code-fake "$b/code";; esac; elif [ -d "$1" ]; then cp -R "$1/." "${@: -1}/"; fi; exit 0'
 mk shasum 'sha256sum "$3"'
 mk open 'exit 0'
 mk curl 'case " $* " in *" -w "*) echo 200; exit 0;; esac; url=""; out=""; prev=""; for a in "$@"; do case "$prev" in -o) out="$a";; esac; case "$a" in http*) url="$a";; esac; prev="$a"; done
@@ -53,6 +61,13 @@ t "Quarto package installed"         "^installer -pkg .*quarto-1.8.25-macos.pkg"
 t "RStudio disk image opened"        "^hdiutil attach"
 t "RStudio copied to Applications"   "^ditto .*RStudio.app /Applications/RStudio.app"
 t "Intel CLI downloaded"             "opencode-darwin-x64-baseline.zip"
+t "Intel: VS Code from Microsoft"    "update.code.visualstudio.com/latest/darwin/stable"
+n "Intel: Homebrew never asked for VS Code" "^brew .*visual-studio-code"
+t "Intel: OpenCode add-on added (code inside the app)" "^code --install-extension sst-dev.opencode$"
+REC="$HOME/Library/Application Support/MetaScience/installed.tsv"
+grep -qxF "vscode	pkgdir	/Applications/Visual Studio Code.app" "$REC" 2>/dev/null && { echo "PASS Intel: VS Code recorded"; pass=$((pass+1)); } || { echo "MISS Intel: VS Code recorded"; failn=$((failn+1)); }
+grep -qxF "vscode	vsext	ms-python.python" "$REC" 2>/dev/null && { echo "PASS Intel: Python add-on recorded"; pass=$((pass+1)); } || { echo "MISS Intel: Python add-on recorded"; failn=$((failn+1)); }
+grep -qF "Visual Studio Code.app/Contents/Resources/app/bin" "$HOME/.zprofile" && { echo "PASS Intel: VS Code's code command on PATH"; pass=$((pass+1)); } || { echo "MISS Intel: VS Code's code command on PATH"; failn=$((failn+1)); }
 o "Node unpacked and on PATH"        "OK    node  (installed (v22.9.9))"
 o "Homebrew skipped with reason"     "not used on Intel Macs"
 grep -q '.local/share/node/bin' "$HOME/.zprofile" && { echo "PASS node PATH in .zprofile"; pass=$((pass+1)); } || { echo "MISS node PATH in .zprofile"; failn=$((failn+1)); }

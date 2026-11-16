@@ -117,7 +117,7 @@
     Write-Host "  This computer is managed by an organisation (for example a university or employer), and its" -ForegroundColor Red
     Write-Host "  rules forbid running setup scripts (PowerShell policy: $pol)." -ForegroundColor Red
     Write-Host '  Please use your own laptop for the course, or ask IT to install: Git, Node.js, uv, R, RStudio,' -ForegroundColor Red
-    Write-Host '  Quarto and OpenCode. Show this message to the teacher.' -ForegroundColor Red
+    Write-Host '  Quarto, OpenCode and (optional) VS Code. Show this message to the teacher.' -ForegroundColor Red
     Stop-WithReport 'Managed computer' "PowerShell policy $pol forbids setup scripts"
     return
   }

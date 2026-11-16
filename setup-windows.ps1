@@ -1,13 +1,14 @@
 ﻿# =============================================================================
 #  Meta-science course: one-step setup for Windows 10/11
 #  Installs: OpenCode (desktop + command line), Git, Node.js, uv + Python,
-#            R + course packages, RStudio, Quarto; creates %USERPROFILE%\MetaScience;
+#            R + course packages, RStudio, Quarto, VS Code (with its OpenCode and Python add-ons);
+#            creates %USERPROFILE%\MetaScience;
 #            runs a real end-to-end check that uses every installed tool.
 #  Safe to run again: it skips what is already installed and repairs the rest.
 #
 #  Start it by double-clicking install-windows.cmd (recommended), or:
 #    powershell -ExecutionPolicy Bypass -File setup-windows.ps1 [-Check] [-Keys] [-Fix] [-DryRun] [-SkipAI]
-#                [-Choose] [-Components r,rstudio,quarto,python,node|all|none] [-Uninstall [-RemoveCourse]]
+#                [-Choose] [-Components r,rstudio,quarto,python,node,vscode|all|none] [-Uninstall [-RemoveCourse]]
 #  Written for Windows PowerShell 5.1 (the Windows default).
 # =============================================================================
 param(
@@ -15,7 +16,7 @@ param(
   [switch]$Keys,      # add optional free AI keys
   [switch]$DryRun,    # show what would be done, change nothing
   [switch]$SkipAI,    # run the check without calling the AI
-  [switch]$NoGui,     # skip RStudio and the OpenCode desktop app
+  [switch]$NoGui,     # skip RStudio, VS Code and the OpenCode desktop app
   [switch]$Yes,       # do not ask questions
   [switch]$Fix,       # start the AI setup helper on the last setup log
   [switch]$Update,    # check for a newer version of this pack now and install it
@@ -23,7 +24,7 @@ param(
   [switch]$NoAutoUpdate, # do not set up (or remove) the automatic daily update check
   [switch]$FromUpdate, # internal: run by the updater after new files arrived (quiet, no AI check)
   [switch]$Choose,    # ask again which parts to install
-  [Alias('Parts')][string]$Components = '', # the parts to install (or with -Uninstall: to remove), without asking: r,rstudio,quarto,python,node (or all / none)
+  [Alias('Parts')][string]$Components = '', # the parts to install (or with -Uninstall: to remove), without asking: r,rstudio,quarto,python,node,vscode (or all / none)
   [switch]$Uninstall, # remove some or all of what this setup installed (lib\uninstall-windows.ps1)
   [switch]$RemoveCourse # with -Uninstall -Yes: also delete the course folder (otherwise the student is asked)
 )
@@ -169,7 +170,9 @@ function Winget-Install($id) {
   if ($id -eq 'Posit.RStudio') { $scopes = @(, @()) }
   # uv and Quarto: the all-users run pops up an admin prompt (VM test 2026-11-09, student account). Their direct
   # download installs for this account with no prompt, so after the per-account try, go straight there.
-  if ($id -in 'astral-sh.uv', 'Posit.Quarto') { $scopes = @(, @('--scope', 'user')) }
+  # VS Code: its all-users installer needs admin rights too, and its per-account installer (winget lists both) is all a
+  # student needs.
+  if ($id -in 'astral-sh.uv', 'Posit.Quarto', 'Microsoft.VisualStudioCode') { $scopes = @(, @('--scope', 'user')) }
   foreach ($scope in $scopes) {
     for ($try = 1; $try -le 4; $try++) {
       $code = Run-Native 'winget' ($base + $scope) 3600   # RStudio alone is ~500 MB: on shared class Wi-Fi 30 min is not enough
@@ -281,6 +284,51 @@ function Install-RStudioDirect {
     }
   }
   return $false
+}
+
+# ---------- VS Code and its add-ons (owner request 2026-11-16) ------------------------------------------------------
+# The add-ons the course uses. sst-dev.opencode is OpenCode's own (github.com/anomalyco/opencode, sdks/vscode): it opens
+# a terminal in VS Code and starts the OpenCode this setup installed, with the same free models and settings
+# (its button at the top right of an open file). ms-python.python is Microsoft's, and brings Pylance, the Python debugger and Python Environments with it.
+# No R add-on: REditorSupport.r needs the languageserver R package and pops up errors without it; VS Code colours R
+# code by itself, and RStudio is the course's R editor.
+$CodeExtensions = @('sst-dev.opencode', 'ms-python.python')
+function Code-DataDirs { @((Join-Path $env:USERPROFILE '.vscode'), (Join-Path $env:APPDATA 'Code')) }   # add-ons; settings
+# tests: MS_TEST_CODE_DIR gives VS Code a scratch add-on and settings folder, so a test never touches a real VS Code
+function Code-Iso { if ($env:MS_TEST_CODE_DIR) { @('--extensions-dir', "`"$(Join-Path $env:MS_TEST_CODE_DIR 'ext')`"", '--user-data-dir', "`"$(Join-Path $env:MS_TEST_CODE_DIR 'data')`"") } else { @() } }
+function Code-Extensions($code) {   # the add-ons VS Code has, as lower-case ids
+  $iso = @(Code-Iso | ForEach-Object { $_.Trim('"') })
+  @((& $code @iso --list-extensions) 2>$null | ForEach-Object { "$_".Trim().ToLowerInvariant() } | Where-Object { $_ -match '^[a-z0-9-]+\.[a-z0-9-]+$' })
+}
+function Install-VSCodeDirect {
+  # Second route for VS Code (winget often cannot start for minutes on a fresh laptop): Microsoft's own per-account
+  # installer, the one winget uses too. Installs into this account's Programs folder; no admin. Returns that folder.
+  $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'win32-arm64-user' } else { 'win32-x64-user' }
+  $exe = Join-Path $env:TEMP 'VSCodeUserSetup.exe'
+  Say '  Downloading VS Code for this account only (about 290 MB, from Microsoft; on slow Wi-Fi 10 minutes or more)...'
+  if (-not (Download "https://update.code.visualstudio.com/latest/$arch/stable" $exe)) { return $null }
+  $dir = Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code'
+  $code = Run-Native $exe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MERGETASKS=!runcode') 1800
+  Remove-Item -LiteralPath $exe -Force -ErrorAction SilentlyContinue
+  if ($code -eq 0 -and (Test-Path -LiteralPath (Join-Path $dir 'bin\code.cmd'))) { return $dir }
+  Log "VS Code installer exit $code"; return $null
+}
+function Install-CodeExtensions {
+  # Adds only the add-ons that are missing. An add-on already in VS Code is never updated (no --force), and each
+  # one this run adds is recorded, so the uninstall removes those and leaves the student's own.
+  $dir = Find-Tool (Tool-Def 'VS Code')
+  if (-not $dir) { return }   # VS Code itself failed above, and said so
+  $code = Join-Path $dir 'code.cmd'
+  if ($DryRun) { Say "  [dry-run] add the VS Code add-ons that are missing: $($CodeExtensions -join ', ')"; return }
+  $before = @(Code-Extensions $code)
+  $missing = @($CodeExtensions | Where-Object { $before -notcontains $_ })
+  foreach ($e in $missing) { $null = Run-Native $code (@(Code-Iso) + @('--install-extension', $e)) 900 }
+  $after = @(Code-Extensions $code)
+  foreach ($e in $after) { if ($before -notcontains $e) { Record-Install 'vscode' 'vsext' $e } }   # with the ones they brought
+  $still = @($CodeExtensions | Where-Object { $after -notcontains $_ })
+  if ($still.Count) { Fail 'VS Code add-ons' "could not add $($still -join ', ') (the add-on store may be blocked on this network); see $LogFile" }
+  elseif ($missing.Count) { Ok 'VS Code add-ons' 'OpenCode and Python added' }
+  else { Ok 'VS Code add-ons' 'OpenCode and Python already there' }
 }
 function Install-GitDirect {
   # Second route for Git: "MinGit", the official small zip edition of Git for Windows (no installer, no admin).
@@ -600,7 +648,11 @@ function Install-RDirect {   # the current R from CRAN, for this account only; r
 
 # ---------- parts the student chooses (owner request 2026-11-12) ---------------------
 # The AI assistant (OpenCode), Git and uv (which runs the setup's own Python helper) are always installed.
-$AllParts = @('r', 'rstudio', 'quarto', 'python', 'node')
+$AllParts = @('r', 'rstudio', 'quarto', 'python', 'node', 'vscode')
+# The parts of a setup from before the student could choose (no parts.txt). An update never adds a part the student
+# did not choose: VS Code (added 2026-11-16) comes only when they run the setup themselves.
+$LegacyParts = @('r', 'rstudio', 'quarto', 'python', 'node')
+$GuiParts = @('rstudio', 'vscode')   # desktop programs: left out with -NoGui
 # gb: installed size, measured on one Windows 11 computer on 2026-11-12 (not yet on a fresh computer)
 $PartInfo = @{
   r       = @{ name = 'R and the course R packages';              gb = 0.4 }
@@ -608,6 +660,8 @@ $PartInfo = @{
   quarto  = @{ name = 'Quarto (turns an analysis into a report)'; gb = 0.5 }
   python  = @{ name = 'Python course packages';                   gb = 0.5 }
   node    = @{ name = 'Node.js (a few optional AI tools need it)'; gb = 0.2 }
+  # VS Code 0.8 GB (one version) + its OpenCode and Python add-ons 0.17 GB (both measured on Windows 11, 2026-11-16)
+  vscode  = @{ name = 'VS Code (code editor; OpenCode + Python add-ons)'; gb = 1.0 }
 }
 $script:Parts = $AllParts
 function Has-Part($p) { $script:Parts -contains $p }
@@ -619,7 +673,8 @@ function Tool-Defs {
     @{ id = 'RProject.R';        name = 'R';       part = 'r';       cmd = 'Rscript'; exe = 'Rscript.exe'; dirs = @('R\R-*\bin') },
     @{ id = 'Posit.RStudio';     name = 'RStudio'; part = 'rstudio'; cmd = '';        exe = 'rstudio.exe'; dirs = @('RStudio') },
     # after RStudio: without GitHub, Quarto can come from the RStudio installed just before (d-e4a52e)
-    @{ id = 'Posit.Quarto';      name = 'Quarto';  part = 'quarto';  cmd = 'quarto';  exe = 'quarto.exe';  dirs = @('Quarto\bin') }
+    @{ id = 'Posit.Quarto';      name = 'Quarto';  part = 'quarto';  cmd = 'quarto';  exe = 'quarto.exe';  dirs = @('Quarto\bin') },
+    @{ id = 'Microsoft.VisualStudioCode'; name = 'VS Code'; part = 'vscode'; cmd = 'code'; exe = 'code.cmd'; dirs = @('Microsoft VS Code\bin') }
   )
 }
 function Tool-Def($name) { Tool-Defs | Where-Object { $_.name -eq $name } | Select-Object -First 1 }
@@ -630,6 +685,7 @@ function Part-Gb($p) {   # what a part still needs on this computer: 0 when it i
     'quarto'  { if (Find-Tool (Tool-Def 'Quarto')) { return 0 } }
     'node'    { if (Find-Tool (Tool-Def 'Node.js')) { return 0 } }
     'python'  { if (Test-Path -LiteralPath (Join-Path $CourseDir '.venv')) { return 0 } }
+    'vscode'  { if (Find-Tool (Tool-Def 'VS Code')) { return 0.2 } }   # VS Code is here; its add-ons may still be missing
   }
   return $PartInfo[$p].gb
 }
@@ -658,8 +714,8 @@ function Save-Parts {
 }
 function Load-Parts {   # the parts chosen last time; everything when nothing was chosen (older setups installed all)
   $f = Join-Path $StateDir 'parts.txt'
-  $script:Parts = if (Test-Path -LiteralPath $f) { (Parse-Parts (Get-Content -LiteralPath $f -Raw)).want } else { $AllParts }
-  if ($NoGui) { $script:Parts = @($script:Parts | Where-Object { $_ -ne 'rstudio' }) }
+  $script:Parts = if (Test-Path -LiteralPath $f) { (Parse-Parts (Get-Content -LiteralPath $f -Raw)).want } else { $LegacyParts }
+  if ($NoGui) { $script:Parts = @($script:Parts | Where-Object { $GuiParts -notcontains $_ }) }
 }
 function Choose-Parts {
   $f = Join-Path $StateDir 'parts.txt'
@@ -668,7 +724,8 @@ function Choose-Parts {
     if ($x.bad.Count) { Say "Unknown part: $($x.bad -join ', '). Use any of: $($AllParts -join ', '), or all, or none."; exit 2 }
     $script:Parts = $x.want; Save-Parts
   } elseif ((Test-Path -LiteralPath $f) -and -not $Choose) { Load-Parts }
-  elseif ($Yes -or $FromUpdate) { $script:Parts = $AllParts }
+  elseif ($FromUpdate) { $script:Parts = $LegacyParts }   # an update never adds a part (see $LegacyParts)
+  elseif ($Yes) { $script:Parts = $AllParts }
   else {
     Say ''
     Say 'What should the setup install? The AI assistant (OpenCode), Git and uv (for Python) are always installed.'
@@ -680,7 +737,7 @@ function Choose-Parts {
       $a = "$(Read-Host 'Press Enter to install all of them (recommended), or type the numbers you want, for example 1 3 (0 = none)')".Trim()
       if (-not $a) { $script:Parts = $AllParts; break }
       $nums = @($a -split '[,;\s]+' | Where-Object { $_ })
-      if (@($nums | Where-Object { $_ -notmatch '^[0-5]$' }).Count) { Say '  Please type only numbers from the list (0 to 5).'; continue }
+      if (@($nums | Where-Object { $_ -notmatch "^[0-$($AllParts.Count)]$" }).Count) { Say "  Please type only numbers from the list (0 to $($AllParts.Count))."; continue }
       $picked = @($nums | Where-Object { $_ -ne '0' } | ForEach-Object { $AllParts[[int]$_ - 1] })
       $script:Parts = (Parse-Parts ($picked -join ' ')).want
       if ($picked -contains 'rstudio' -and $picked -notcontains 'r') { Say '  RStudio needs R, so R is installed too.' }
@@ -688,22 +745,24 @@ function Choose-Parts {
     }
     Save-Parts
   }
-  if ($NoGui) { $script:Parts = @($script:Parts | Where-Object { $_ -ne 'rstudio' }) }
+  if ($NoGui) { $script:Parts = @($script:Parts | Where-Object { $GuiParts -notcontains $_ }) }
   $names = @($script:Parts | ForEach-Object { $PartInfo[$_].name })
   Say "  Installing: the AI assistant$(if ($names.Count) { ', ' + ($names -join ', ') })  (to change this: install-windows.cmd -Choose)"
 }
 
 # ---------- 3. core tools ----------------------------------------------------
 function Install-Tools {
-  Step '3/9  Core tools: Git, Node.js, uv (Python), R, RStudio, Quarto'
+  Step '3/9  Core tools: Git, Node.js, uv (Python), R, RStudio, Quarto, VS Code'
   if ($env:MS_TEST_CRASH -eq 'tools') { throw 'test crash in step 3 (MS_TEST_CRASH)' }   # test hook: a crash mid-run
   Say '  Rule: this setup never upgrades or removes software that is already on this computer.'
   Say '  Windows may ask "Do you want to allow this app to make changes?" - click Yes each time.'
   $tools = @()
   foreach ($t in (Tool-Defs)) {
-    if ($t.part -eq 'core' -or (Has-Part $t.part)) { $tools += $t } elseif (-not ($NoGui -and $t.part -eq 'rstudio')) { Skip $t.name }
+    if ($t.part -eq 'core' -or (Has-Part $t.part)) { $tools += $t } elseif (-not ($NoGui -and $GuiParts -contains $t.part)) { Skip $t.name }
   }
   Add-UserPath (Join-Path $env:USERPROFILE '.local\bin')     # uv's own folder
+  # VS Code keeps its add-ons and settings in these folders; when the setup brings the first VS Code, they are its too
+  $codeData = @(Code-DataDirs | Where-Object { -not (Test-Path -LiteralPath $_) })
   foreach ($t in $tools) {
     $found = Find-Tool $t
     if ($found -and $t.name -eq 'R') {
@@ -729,8 +788,10 @@ function Install-Tools {
     $script:WingetFresh = $false
     $wingetOk = (-not ($ghOnly -and $script:Blocked -contains 'github.com')) -and (Winget-Install $t.id)
     if ($wingetOk) { $found = Find-Tool $t }
-    if ($wingetOk -and $found) { if ($script:WingetFresh) { Record-Install $t.part 'winget' $t.id }; if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
-    elseif ($wingetOk -and $t.name -notin 'uv', 'Git', 'Quarto', 'RStudio') { Fail $t.name "winget reported success but $($t.exe) was not found; see $LogFile" }
+    if ($wingetOk -and $found) {
+      if ($script:WingetFresh) { Record-Install $t.part 'winget' $t.id; if ($t.name -eq 'VS Code') { foreach ($d in $codeData) { Record-Install 'vscode' 'dir' $d } } }
+      if ($t.cmd) { Add-UserPath $found }; Ok $t.name 'installed' }
+    elseif ($wingetOk -and $t.name -notin 'uv', 'Git', 'Quarto', 'RStudio', 'VS Code') { Fail $t.name "winget reported success but $($t.exe) was not found; see $LogFile" }
     # winget failed, or said "installed" but the program is missing: try the direct download
     elseif ($t.name -eq 'uv' -and (Install-UvDirect)) {
       foreach ($e in 'uv.exe', 'uvx.exe', 'uvw.exe') { Record-Install 'core' 'file' (Join-Path $env:USERPROFILE ".local\bin\$e") }
@@ -746,8 +807,12 @@ function Install-Tools {
       else { Record-Install 'quarto' 'path' $qbin }   # the Quarto inside RStudio: only the PATH entry is this setup's
       Add-UserPath $qbin
       Ok 'Quarto' "installed for this account ($(if ($qbin -like '*RStudio*') { 'the Quarto inside RStudio' } else { 'direct download' }))" }
+    elseif ($t.name -eq 'VS Code' -and ($vdir = Install-VSCodeDirect)) {
+      Record-Install 'vscode' 'inno' $vdir; foreach ($d in $codeData) { Record-Install 'vscode' 'dir' $d }
+      Add-UserPath (Join-Path $vdir 'bin'); Ok 'VS Code' 'installed for this account (direct download from Microsoft)' }
     else { Fail $t.name "winget could not install $($t.id); see $LogFile" }
   }
+  if (Has-Part 'vscode') { Install-CodeExtensions }
   if ($DryRun) { return }
   if ((Find-Tool (Tool-Def 'uv')) -and @(Get-Content -LiteralPath (Join-Path $StateDir 'installed.tsv') -Encoding UTF8 -ErrorAction SilentlyContinue | Where-Object { $_ -match "^core`t(winget`tastral-sh\.uv|file`t.*\\uv\.exe)$" }).Count) {
     Record-Install 'core' 'uvdata' 'Python and downloads kept by uv'
@@ -1029,6 +1094,7 @@ function Summary {
   }
   Say "Full log: $LogFile"
   Say "Next: open OpenCode from the Start menu, choose the folder $CourseDir, and follow the guide."
+  if (Has-Part 'vscode') { Say "  In VS Code: File > Open Folder > $CourseDir, open a file, then click the OpenCode button at its top right." }
 }
 
 # ---------- reporting to the teacher's log box ------------------------------------

@@ -122,7 +122,8 @@ check "all: a PATH folder holding something else stays" '[ -f "$W/keepbin/other"
 )
 check "record_install: tab-separated lines, no duplicate, nothing in a dry run" '[ "$(cat "$W/rs/installed.tsv")" = "$(printf "quarto\tdir\t/x\nr\trpkg\tirr")" ]'
 parts_of() { # runs the part functions of setup-mac.sh; $1 = --components value or "", $2 = answers
-  ( set +u; STATE_DIR="$W/ps"; DRY_RUN=0; SKIP_GUI=0; ASSUME_YES=0; CHOOSE=1; COMPONENTS="$1"; COURSE_DIR=/nonexistent; PLATFORM=linux; NO_BREW=0
+  ( set +u; STATE_DIR="$W/ps"; DRY_RUN=0; SKIP_GUI="${PO_NOGUI:-0}"; ASSUME_YES="${PO_YES:-0}"; CHOOSE="${PO_CHOOSE:-1}"; COMPONENTS="$1"
+    COURSE_DIR=/nonexistent; PLATFORM="${PO_PLATFORM:-linux}"; NO_BREW=0; FROM_UPDATE="${PO_FROM_UPDATE:-0}"
     LOG_FILE=/dev/null; say() { printf '%s\n' "$*"; }; have() { command -v "$1" >/dev/null 2>&1; }
     eval "$(sed -n '/^# ---------- parts the student chooses/,/^precheck() {/p' setup-mac.sh | sed '$d')"
     choose_parts; echo "PARTS=[$PARTS]"; echo "EST=$(estimate_gb)" ) < "${2:-/dev/null}"
@@ -141,5 +142,41 @@ EOF
 printf '3 9\n3\n' | script -qec "bash $W/ask.sh" /dev/null > "$W/p.txt" 2>&1
 check "asked: a wrong answer is asked again, then 3 = Quarto only" 'grep -q "Please type only numbers" "$W/p.txt" && grep -q "PARTS=\[quarto\]" "$W/p.txt"'
 check "asked: the list shows a size or 'already on this computer' per part" 'grep -Eq "1\. R and the course R packages +(about [0-9.]+ GB|already on this computer)" "$W/p.txt"'
+
+# 12. VS Code (added 2026-11-16): offered on a Mac only, never added by an update, its add-ons go first on removal
+rm -rf "$W/ps"; parts_of "all" > "$W/p.txt" 2>&1
+check "Linux, --components=all: VS Code is not offered" 'grep -q "PARTS=\[r rstudio quarto python node\]" "$W/p.txt"'
+rm -rf "$W/ps"; PO_PLATFORM=mac parts_of "all" > "$W/p.txt" 2>&1
+check "Mac, --components=all: VS Code included" 'grep -q "PARTS=\[r rstudio quarto python node vscode\]" "$W/p.txt"'
+rm -rf "$W/ps"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 parts_of "" > "$W/p.txt" 2>&1
+check "Mac, --yes, first run: VS Code included (on by default)" 'grep -q "PARTS=\[r rstudio quarto python node vscode\]" "$W/p.txt"'
+rm -rf "$W/ps"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 PO_FROM_UPDATE=1 parts_of "" > "$W/p.txt" 2>&1
+check "Mac, an update of an older setup (no parts.txt): VS Code not added" 'grep -q "PARTS=\[r rstudio quarto python node\]" "$W/p.txt"'
+rm -rf "$W/ps"; mkdir -p "$W/ps"; echo "r rstudio quarto python node" > "$W/ps/parts.txt"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 parts_of "" > "$W/p.txt" 2>&1
+check "Mac, parts chosen before VS Code existed: VS Code not added" 'grep -q "PARTS=\[r rstudio quarto python node\]" "$W/p.txt"'
+rm -rf "$W/ps"; PO_PLATFORM=mac PO_NOGUI=1 parts_of "all" > "$W/p.txt" 2>&1
+check "Mac, --no-gui: neither RStudio nor VS Code" 'grep -q "PARTS=\[r quarto python node\]" "$W/p.txt"'
+{ echo "cd /tmp/us; W=$W"; declare -f parts_of; echo 'PO_PLATFORM=$1 parts_of "" /dev/tty'; } > "$W/ask2.sh"
+rm -rf "$W/ps"; printf '7\n6\n' | script -qec "bash $W/ask2.sh mac" /dev/null > "$W/p.txt" 2>&1
+check "Mac, asked: VS Code is number 6, 7 is refused" 'grep -Eq "6\. VS Code \(code editor; OpenCode \+ Python add-ons\) +about 1\.0 GB" "$W/p.txt" && grep -q "0 to 6" "$W/p.txt" && grep -q "PARTS=\[vscode\]" "$W/p.txt"'
+rm -rf "$W/ps"; printf '6\n\n' | script -qec "bash $W/ask2.sh linux" /dev/null > "$W/p.txt" 2>&1
+check "Linux, asked: VS Code not in the list, 6 is refused" '! grep -q "VS Code" "$W/p.txt" && grep -q "0 to 5" "$W/p.txt"'
+
+make_state; mkdir -p "$W/dotvscode"; echo "r rstudio quarto python node vscode" > "$MS_STATE_DIR/parts.txt"
+printf '%s\n' "vscode${T}vsext${T}sst-dev.opencode" "vscode${T}vsext${T}ms-python.python" "vscode${T}cask${T}visual-studio-code" \
+  "vscode${T}dir${T}$W/dotvscode" >> "$MS_STATE_DIR/installed.tsv"
+rc="$(un '' --parts=vscode --yes)"; L="$(logof)"
+check "vscode: exit 0 ($rc)" '[ "$rc" = 0 ]'
+check "vscode: each recorded add-on removed with VS Code's own command" '[ "$(printf "%s\n" "$L" | grep -c "would run: code --uninstall-extension \(sst-dev.opencode\|ms-python.python\)$")" = 2 ]'
+check "vscode: the add-ons before VS Code itself, which goes as a Homebrew cask" 'printf "%s" "$L" | grep -q "would run: brew uninstall --cask visual-studio-code" && [ "$(printf "%s\n" "$L" | grep -n "uninstall-extension" | head -1 | cut -d: -f1)" -lt "$(printf "%s\n" "$L" | grep -n "visual-studio-code" | head -1 | cut -d: -f1)" ]'
+check "vscode: its settings folder gone, everything else untouched" '[ ! -e "$W/dotvscode" ] && [ -d "$W/RStudio.app" ] && [ -d "$MS_STATE_DIR/pack" ]'
+check "vscode: record and parts no longer list it" '! rec | grep -q "^vscode" && [ "$(cat "$MS_STATE_DIR/parts.txt")" = "r rstudio quarto python node" ]'
+make_state; un '|' >/dev/null
+check "vscode: not offered when the setup did not add anything to VS Code" '! grep -q "VS Code" "$W/out.txt"'
+make_state; V="$W/vsc"; mkdir -p "$V/ext/sst-dev.opencode-1.0.0" "$V/ext/ms-python.python-2026.10.0" "$V/ext/someone.mine-1.0.0"
+printf '%s\n' "vscode${T}vsext${T}sst-dev.opencode" "vscode${T}vsext${T}ms-python.python" >> "$MS_STATE_DIR/installed.tsv"
+export MS_TEST_CODE_DIR="$V" MS_TEST_NO_CODE=1; rc="$(un '' --parts=vscode --yes)"; unset MS_TEST_CODE_DIR MS_TEST_NO_CODE
+check "vscode gone: the recorded add-on folders deleted ($rc)" '[ "$rc" = 0 ] && [ ! -e "$V/ext/sst-dev.opencode-1.0.0" ] && [ ! -e "$V/ext/ms-python.python-2026.10.0" ]'
+check "vscode gone: an add-on the student added stays, VS Code itself not touched" '[ -d "$V/ext/someone.mine-1.0.0" ] && ! logof | grep -q visual-studio-code'
 
 echo "RESULT pass=$pass fail=$failn"; [ "$failn" = 0 ]

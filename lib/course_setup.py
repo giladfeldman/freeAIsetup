@@ -427,8 +427,12 @@ class Table:
 
 
 # Parts a student may leave out (setup -Components / --components); the AI assistant, Git and uv are always installed.
-PARTS = ("r", "rstudio", "quarto", "python", "node")
-PART_NAMES = {"r": "R", "quarto": "Quarto", "python": "Python course packages", "node": "Node.js"}
+PARTS = ("r", "rstudio", "quarto", "python", "node", "vscode")
+# what a check without --parts covers: the parts of every setup before VS Code was added (2026-11-16)
+DEFAULT_PARTS = ("r", "rstudio", "quarto", "python", "node")
+PART_NAMES = {"r": "R", "quarto": "Quarto", "python": "Python course packages", "node": "Node.js", "vscode": "VS Code"}
+# the VS Code add-ons the setup adds (setup-windows.ps1 $CodeExtensions, setup-mac.sh CODE_EXTENSIONS)
+CODE_EXTENSIONS = ("sst-dev.opencode", "ms-python.python")
 
 
 def test_keys(course: pathlib.Path, t: "Table", record) -> list[dict]:
@@ -487,12 +491,14 @@ def test_keys(course: pathlib.Path, t: "Table", record) -> list[dict]:
 #   uv 0.3: "uv sync" / "uv run" for the course folder left preview in uv 0.3.0 (uv changelog)
 #   Rscript 4.5: the course R packages no longer come ready-built for older R (d-872f0e)
 #   quarto 1.0: Quarto 1.0.38 and 1.3.450 both rendered the check report (tested 2026-11-13); 1.0 was the first release
+#   code 1.95: the Python add-on needs VS Code 1.95 and the OpenCode add-on 1.94 (their "engines" fields, 2026-11-16)
 MIN_VERSIONS = {
     "git": ((2, 34), "OpenCode cannot save undo points of your files"),
     "node": ((20,), "the browser tool will not start"),
     "uv": ((0, 3), "the course Python environment may not build"),
     "Rscript": ((4, 5), "the course R packages will not install"),
     "quarto": ((1, 0), "reports may not render"),
+    "code": ((1, 95), "the OpenCode and Python add-ons will not install"),
 }
 
 
@@ -546,6 +552,29 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
                 record(f"{tool} search details", code,
                        "PATH entries:\n  " + "\n  ".join(entries)
                        + "\nPATHEXT: " + os.environ.get("PATHEXT", ""))
+
+    if "vscode" not in parts:
+        skip("VS Code", "vscode", "" if IS_WIN or sys.platform == "darwin" else " (offered on Windows and Mac)")
+    else:
+        code, out = sh(["code", "--version"], timeout=60)
+        record("code", code, out)
+        first = out.strip().splitlines()[0] if out.strip() else ""
+        if code != 0:
+            t.add("FAIL", "VS Code", "not found or does not start (its code command)")
+        else:
+            t.add("WARN" if too_old("code", first) else "OK", "VS Code", too_old("code", first) or first[:60])
+            # tests: MS_TEST_CODE_DIR = the scratch add-on folder the setup used
+            iso = (["--extensions-dir", os.path.join(os.environ["MS_TEST_CODE_DIR"], "ext"), "--user-data-dir",
+                    os.path.join(os.environ["MS_TEST_CODE_DIR"], "data")] if os.environ.get("MS_TEST_CODE_DIR") else [])
+            code, out = sh(["code", *iso, "--list-extensions"], timeout=120)
+            record("code --list-extensions", code, out)
+            have = {x.strip().lower() for x in out.splitlines()}
+            missing = [e for e in CODE_EXTENSIONS if e not in have]
+            if code != 0 or missing:
+                again = "install-windows.cmd" if IS_WIN else "bash setup-mac.sh"
+                t.add("FAIL", "VS Code add-ons", f"missing: {', '.join(missing or CODE_EXTENSIONS)}; run {again} again")
+            else:
+                t.add("OK", "VS Code add-ons", "OpenCode and Python")
 
     c = course / "check"
     out_dir = c / "out"
@@ -677,8 +706,9 @@ def main() -> int:
     ap.add_argument("--course", required=True)
     ap.add_argument("--skip-ai", action="store_true")
     ap.add_argument("--log", default=None)
-    ap.add_argument("--parts", default=" ".join(PARTS),
-                    help="the optional parts this computer has, separated by spaces or commas (default: all)")
+    ap.add_argument("--parts", default=" ".join(DEFAULT_PARTS),
+                    help="the optional parts this computer has, separated by spaces or commas "
+                         "(default: all but vscode)")
     a = ap.parse_args()
     parts = tuple(x for x in a.parts.replace(",", " ").split() if x in PARTS)
     course = pathlib.Path(a.course).expanduser()

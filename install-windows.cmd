@@ -42,7 +42,7 @@ echo.
 echo  This computer is managed by an organisation (for example a university or employer), and its
 echo  rules forbid running setup scripts (PowerShell policy: %MS_POL%).
 echo  Please use your own laptop for the course, or ask the computer's IT support to install:
-echo  Git, Node.js, uv, R, RStudio, Quarto and OpenCode. Show this message to the teacher.
+echo  Git, Node.js, uv, R, RStudio, Quarto, OpenCode and (optional) VS Code. Show this message to the teacher.
 echo.
 rem The teacher's log box hears about this stop too (with a yes). The policy forbids script files, not this command.
 set "MS_SEND="

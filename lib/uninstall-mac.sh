@@ -7,7 +7,7 @@
 #
 #  Start it with:  bash setup-mac.sh --uninstall     (from the pack folder ~/Library/Application Support/MetaScience/pack)
 #  or:             bash lib/uninstall-mac.sh [--components=rstudio,quarto|all] [--yes [--remove-course]] [--dry-run]   (--parts= is the same)
-#  Parts: rstudio, r, quarto, node, ai (the AI assistant, Git, uv, this pack and its daily update), all.
+#  Parts: rstudio, r, quarto, node, vscode, ai (the AI assistant, Git, uv, this pack and its daily update), all.
 #  Written for bash 3.2 (the macOS default).
 # =============================================================================
 set -u
@@ -31,9 +31,10 @@ LOG_FILE="${TMPDIR:-/tmp}/metascience-uninstall-$(date +%Y%m%d-%H%M%S).log"
 FAKE="${MS_TEST_FAKE_UNINSTALL:-}"     # tests: other programs' uninstallers are only named, never run
 SUDO=""; [ "$(id -u)" != 0 ] && SUDO="sudo"
 TAB="$(printf '\t')"
-GROUPS_ORDER="rstudio r quarto node core"
+GROUPS_ORDER="rstudio r quarto node vscode core"
 group_name() {
   case "$1" in rstudio) echo "RStudio" ;; r) echo "R and the course R packages" ;; quarto) echo "Quarto" ;; node) echo "Node.js" ;;
+    vscode) echo "VS Code and the add-ons the setup added to it (OpenCode, Python)" ;;
     core) echo "The AI assistant and the setup's own tools (OpenCode, Git, uv, this course pack and its daily update)" ;; esac
 }
 FAILED=0
@@ -70,8 +71,8 @@ fi
 CHOSEN=""
 if [ -n "$PARTS_ARG" ]; then
   for w in $(printf '%s' "$PARTS_ARG" | tr ',;' '  ' | tr 'A-Z' 'a-z'); do
-    case "$w" in all) CHOSEN="$CHOSEN $PRESENT" ;; ai|core) CHOSEN="$CHOSEN core" ;; rstudio|r|quarto|node) CHOSEN="$CHOSEN $w" ;; python) ;;
-      *) say "Unknown part: $w. Use any of: rstudio, r, quarto, node, ai, all."; exit 2 ;; esac
+    case "$w" in all) CHOSEN="$CHOSEN $PRESENT" ;; ai|core) CHOSEN="$CHOSEN core" ;; rstudio|r|quarto|node|vscode) CHOSEN="$CHOSEN $w" ;; python) ;;
+      *) say "Unknown part: $w. Use any of: rstudio, r, quarto, node, vscode, ai, all."; exit 2 ;; esac
   done
 elif [ "$YES" = 1 ]; then say "Say what to remove with --components (for example --components=rstudio,quarto, or --components=all)."; exit 2
 else
@@ -113,8 +114,9 @@ if [ "$YES" = 0 ] && [ "$DRY_RUN" = 0 ]; then
 fi
 
 # ---- remove ---------------------------------------------------------------------------------------------------
-# order: R packages before R, uv's data before uv, the update check, programs, folders, the pack, then PATH lines
-prio() { case "$1" in rpkg) echo 0 ;; uvdata) echo 1 ;; launchd|cron) echo 2 ;; brew|cask|apt) echo 3 ;; homebrew) echo 4 ;;
+# order: R packages before R, uv's data before uv, VS Code's add-ons before VS Code, the update check, programs,
+# folders, the pack, then PATH lines
+prio() { case "$1" in rpkg) echo 0 ;; uvdata) echo 1 ;; vsext|launchd|cron) echo 2 ;; brew|cask|apt) echo 3 ;; homebrew) echo 4 ;;
   dir|file|pkgdir|clt) echo 5 ;; pack) echo 6 ;; path) echo 7 ;; *) echo 8 ;; esac; }
 TODO="$(printf '%s\n' "$ITEMS" | while IFS="$TAB" read -r part kind target; do
   [ "$KEEP_PACK" = 1 ] && case "$kind" in pack|launchd|cron) continue ;; esac
@@ -136,10 +138,43 @@ $TODO
 EOF
   else fail "R packages" "R could not remove them; see $LOG_FILE"; fi
 fi
+# VS Code add-ons the setup added: removed with VS Code's own command (an add-on the student had before is not in the
+# record). Removing the Python add-on also removes the ones it brought, so whether each is gone is read from VS Code's
+# own list afterwards. With VS Code already gone, its add-on folders (named <id>-<version>) are deleted directly.
+ext="$(printf '%s\n' "$TODO" | awk -F'\t' '$2 == "vsext" {print $3}')"
+if [ -n "$ext" ]; then
+  # tests: MS_TEST_CODE_DIR = a scratch add-on and settings folder, so the real VS Code command runs without touching a
+  # real VS Code; with only MS_TEST_FAKE_UNINSTALL the command is just named in the log
+  iso=(); [ -n "${MS_TEST_CODE_DIR:-}" ] && iso=(--extensions-dir "$MS_TEST_CODE_DIR/ext" --user-data-dir "$MS_TEST_CODE_DIR/data")
+  extdir="$HOME/.vscode/extensions"; [ -n "${MS_TEST_CODE_DIR:-}" ] && extdir="$MS_TEST_CODE_DIR/ext"
+  name_only=0; [ -n "$FAKE" ] && [ -z "${MS_TEST_CODE_DIR:-}" ] && name_only=1
+  codecli=""
+  if have code; then codecli="$(command -v code)"
+  else for a in "/Applications/Visual Studio Code.app" "$HOME/Applications/Visual Studio Code.app"; do
+    [ -x "$a/Contents/Resources/app/bin/code" ] && { codecli="$a/Contents/Resources/app/bin/code"; break; }; done; fi
+  [ "$name_only" = 1 ] && codecli=code
+  [ -n "${MS_TEST_NO_CODE:-}" ] && codecli=""   # tests: VS Code already gone
+  if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] remove the VS Code add-ons $(echo $ext)"
+  elif [ -n "$codecli" ]; then
+    for e in $ext; do
+      if [ "$name_only" = 1 ]; then run code --uninstall-extension "$e"
+      else echo "\$ $codecli --uninstall-extension $e" >> "$LOG_FILE"; "$codecli" ${iso[@]+"${iso[@]}"} --uninstall-extension "$e" >> "$LOG_FILE" 2>&1; fi
+    done   # "not installed" when the Python add-on took it along
+    left=" "; [ "$name_only" = 1 ] || left=" $("$codecli" ${iso[@]+"${iso[@]}"} --list-extensions 2>/dev/null | tr 'A-Z' 'a-z' | tr -d '\r' | tr '\n' ' ') "
+    gone=""; for e in $ext; do
+      case "$left" in *" $(printf '%s' "$e" | tr 'A-Z' 'a-z') "*) fail "VS Code add-on $e" "VS Code could not remove it; remove it in VS Code (Extensions view)" ;;
+        *) gone="$gone $e"; done_item vscode vsext "$e" ;; esac; done
+    [ -n "$gone" ] && ok "VS Code add-ons" "removed:$gone"
+  else
+    okall=1; for e in $ext; do for d in "$extdir/$e"-*; do [ -d "$d" ] || continue; rm -rf "$d" 2>>"$LOG_FILE" || okall=0; done; done
+    if [ "$okall" = 1 ]; then for e in $ext; do done_item vscode vsext "$e"; done; ok "VS Code add-ons" "VS Code is gone; its add-on folders were removed"
+    else fail "VS Code add-ons" "could not delete some add-on folders in $extdir"; fi
+  fi
+fi
 HOMEBREW_NOTE=""
 while IFS="$TAB" read -r part kind target; do
   [ -n "$kind" ] || continue
-  case "$kind" in rpkg|path) continue ;; esac
+  case "$kind" in rpkg|path|vsext) continue ;; esac
   if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] remove $kind $target"; continue; fi
   case "$kind" in
     uvdata) if have uv || [ -n "$FAKE" ]; then run uv cache clean; run uv python uninstall --all; fi

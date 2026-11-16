@@ -8,7 +8,7 @@
 #  (setup-windows.ps1 runs a copy of this file from the temp folder, because Windows cannot delete the pack folder
 #  while a program runs from it). Options: [-Components rstudio,quarto|all] [-Yes] [-DryRun] [-RemoveCourse]
 #  (-Parts is the same as -Components, in both places: before 2026-11-13 the setup ignored -Parts)
-#  Parts: rstudio, r, quarto, node, ai (the AI assistant, Git, uv, this pack and its daily update), all.
+#  Parts: rstudio, r, quarto, node, vscode, ai (the AI assistant, Git, uv, this pack and its daily update), all.
 # =============================================================================
 param(
   [Alias('Components')][string]$Parts = '',   # what to remove without asking for the list (all = everything except the course folder)
@@ -29,6 +29,7 @@ $Groups = [ordered]@{
   r       = 'R and the course R packages'
   quarto  = 'Quarto'
   node    = 'Node.js'
+  vscode  = 'VS Code and the add-ons the setup added to it (OpenCode, Python)'
   core    = 'The AI assistant and the setup''s own tools (OpenCode, Git, uv, this course pack and its daily update)'
 }
 
@@ -112,7 +113,7 @@ if ($Parts) {
     elseif ($w -eq 'ai') { $chosen += 'core' }
     elseif ($Groups.Contains($w)) { $chosen += $w }
     elseif ($w -eq 'python') { }   # the Python course packages live in the course folder (asked separately)
-    else { Say "Unknown part: $w. Use any of: rstudio, r, quarto, node, ai, all."; exit 2 }
+    else { Say "Unknown part: $w. Use any of: rstudio, r, quarto, node, vscode, ai, all."; exit 2 }
   }
   $chosen = @($present | Where-Object { $chosen -contains $_ })
 } elseif ($Yes) { Say 'Say what to remove with -Components (for example -Components rstudio,quarto, or -Components all).'; exit 2 }
@@ -159,7 +160,8 @@ if (-not $Yes -and -not $DryRun) {
 # ---- remove ---------------------------------------------------------------------------------------------------
 # order: R packages before R, uv's own data before uv, the desktop app, the update task, programs, folders, the
 # pack itself, and last the PATH entries whose folders are now gone
-$order = @{ rpkg = 0; uvdata = 1; app = 2; task = 3; winget = 4; inno = 4; dir = 5; file = 5; pack = 6; path = 7 }
+# (VS Code's add-ons before VS Code: its own command removes them)
+$order = @{ rpkg = 0; uvdata = 1; app = 2; vsext = 2; task = 3; winget = 4; inno = 4; dir = 5; file = 5; pack = 6; path = 7 }
 $todo = @($items | Where-Object { $chosen -contains $_.part -and -not ($keepPack -and $_.kind -in 'pack', 'task') } | Sort-Object { $order[$_.kind] })
 if ($delCourse) { $todo += $course[0] }
 $done = @()
@@ -173,8 +175,46 @@ if ($pk.Count) {
   elseif ((Run-Exe $rs.Source @('-e', "`"suppressWarnings(remove.packages(c($names), lib=Sys.getenv('R_LIBS_USER')))`"")) -eq 0) { Ok 'R packages' "$($pk.Count) removed"; $done += $pk }
   else { Fail 'R packages' "R could not remove them; see $LogFile" }
 }
+# VS Code add-ons the setup added: removed with VS Code's own command (an add-on the student had before is not in the
+# record). Removing the Python add-on also removes the ones it brought, so whether each is gone is read from VS Code's
+# own list afterwards. With VS Code already gone, its add-on folders are deleted directly.
+$ext = @($todo | Where-Object { $_.kind -eq 'vsext' })
+if ($ext.Count) {
+  # tests: MS_TEST_CODE_DIR = a scratch add-on and settings folder, so the real VS Code command runs without touching a
+  # real VS Code; with only MS_TEST_FAKE_UNINSTALL the command is just named in the log
+  $iso = if ($env:MS_TEST_CODE_DIR) { @('--extensions-dir', (Join-Path $env:MS_TEST_CODE_DIR 'ext'), '--user-data-dir', (Join-Path $env:MS_TEST_CODE_DIR 'data')) } else { @() }
+  $extDir = if ($env:MS_TEST_CODE_DIR) { Join-Path $env:MS_TEST_CODE_DIR 'ext' } else { Join-Path $env:USERPROFILE '.vscode\extensions' }
+  $nameOnly = $Fake -and -not $env:MS_TEST_CODE_DIR
+  $cli = @(Get-Command code -ErrorAction SilentlyContinue | ForEach-Object Source) +
+         @((Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'), (Join-Path $env:ProgramFiles 'Microsoft VS Code\bin\code.cmd'))
+  $codeCli = $cli | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+  if ($env:MS_TEST_NO_CODE) { $codeCli = $null }   # tests: VS Code already gone
+  elseif ($nameOnly) { $codeCli = 'code' }
+  if ($DryRun) { Say "  [dry-run] remove the VS Code add-ons $(($ext | ForEach-Object target) -join ', ')" }
+  elseif ($codeCli) {
+    $rc = @{}
+    foreach ($it in $ext) {
+      if ($nameOnly) { $rc[$it.target] = Run-Exe 'code' @('--uninstall-extension', $it.target); continue }
+      Log "> $codeCli --uninstall-extension $($it.target)"
+      (& $codeCli @iso --uninstall-extension $it.target) 2>&1 | ForEach-Object { Log "$_" }   # "not installed" when the Python add-on took it along
+    }
+    $left = if ($nameOnly) { @() } else { @((& $codeCli @iso --list-extensions) 2>$null | ForEach-Object { "$_".Trim().ToLowerInvariant() }) }
+    $gone = @()
+    foreach ($it in $ext) {
+      if (($nameOnly -and $rc[$it.target] -eq 0) -or (-not $nameOnly -and $left -notcontains $it.target.ToLowerInvariant())) { $done += $it; $gone += $it.target }
+      else { Fail "VS Code add-on $($it.target)" 'VS Code could not remove it; remove it in VS Code (Extensions view)' }
+    }
+    if ($gone.Count) { Ok 'VS Code add-ons' "removed: $($gone -join ', ')" }
+  } else {   # VS Code is gone already: its add-on folders (named <id>-<version>) may still be there
+    $okAll = $true
+    foreach ($it in $ext) {
+      foreach ($d in @(Get-ChildItem -LiteralPath $extDir -Directory -Filter "$($it.target)-*" -ErrorAction SilentlyContinue)) { if (-not (Remove-Folder $d.FullName)) { $okAll = $false } }
+    }
+    if ($okAll) { $done += $ext; Ok 'VS Code add-ons' 'VS Code is gone; its add-on folders were removed' } else { Fail 'VS Code add-ons' "could not delete some add-on folders in $extDir" }
+  }
+}
 foreach ($it in $todo) {
-  if ($it.kind -in 'rpkg', 'path') { continue }
+  if ($it.kind -in 'rpkg', 'path', 'vsext') { continue }
   $t = $it.target
   if ($DryRun) { Say "  [dry-run] remove $($it.kind) $t"; continue }
   switch ($it.kind) {
@@ -217,7 +257,7 @@ foreach ($it in $todo) {
       $un = Get-ChildItem -LiteralPath $t -Filter 'unins*.exe' -File -ErrorAction SilentlyContinue | Select-Object -First 1
       if ($un) { $null = Run-Exe $un.FullName @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART') 900; Start-Sleep -Seconds $(if ($Fake) { 0 } else { 3 }) }
       try { if (Test-Path -LiteralPath $t) { Remove-Item -LiteralPath $t -Recurse -Force -ErrorAction Stop }; Ok $t 'removed'; $done += $it }
-      catch { Fail $t "could not remove it (is R still open?): $($_.Exception.Message)" }
+      catch { Fail $t "could not remove it (is the program still open?): $($_.Exception.Message)" }
     }
     { $_ -in 'dir', 'file', 'pack' } {
       if (-not (Test-Path -LiteralPath $t)) { $done += $it; break }

@@ -79,7 +79,11 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 
 - **Parts:** the setup asks once which optional parts to install and remembers the answer. To choose again:
   `install-windows.cmd -Choose` (Windows) or `bash setup-mac.sh --choose` (Mac). Without asking:
-  `-Components r,quarto` (`-Parts` works too) / `--components=r,quarto` (`--parts=` works too) (any of `r`, `rstudio`, `quarto`, `python`, `node`, `all`, `none`).
+  `-Components r,quarto` (`-Parts` works too) / `--components=r,quarto` (`--parts=` works too) (any of `r`, `rstudio`, `quarto`, `python`, `node`, `vscode`, `all`, `none`).
+- **VS Code** (on Windows and Mac, chosen by default): the code editor, with two add-ons: OpenCode's own (a button at the
+  top right of an open file starts OpenCode in a terminal next to the code, with the same free models) and Microsoft's
+  Python add-on. A VS Code that is already there is kept as it is; only the add-ons it lacks are added. No R add-on:
+  RStudio is the R editor. An update of the pack never adds VS Code to an older setup; `-Choose` / `--choose` does.
 - **Disk space:** before installing, the setup adds up what the chosen parts that are not on the computer yet need,
   says how much it will use, stops if that plus 2 GB for the downloads is not free, and warns when less than 3 GB
   would be left. The sizes were measured on one Windows 11 computer; Mac sizes are not yet measured.

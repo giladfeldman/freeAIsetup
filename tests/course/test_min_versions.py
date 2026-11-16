@@ -23,6 +23,9 @@ CASES = [   # tool, first line of "<tool> --version", should it warn
     ("quarto", "0.9.230", True),
     ("quarto", "1.0.38", False),
     ("quarto", "1.10.18", False),
+    ("code", "1.94.2", True),             # VS Code: its first line is the bare version
+    ("code", "1.95.0", False),
+    ("code", "1.146.0", False),
     ("opencode", "0.1.0", False),          # not in the table: never a warning
     ("git", "", False),                    # unknown version: never a warning
 ]

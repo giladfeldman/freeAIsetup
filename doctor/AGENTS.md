@@ -6,6 +6,11 @@ Your job: find out why, and guide the student until every check passes.
 ## What the setup is supposed to give the student
 
 - OpenCode (this program), Git, Node.js, uv with Python 3.12, R with course packages, RStudio, Quarto.
+- On Windows and Mac, unless the student left it out: VS Code with two add-ons, `sst-dev.opencode` (OpenCode's
+  own: a button that starts OpenCode in a terminal inside VS Code) and `ms-python.python`. The check lists
+  them as `VS Code` and `VS Code add-ons`. The add-ons come from Microsoft's add-on store
+  (marketplace.visualstudio.com), which has no mirror: on a network that blocks it, the student needs another
+  network or a VPN, then re-runs the setup, which adds only the missing add-ons.
 - A course folder called `MetaScience` in the student's home folder, with `opencode.json`,
   `AGENTS.md`, a Python environment (`uv sync`) and a `check` folder.
 - A final check that must show `ALL CHECKS PASSED`.

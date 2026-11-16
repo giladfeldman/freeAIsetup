@@ -29,12 +29,14 @@
   "customizations": {
     "codespaces": { "openFiles": ["START-HERE.md"] },
     "vscode": {
-      // no R editor extension (it pops up errors, and students use RStudio in the browser instead).
+      // OpenCode's own add-on (a button that starts OpenCode in a terminal next to the code) and Microsoft's Python
+      // add-on, the same two the setup adds to VS Code on a laptop. No R editor extension (it pops up errors, and
+      // students use RStudio in the browser instead).
       // The "Do you trust the authors" box cannot be set from here, so START-HERE explains it. START-HERE.md opens as a
       // page with a one-tap link to the start page through .vscode/settings.json: the browser editor ignores that
       // setting here (real Codespace 2026-11-09) but applies it from the workspace file (2026-11-15).
       "settings": { "workbench.startupEditor": "none" },
-      "extensions": ["-REditorSupport.r"]
+      "extensions": ["sst-dev.opencode", "ms-python.python", "-REditorSupport.r"]
     }
   }
 }

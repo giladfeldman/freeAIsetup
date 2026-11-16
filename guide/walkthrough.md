@@ -8,6 +8,7 @@ subtitle: "Meta-science and open science course — step-by-step guide for stude
 - **OpenCode**: an AI assistant that can read your course files, write code, run it, and save results. It comes with free AI models. **You do not need an account or a credit card for it.**
 - **R, RStudio and Python**: the analysis tools the AI uses, and that you can use yourself.
 - **Quarto**: turns analyses into reports.
+- **VS Code** (Windows and Mac): a code editor, with an OpenCode button inside it and Python support.
 - A course folder called **MetaScience** in your home folder, with the course rules for the AI (`AGENTS.md`).
 
 The setup takes **20-40 minutes**, most of it waiting. You only need to do something at a few points, marked with a hand: ✋.
@@ -56,7 +57,7 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
 3. **Right-click** inside the PowerShell window (this pastes the line), then press **Enter**.
    - ✋ **If the window fills with program text** (lines starting with `#` and `$`) and nothing installs: the end of the line, ` | iex`, was missing. Nothing was installed and nothing is broken. Copy the **whole** line again, including ` | iex` at the end, and paste it.
 4. It says *"downloading the setup files"*, then *"downloaded and checked. Starting the setup"*, and shows the steps. Leave the window open.
-   - ✋ It asks *"What should the setup install?"* and lists R, RStudio, Quarto, the Python course packages and Node.js, each with the space it needs. Press **Enter** to install all of them (recommended). Leave a part out only if your teacher says you will not need it: type the numbers you want (for example `1 3`) and press Enter. The AI assistant is always installed. You are asked only once (to choose again later, see Part 5).
+   - ✋ It asks *"What should the setup install?"* and lists R, RStudio, Quarto, the Python course packages, Node.js and VS Code, each with the space it needs. Press **Enter** to install all of them (recommended). Leave a part out only if your teacher says you will not need it: type the numbers you want (for example `1 3`) and press Enter. The AI assistant is always installed. You are asked only once (to choose again later, see Part 5).
    - ✋ **If it says *"Smart App Control is ON"*:** this Windows protection blocks parts of R and Python that the course needs. Windows Security opens by itself. Click **Smart App Control settings**, choose **Off**, confirm (Windows asks for the computer's administrator password; on a laptop owned by your employer or school, ask its IT), then go back to the PowerShell window and press **Enter**. Your normal virus protection stays on. Windows may not let you switch it back on later without a reset; if you do not want that, type **Q** and ask your teacher about the browser-only option.
    - ✋ Windows may ask *"Do you want to allow this app to make changes to your device?"* If you know your computer's admin password, click **Yes**. If you do not, click **No**: the setup then installs that tool just for your account.
 5. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
@@ -73,7 +74,7 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
 
 3. Click in the Terminal window, paste with **⌘ + V**, and press **Enter**.
    - ✋ **If the window fills with program text** and nothing installs: the end of the line, ` | bash`, was missing. Nothing was installed. Copy the **whole** line again, including ` | bash`, and paste it.
-4. ✋ It asks *"What should the setup install?"* and lists R, RStudio, Quarto, the Python course packages and Node.js, each with the space it needs. Press **Enter** to install all of them (recommended). Leave a part out only if your teacher says you will not need it: type the numbers you want (for example `1 3`) and press Enter. The AI assistant is always installed. You are asked only once (to choose again later, see Part 5).
+4. ✋ It asks *"What should the setup install?"* and lists R, RStudio, Quarto, the Python course packages, Node.js and VS Code, each with the space it needs. Press **Enter** to install all of them (recommended). Leave a part out only if your teacher says you will not need it: type the numbers you want (for example `1 3`) and press Enter. The AI assistant is always installed. You are asked only once (to choose again later, see Part 5).
    - ✋ When asked for a **Password**, type your Mac login password and press Enter. **Nothing appears while you type**, which is normal.
 5. ✋ If a window asks to install *"command line developer tools"*, click **Install**, then **Agree**. This alone can take 10–40 minutes; the setup continues by itself afterwards. If the screen goes dark or locks meanwhile, log in again: the setup keeps running underneath.
    - ✋ If macOS asks whether *"Terminal"* may access your **Downloads** folder, click **Allow**.
@@ -191,6 +192,12 @@ page") has a **Connect OpenRouter** button and a **Restart OpenCode** button for
 (PNG) the AI made opens next to the chat: tap the panel button at the top right of OpenCode, then **+**, then the file
 name. The course rules (`AGENTS.md`) tell the AI to save figures as PNG and to explain this.
 
+**OpenCode inside VS Code (optional).** If you prefer to see your code while you talk to the AI, open **VS Code**,
+choose **File > Open Folder** and select the **MetaScience** folder. Open any file, then click the **OpenCode** button
+at the top right of the file. OpenCode starts in a panel below your code, with the same free models and rules.
+✋ The first time, VS Code asks *"Do you trust the authors of the files in this folder?"*: it is your own course
+folder, so click **Yes, I trust the authors**.
+
 **Rules the AI follows** are in `AGENTS.md`. Read them. They match the course rules: never invent numbers or citations, quote the source, log what it did in `log/ai-log.md`.
 
 # Part 3 — Optional: more free AI services
@@ -248,8 +255,8 @@ Leaving a part out here does not remove it; the setup just stops installing and 
 - **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Uninstall`
 - **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --uninstall`
 
-It lists what the setup itself installed (for example RStudio, R and the course R packages, Quarto, Node.js, and the
-AI assistant with its tools). Type the numbers of what to remove, or **A** for all of it, and confirm with **y**.
+It lists what the setup itself installed (for example RStudio, R and the course R packages, Quarto, Node.js, VS Code
+and its add-ons, and the AI assistant with its tools). Type the numbers of what to remove, or **A** for all of it, and confirm with **y**.
 
 - It removes only what the setup installed. Programs that were on your laptop before the setup are not listed and
   are never touched.

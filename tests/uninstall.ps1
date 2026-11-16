@@ -188,6 +188,33 @@ try {
   for ($i = 0; $i -lt 12 -and (Test-Path -LiteralPath $state); $i++) { Start-Sleep -Seconds 5 }
   Check 'setup -Uninstall -RemoveCourse -Yes: the course folder is deleted' (-not (Test-Path (D 'course'))) ((Get-Content -LiteralPath (D 'out.txt') -Raw) + (Get-Content -LiteralPath (D 'err.txt') -Raw))
 
+  # 10. VS Code (added 2026-11-16): its add-ons go with VS Code's own command, before VS Code itself; the parts follow
+  Make-State
+  New-Item -ItemType Directory -Force -Path (D 'dotvscode') | Out-Null
+  Set-Content -LiteralPath (Join-Path $state 'parts.txt') -Value 'r rstudio quarto python node vscode' -Encoding ASCII
+  Add-Content -LiteralPath (Join-Path $state 'installed.tsv') -Encoding UTF8 -Value @("vscode`tvsext`tsst-dev.opencode", "vscode`tvsext`tms-python.python",
+    "vscode`tvsext`tms-python.vscode-pylance", "vscode`twinget`tMicrosoft.VisualStudioCode", "vscode`tdir`t$(D 'dotvscode')")
+  $code = Run-Un @('-Parts', 'vscode', '-Yes'); $log = LogOf
+  Check 'vscode: exit 0' ($code -eq 0) "exit $code $(Out)"
+  Check 'vscode: each recorded add-on removed with VS Code''s own command' (([regex]::Matches($log, 'would run: code --uninstall-extension (sst-dev\.opencode|ms-python\.python|ms-python\.vscode-pylance)')).Count -eq 3) $log
+  Check 'vscode: the add-ons before VS Code itself' ($log.IndexOf('--uninstall-extension') -ge 0 -and $log.IndexOf('--uninstall-extension') -lt $log.IndexOf('Microsoft.VisualStudioCode')) $log
+  Check 'vscode: VS Code removed by winget (exact id), its folder too' ($log -match 'would run: winget uninstall --id Microsoft\.VisualStudioCode --exact' -and -not (Test-Path (D 'dotvscode')))
+  Check 'vscode: everything else untouched' ((Test-Path (D 'rstudio')) -and (Test-Path (D 'mingit')) -and (Test-Path (Join-Path $state 'pack')))
+  Check 'vscode: record and parts no longer list it' (-not ((Rec) -match '^vscode') -and (Get-Content (Join-Path $state 'parts.txt') -Raw).Trim() -eq 'r rstudio quarto python node') ((Rec) -join ' | ')
+  Make-State
+  $code = Run-Un @() @('', '')
+  Check 'vscode: not offered when the setup did not add anything to VS Code' ((Out) -notmatch 'VS Code') (Out)
+
+  # 10b. VS Code was here before and is gone now: only the add-on folders the setup recorded are deleted
+  Make-State
+  $vsc = D 'vsc'; foreach ($d in 'sst-dev.opencode-1.0.0', 'ms-python.python-2026.10.0', 'someone.mine-1.0.0') { New-Item -ItemType Directory -Force -Path (Join-Path $vsc "ext\$d") | Out-Null }
+  Add-Content -LiteralPath (Join-Path $state 'installed.tsv') -Encoding UTF8 -Value @("vscode`tvsext`tsst-dev.opencode", "vscode`tvsext`tms-python.python")
+  $env:MS_TEST_CODE_DIR = $vsc; $env:MS_TEST_NO_CODE = '1'
+  try { $code = Run-Un @('-Parts', 'vscode', '-Yes'); $log = LogOf } finally { Remove-Item Env:\MS_TEST_CODE_DIR, Env:\MS_TEST_NO_CODE -ErrorAction SilentlyContinue }
+  Check 'vscode gone: exit 0, the recorded add-on folders deleted' ($code -eq 0 -and -not (Test-Path (Join-Path $vsc 'ext\sst-dev.opencode-1.0.0')) -and -not (Test-Path (Join-Path $vsc 'ext\ms-python.python-2026.10.0'))) "exit $code $(Out)"
+  Check 'vscode gone: an add-on the student added stays' (Test-Path (Join-Path $vsc 'ext\someone.mine-1.0.0'))
+  Check 'vscode gone: VS Code itself was not the setup''s, so winget is not asked' ($log -notmatch 'VisualStudioCode') $log
+
   # 7. the setup's own Record-Install: one line per thing, no duplicates, nothing in a dry run
   $tokens = $null; $errs = $null
   $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)

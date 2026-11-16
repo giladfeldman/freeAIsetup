@@ -2,7 +2,7 @@
 # =============================================================================
 #  Meta-science course: one-step setup for macOS (and Linux, used for testing)
 #  Installs: OpenCode (desktop + command line), Git, Node.js, uv + Python,
-#            R + course packages, RStudio, Quarto; creates ~/MetaScience;
+#            R + course packages, RStudio, Quarto, VS Code (+ OpenCode, Python add-ons); creates ~/MetaScience;
 #            runs a real end-to-end check that uses every installed tool.
 #  Safe to run again: it skips what is already installed and repairs the rest.
 #
@@ -12,7 +12,7 @@
 #          bash setup-mac.sh --fix      start the AI setup helper on the last setup log
 #          bash setup-mac.sh --dry-run  show what would be done, change nothing
 #          bash setup-mac.sh --choose   ask again which parts to install
-#          bash setup-mac.sh --components=r,rstudio,quarto,python,node   (or all / none) the parts, without asking
+#          bash setup-mac.sh --components=r,rstudio,quarto,python,node,vscode   (or all / none) the parts, without asking
 #          bash setup-mac.sh --uninstall   remove some or all of what this setup installed
 #                                          (with --yes --remove-course: the course folder too)
 #          bash setup-mac.sh --help
@@ -201,13 +201,23 @@ setup_network() {
 # ---------- 1. pre-checks ----------------------------------------------------
 # ---------- parts the student chooses (owner request 2026-11-12) ---------------------
 # The AI assistant (OpenCode), Git and uv (which runs the setup's own Python helper) are always installed.
-ALL_PARTS="r rstudio quarto python node"
+ALL_PARTS="r rstudio quarto python node vscode"
+# The parts of a setup from before the student could choose (no parts.txt). An update never adds a part the student
+# did not choose: VS Code (added 2026-11-16) comes only when they run the setup themselves.
+LEGACY_PARTS="r rstudio quarto python node"
+# Parts this computer can get: VS Code is offered on a Mac only (a course Codespace gets its add-ons from
+# .devcontainer/devcontainer.json, and Linux laptops install their own editor); --no-gui leaves out the desktop programs.
+offered_parts() { local p o=""; for p in $ALL_PARTS; do
+  case "$p" in vscode) [ "$PLATFORM" = mac ] && [ "$SKIP_GUI" = 0 ] || continue ;; rstudio) [ "$SKIP_GUI" = 0 ] || continue ;; esac
+  o="$o $p"; done; echo "${o# }"; }
+only_offered() { # $PARTS without the parts this computer is not offered
+  local p k="" o; o=" $(offered_parts) "; for p in $PARTS; do case "$o" in *" $p "*) k="$k $p" ;; esac; done; PARTS="${k# }"; }
 PARTS="$ALL_PARTS"
 has_part() { case " $PARTS " in *" $1 "*) return 0 ;; esac; return 1; }
 part_name() {
   case "$1" in r) echo "R and the course R packages" ;; rstudio) echo "RStudio (an editor for R; needs R)" ;;
     quarto) echo "Quarto (turns an analysis into a report)" ;; python) echo "Python course packages" ;;
-    node) echo "Node.js (a few optional AI tools need it)" ;; esac
+    node) echo "Node.js (a few optional AI tools need it)" ;; vscode) echo "VS Code (code editor; OpenCode + Python add-ons)" ;; esac
 }
 r_current() { # R 4.5 or newer is here (an older R gets a current one next to it)
   local rv; have R || return 1; rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
@@ -222,6 +232,8 @@ part_gb() {
     quarto) if have quarto; then echo 0; else echo 0.5; fi ;;
     python) if [ -d "$COURSE_DIR/.venv" ]; then echo 0; else echo 0.5; fi ;;
     node) if have node; then echo 0; else echo 0.2; fi ;;
+    # VS Code 0.8 GB + its add-ons 0.17 GB (measured on Windows 11, 2026-11-16); with VS Code here, its add-ons may be missing
+    vscode) if code_app >/dev/null || have code; then echo 0.2; else echo 1.0; fi ;;
   esac
 }
 estimate_gb() { # disk space this run will use: only the chosen parts that are not on this computer yet
@@ -240,7 +252,7 @@ PARSED=""; BAD_PARTS=""
 parse_parts() { # $1 = text -> PARSED (valid parts, in order) and BAD_PARTS (unknown words)
   local w want="" p; BAD_PARTS=""
   for w in $(printf '%s' "$1" | tr ',;' '  ' | tr 'A-Z' 'a-z'); do
-    case "$w" in all) want="$want $ALL_PARTS" ;; none) ;; r|rstudio|quarto|python|node) want="$want $w" ;; *) BAD_PARTS="$BAD_PARTS $w" ;; esac
+    case "$w" in all) want="$want $ALL_PARTS" ;; none) ;; r|rstudio|quarto|python|node|vscode) want="$want $w" ;; *) BAD_PARTS="$BAD_PARTS $w" ;; esac
   done
   case " $want " in *" rstudio "*) case " $want " in *" r "*) ;; *) want="$want r" ;; esac ;; esac   # RStudio needs R
   PARSED=""; for p in $ALL_PARTS; do case " $want " in *" $p "*) PARSED="$PARSED $p" ;; esac; done
@@ -248,21 +260,22 @@ parse_parts() { # $1 = text -> PARSED (valid parts, in order) and BAD_PARTS (unk
 }
 save_parts() { [ "$DRY_RUN" = 1 ] && return 0; mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "${PARTS:-none}" > "$STATE_DIR/parts.txt"; }
 load_parts() { # the parts chosen last time; everything when nothing was chosen (older setups installed all)
-  if [ -f "$STATE_DIR/parts.txt" ]; then parse_parts "$(cat "$STATE_DIR/parts.txt")"; PARTS="$PARSED"; else PARTS="$ALL_PARTS"; fi
-  [ "$SKIP_GUI" = 1 ] && PARTS="$(printf '%s' " $PARTS " | sed 's/ rstudio / /; s/^ //; s/ $//')"
-  return 0
+  if [ -f "$STATE_DIR/parts.txt" ]; then parse_parts "$(cat "$STATE_DIR/parts.txt")"; PARTS="$PARSED"; else PARTS="$LEGACY_PARTS"; fi
+  only_offered; return 0
 }
 choose_parts() {
+  local offer; offer="$(offered_parts)"
   if [ -n "$COMPONENTS" ]; then
     parse_parts "$COMPONENTS"
-    [ -n "$BAD_PARTS" ] && { say "Unknown part: $BAD_PARTS. Use any of: r, rstudio, quarto, python, node, or all, or none."; FINISHED=1; exit 2; }
+    [ -n "$BAD_PARTS" ] && { say "Unknown part: $BAD_PARTS. Use any of: r, rstudio, quarto, python, node, vscode, or all, or none."; FINISHED=1; exit 2; }
     PARTS="$PARSED"; save_parts
   elif [ -f "$STATE_DIR/parts.txt" ] && [ "$CHOOSE" = 0 ]; then load_parts
+  elif [ "$FROM_UPDATE" = 1 ]; then PARTS="$LEGACY_PARTS"   # an update never adds a part (see LEGACY_PARTS)
   elif [ "$ASSUME_YES" = 1 ] || [ ! -t 0 ]; then PARTS="$ALL_PARTS"
   else
     say ""; say "What should the setup install? The AI assistant (OpenCode), Git and uv (for Python) are always installed."
-    local i=0 p g a n try picked
-    for p in $ALL_PARTS; do i=$((i+1)); g="$(part_gb "$p")"
+    local i=0 p g a n try picked cnt; cnt="$(echo $offer | wc -w | tr -d ' ')"
+    for p in $offer; do i=$((i+1)); g="$(part_gb "$p")"
       if [ "$g" = 0 ]; then g="already on this computer"; else g="about $g GB"; fi
       say "$(printf '  %d. %-44s %s' "$i" "$(part_name "$p")" "$g")"
     done
@@ -270,15 +283,16 @@ choose_parts() {
       printf 'Press Enter to install all of them (recommended), or type the numbers you want, for example 1 3 (0 = none): '
       read -r a || a=""; a="$(printf '%s' "$a" | tr ',;' '  ')"
       if [ -z "${a// /}" ]; then PARTS="$ALL_PARTS"; break; fi
-      case "$a" in *[!0-5\ ]*) say "  Please type only numbers from the list (0 to 5)."; continue ;; esac
-      picked=""; for n in $a; do [ "$n" = 0 ] || picked="$picked $(echo $ALL_PARTS | cut -d' ' -f"$n")"; done
+      picked=""; for n in $a; do case "$n" in *[!0-9]*) picked=bad; break ;; esac; [ "$n" -le "$cnt" ] || { picked=bad; break; }; done
+      [ "$picked" = bad ] && { say "  Please type only numbers from the list (0 to $cnt)."; continue; }
+      for n in $a; do [ "$n" = 0 ] || picked="$picked $(echo $offer | cut -d' ' -f"$n")"; done
       parse_parts "$picked"; PARTS="$PARSED"
       case " $picked " in *" rstudio "*) case " $picked " in *" r "*) ;; *) say "  RStudio needs R, so R is installed too." ;; esac ;; esac
       break
     done
     save_parts
   fi
-  [ "$SKIP_GUI" = 1 ] && PARTS="$(printf '%s' " $PARTS " | sed 's/ rstudio / /; s/^ //; s/ $//')"
+  only_offered
   local names="" p; for p in $PARTS; do names="$names, $(part_name "$p")"; done
   say "  Installing: the AI assistant$names  (to change this: bash setup-mac.sh --choose)"
 }
@@ -447,8 +461,64 @@ record_uv() { # uv installed by this setup: its files, and the Python and downlo
   local f; for f in uv uvx; do [ -e "$HOME/.local/bin/$f" ] && record_install core file "$HOME/.local/bin/$f"; done
   record_install core uvdata "Python and downloads kept by uv"
 }
+# ---------- VS Code and its add-ons (owner request 2026-11-16; a Mac only) -------------------------------------------
+# The add-ons the course uses. sst-dev.opencode is OpenCode's own (github.com/anomalyco/opencode, sdks/vscode): it opens
+# a terminal in VS Code and starts the OpenCode this setup installed, with the same free models and settings
+# (its button at the top right of an open file, or Cmd+Esc). ms-python.python is Microsoft's, and brings Pylance, the Python debugger and Python Environments with it.
+# No R add-on: REditorSupport.r needs the languageserver R package and pops up errors without it; VS Code colours R
+# code by itself, and RStudio is the course's R editor.
+CODE_EXTENSIONS="sst-dev.opencode ms-python.python"
+CODE_ISO=()   # tests: MS_TEST_CODE_DIR gives VS Code a scratch add-on and settings folder, so a test never touches a real one
+[ -n "${MS_TEST_CODE_DIR:-}" ] && CODE_ISO=(--extensions-dir "$MS_TEST_CODE_DIR/ext" --user-data-dir "$MS_TEST_CODE_DIR/data")
+code_app() { local a; for a in "/Applications/Visual Studio Code.app" "$HOME/Applications/Visual Studio Code.app"; do
+  [ -d "$a" ] && { echo "$a"; return 0; }; done; return 1; }
+code_cli() { # VS Code's code command: on PATH, or inside the app
+  local a; if have code; then command -v code; return 0; fi
+  a="$(code_app)" && [ -x "$a/Contents/Resources/app/bin/code" ] && { echo "$a/Contents/Resources/app/bin/code"; return 0; }; return 1; }
+code_exts() { "$1" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --list-extensions 2>/dev/null | tr 'A-Z' 'a-z' | tr -d '\r' | grep -E '^[a-z0-9-]+\.[a-z0-9-]+$'; }
+install_vscode() {
+  if ! has_part vscode; then [ "$PLATFORM" = mac ] && [ "$SKIP_GUI" = 0 ] && skip "VS Code"; return 0; fi
+  # VS Code keeps its add-ons and settings in these folders; when the setup brings the first VS Code, they are its too
+  local data="" d fresh=0 t
+  for d in "$HOME/.vscode" "$HOME/Library/Application Support/Code"; do [ -e "$d" ] || data="$data$d"$'\n'; done
+  if code_app >/dev/null || have code; then ok "VS Code" "already installed"
+  elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install VS Code"
+  elif [ "$NO_BREW" = 0 ]; then
+    local vhad=0; brew_had --cask visual-studio-code && vhad=1
+    if retry brew install --cask visual-studio-code; then [ "$vhad" = 0 ] && { record_install vscode cask visual-studio-code; fresh=1; }; ok "VS Code" "installed"
+    else fail "VS Code" "brew install --cask visual-studio-code failed"; return 0; fi
+  else # Intel Macs: Microsoft's own download (about 400 MB)
+    t="$(mktemp -d)"; say "  Downloading VS Code from Microsoft (about 400 MB; on slow Wi-Fi 10 minutes or more)..."
+    if retry curl -fL -m 1800 -o "$t/vscode.zip" "https://update.code.visualstudio.com/latest/darwin/stable" \
+       && run ditto -x -k "$t/vscode.zip" "$t/x" && [ -d "$t/x/Visual Studio Code.app" ] \
+       && run $SUDO ditto "$t/x/Visual Studio Code.app" "/Applications/Visual Studio Code.app" && [ -d "/Applications/Visual Studio Code.app" ]; then
+      record_install vscode pkgdir "/Applications/Visual Studio Code.app"; fresh=1; ok "VS Code" "installed (direct download from Microsoft)"
+    else fail "VS Code" "download from Microsoft or unpacking failed; see $LOG_FILE"; rm -rf "$t"; return 0; fi
+    rm -rf "$t"
+  fi
+  [ "$fresh" = 1 ] && printf '%s' "$data" | while IFS= read -r d; do [ -n "$d" ] && record_install vscode dir "$d"; done
+  # the code command: Homebrew links it; the direct download keeps it inside the app
+  local app; have code || { app="$(code_app)" && [ -x "$app/Contents/Resources/app/bin/code" ] && add_path "$app/Contents/Resources/app/bin"; }
+  install_code_extensions
+}
+install_code_extensions() {
+  # Adds only the add-ons that are missing. An add-on already in VS Code is never updated (no --force), and each one
+  # this run adds is recorded, so the uninstall removes those and leaves the student's own.
+  if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] add the VS Code add-ons that are missing: $CODE_EXTENSIONS"; return 0; fi
+  local code before after e missing="" still=""
+  code="$(code_cli)" || { fail "VS Code add-ons" "VS Code's code command was not found"; return 0; }
+  before=" $(code_exts "$code" | tr '\n' ' ') "
+  for e in $CODE_EXTENSIONS; do case "$before" in *" $e "*) ;; *) missing="$missing $e" ;; esac; done
+  for e in $missing; do retry "$code" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --install-extension "$e"; done
+  after=" $(code_exts "$code" | tr '\n' ' ') "
+  for e in $after; do case "$before" in *" $e "*) ;; *) record_install vscode vsext "$e" ;; esac; done   # with the ones they brought
+  for e in $CODE_EXTENSIONS; do case "$after" in *" $e "*) ;; *) still="$still $e" ;; esac; done
+  if [ -n "$still" ]; then fail "VS Code add-ons" "could not add${still} (the add-on store may be blocked on this network); see $LOG_FILE"
+  elif [ -n "$missing" ]; then ok "VS Code add-ons" "OpenCode and Python added"
+  else ok "VS Code add-ons" "OpenCode and Python already there"; fi
+}
 install_tools() {
-  step "3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio"
+  step "3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio, VS Code"
   [ "${MS_TEST_CRASH:-}" = tools ] && { echo "test crash in step 3 (MS_TEST_CRASH)" >> "$LOG_FILE"; exit 3; }   # test hook: a crash mid-run
   [ "${MS_TEST_CRASH:-}" = unbound ] && echo "$MS_TEST_UNSET_VARIABLE"   # test hook: a bash error (set -u) mid-run
   say "  Rule: this setup never upgrades or removes software that is already on this computer."
@@ -457,7 +527,7 @@ install_tools() {
     local d; for d in /Library/Frameworks/R.framework/Resources/bin /Applications/quarto/bin /opt/homebrew/bin /usr/local/bin; do
       [ -d "$d" ] && case ":$PATH:" in *":$d:"*) ;; *) { [ -x "$d/Rscript" ] || [ -x "$d/quarto" ] || [ -x "$d/git" ]; } && add_path "$d" ;; esac
     done
-    if [ "$NO_BREW" = 1 ]; then install_tools_direct; quarto_after_rstudio; add_path "$HOME/.local/bin"; return 0; fi
+    if [ "$NO_BREW" = 1 ]; then install_tools_direct; quarto_after_rstudio; add_path "$HOME/.local/bin"; install_vscode; return 0; fi
     local f fp; for f in git node uv; do
       fp=core; [ "$f" = node ] && fp=node
       if [ "$f" = node ] && ! has_part node; then skip "node"
@@ -491,6 +561,7 @@ install_tools() {
         retry brew install --cask rstudio && { [ "$shad" = 0 ] && record_install rstudio cask rstudio; ok "RStudio" "installed"; } || fail "RStudio" "brew install --cask rstudio failed"; fi
     fi
     quarto_after_rstudio
+    install_vscode
   else
     # only what is missing (a course Codespace already brings current Node.js and R; never replace them)
     local want="curl ca-certificates unzip python3" added="" a
@@ -696,6 +767,8 @@ summary() {
        say "If it still fails, show the teacher: $(report_file)"; fi
   say "Full log: $LOG_FILE"
   say "Next: open OpenCode, choose the folder $COURSE_DIR, and follow the guide."
+  has_part vscode && say "  In VS Code: File > Open Folder > $COURSE_DIR, open a file, then click the OpenCode button at its top right."
+  return 0
 }
 
 install_pack() { # installed copy of the pack + a daily update check for this account (no admin)
