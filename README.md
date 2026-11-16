@@ -8,7 +8,7 @@ It installs, on Windows, Mac and Linux:
 - R and RStudio, Python (via uv), Quarto, Git and Node.js
 - a course folder with a real end-to-end check that uses every tool
 
-The setup never upgrades or removes software you already have, and never changes security settings.
+The setup never upgrades or removes software you already have (one exception: a VS Code add-on the course uses that is older than the tested version is updated), and never changes security settings.
 (Next to an R older than 4.5, which the course packages no longer support, it installs the current R (on
 Windows for the student's account only) and keeps the old one. On a Mac the new R becomes the one that starts; the old one stays
 in the R framework and can still be chosen.)
@@ -80,10 +80,14 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 - **Parts:** the setup asks once which optional parts to install and remembers the answer. To choose again:
   `install-windows.cmd -Choose` (Windows) or `bash setup-mac.sh --choose` (Mac). Without asking:
   `-Components r,quarto` (`-Parts` works too) / `--components=r,quarto` (`--parts=` works too) (any of `r`, `rstudio`, `quarto`, `python`, `node`, `vscode`, `all`, `none`).
-- **VS Code** (on Windows and Mac, chosen by default): the code editor, with two add-ons: OpenCode's own (a button at the
-  top right of an open file starts OpenCode in a terminal next to the code, with the same free models) and Microsoft's
-  Python add-on. A VS Code that is already there is kept as it is; only the add-ons it lacks are added. No R add-on:
-  RStudio is the R editor. An update of the pack never adds VS Code to an older setup; `-Choose` / `--choose` does.
+- **VS Code** (on Windows and Mac, chosen by default): the code editor, with OpenCode's own add-on (a button at the
+  top right of an open file starts OpenCode in a terminal next to the code, with the same free models), Microsoft's
+  Python add-on and, when R is chosen, the R add-on (with the R package `languageserver` it needs). A VS Code that is
+  already there is kept as it is and never upgraded. Its add-ons are checked: a missing one is added, one older than
+  the version the release was tested with is updated (the one exception to "never upgrades"), the rest are left alone.
+  The uninstall removes only the add-ons the setup added, never one the student had, even one it updated. If VS Code
+  is too old for the tested add-ons, the setup warns and says how to update VS Code. An update of the pack never adds
+  VS Code to an older setup; `-Choose` / `--choose` does.
 - **Disk space:** before installing, the setup adds up what the chosen parts that are not on the computer yet need,
   says how much it will use, stops if that plus 2 GB for the downloads is not free, and warns when less than 3 GB
   would be left. The sizes were measured on one Windows 11 computer; Mac sizes are not yet measured.

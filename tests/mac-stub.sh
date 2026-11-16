@@ -6,12 +6,25 @@ set -u
 export MS_LOG_ENV=local   # test runs never count as real installs or send real alerts
 STUB=/tmp/stubs; mkdir -p "$STUB"; CALLS=/tmp/calls.log; : > "$CALLS"
 mk() { printf '#!/bin/bash\necho "%s $*" >> %s\n%s\n' "$1" "$CALLS" "${2:-exit 0}" > "$STUB/$1"; chmod +x "$STUB/$1"; }
-# a stand-in for VS Code's code command: keeps a list of add-ons (the Python add-on brings two more)
+# a stand-in for VS Code's code command: keeps a list of add-ons with versions, as the real add-on store gave them on
+# 2026-11-16 (the Python add-on brings two more, the R add-on one); FAKE_CODE_OLD = a VS Code too old for the newest
 cat > /tmp/code-fake <<'CODE'
 #!/bin/bash
 echo "code $*" >> /tmp/calls.log
-L=/tmp/codelist; case " $* " in *" --list-extensions "*) cat "$L" 2>/dev/null; exit 0 ;; esac
-prev=""; for a in "$@"; do [ "$prev" = --install-extension ] && { echo "$a" >> "$L"; [ "$a" = ms-python.python ] && printf 'ms-python.vscode-pylance\nms-python.debugpy\n' >> "$L"; }; prev="$a"; done; exit 0
+L=/tmp/codelist; touch "$L"
+case " $* " in *" --version "*) printf '1.139.1\nabc\narm64\n'; exit 0 ;; esac
+case " $* " in *" --list-extensions "*) case " $* " in *" --show-versions "*) cat "$L" ;; *) cut -d@ -f1 "$L" ;; esac; exit 0 ;; esac
+force=0; for a in "$@"; do [ "$a" = --force ] && force=1; done
+prev=""; for a in "$@"; do
+  if [ "$prev" = --install-extension ]; then
+    if grep -q "^$a@" "$L" && [ "$force" = 0 ]; then echo "Extension '$a' is already installed."
+    else
+      case "$a" in ms-python.python) v=2026.10.0; [ -n "${FAKE_CODE_OLD:-}" ] && v=2025.2.0 ;; reditorsupport.r) v=3.4.0; [ -n "${FAKE_CODE_OLD:-}" ] && v=2.8.8 ;; *) v=1.0.0 ;; esac
+      grep -v "^$a@" "$L" > "$L.t"; mv "$L.t" "$L"; echo "$a@$v" >> "$L"
+      case "$a" in ms-python.python) w="ms-python.vscode-pylance@2026.4.1 ms-python.debugpy@2026.6.0" ;; reditorsupport.r) w="reditorsupport.r-syntax@0.1.5" ;; *) w="" ;; esac
+      for c in $w; do grep -q "^${c%@*}@" "$L" || echo "$c" >> "$L"; done
+    fi
+  fi; prev="$a"; done; exit 0
 CODE
 chmod +x /tmp/code-fake; rm -f /tmp/codelist
 mk uname 'case "$1" in -s) echo Darwin;; -m) echo arm64;; *) echo Darwin;; esac'
@@ -19,7 +32,7 @@ mk sw_vers 'echo 15.1'
 mk sudo 'if [ "$1" = -v ] || [ "$1" = -n ]; then exit 0; fi; "$@"'
 mk brew 'if [ "$1" = --version ]; then echo "Homebrew 5.0.0"; exit 0; fi
 if [ "$1" = list ]; then exit 1; fi   # nothing installed yet (the setup asks before it records a brew install as its own)
-case "$*" in "install --cask r") printf "#!/bin/bash\necho R\n" > '"$STUB"'/Rscript; chmod +x '"$STUB"'/Rscript;;
+case "$*" in "install --cask r") printf "#!/bin/bash\necho Rscript \"\$*\" >> /tmp/calls.log\necho R\n" > '"$STUB"'/Rscript; chmod +x '"$STUB"'/Rscript;;
  "install --cask quarto") printf "#!/bin/bash\necho quarto\n" > '"$STUB"'/quarto; chmod +x '"$STUB"'/quarto;;
  "install uv") printf "#!/bin/bash\nexit 0\n" > '"$STUB"'/uv; chmod +x '"$STUB"'/uv;;
  "install --cask visual-studio-code") cp /tmp/code-fake '"$STUB"'/code;; esac; exit 0'
@@ -48,24 +61,38 @@ t "arm64 CLI downloaded"        "opencode-darwin-arm64.zip"
 t "VS Code installed as cask"   "^brew install --cask visual-studio-code$"
 t "OpenCode add-on added"       "^code --install-extension sst-dev.opencode$"
 t "Python add-on added"         "^code --install-extension ms-python.python$"
-n "add-ons never forced (no update of an add-on)" "^code .*--force"
+t "R add-on added (R chosen)"   "^code --install-extension reditorsupport.r$"
+n "add-ons never forced (nothing there to update)" "^code .*--force"
+t "R packages include languageserver (VS Code chosen)" "^Rscript .*languageserver"
 t "arm64 desktop app downloaded" "opencode-desktop-mac-arm64.zip"
 t "desktop app unpacked"        "^ditto -x -k"
 if [ -d /Applications/OpenCode.app ] || [ -d "$HOME/Applications/OpenCode.app" ]; then echo "PASS app copied"; pass=$((pass+1)); else echo "MISS app copied"; failn=$((failn+1)); fi
 REC="$(ls "$HOME"/Library/Application\ Support/MetaScience/installed.tsv 2>/dev/null | head -1)"
-for k in "core	brew	git" "r	cask	r" "quarto	cask	quarto" "rstudio	cask	rstudio" "vscode	cask	visual-studio-code" "vscode	vsext	sst-dev.opencode" "vscode	vsext	ms-python.python" "vscode	vsext	ms-python.vscode-pylance" "vscode	dir	$HOME/.vscode"; do
+for k in "core	brew	git" "r	cask	r" "quarto	cask	quarto" "rstudio	cask	rstudio" "vscode	cask	visual-studio-code" "vscode	vsext	sst-dev.opencode" "vscode	vsext	ms-python.python" "vscode	vsext	ms-python.vscode-pylance" "vscode	vsext	reditorsupport.r" "vscode	vsext	reditorsupport.r-syntax" "vscode	dir	$HOME/.vscode"; do
   if [ -n "$REC" ] && grep -qxF "$k" "$REC"; then echo "PASS recorded: $k"; pass=$((pass+1)); else echo "MISS recorded: $k"; failn=$((failn+1)); fi
 done
 grep -q 'MetaScience setup' "$HOME/.zprofile" && { echo "PASS PATH added to .zprofile"; pass=$((pass+1)); } || { echo "MISS PATH added to .zprofile"; failn=$((failn+1)); }
 grep -q "In VS Code: File > Open Folder" /tmp/run.log && { echo "PASS summary says how to open OpenCode in VS Code"; pass=$((pass+1)); } || { echo "MISS summary says how to open OpenCode in VS Code"; failn=$((failn+1)); }
-# A VS Code that was here before: kept as it is (never installed or upgraded through Homebrew); only the missing add-on is added
-echo sst-dev.opencode > /tmp/codelist; echo someone.mine >> /tmp/codelist; cp /tmp/code-fake "$STUB/code"
+# A VS Code that was here before: kept as it is (never installed or upgraded through Homebrew); its current OpenCode
+# add-on is left alone, its old Python add-on (the student's own) is updated and stays the student's; no R add-on
+# without the R part
+printf '%s\n' sst-dev.opencode@1.0.0 someone.mine@1.0.0 ms-python.python@2025.2.0 ms-python.vscode-pylance@2026.4.1 ms-python.debugpy@2026.6.0 > /tmp/codelist; cp /tmp/code-fake "$STUB/code"
 rm -rf "$HOME"; mkdir -p "$HOME"; : > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=vscode > /tmp/run4.log 2>&1
 REC="$HOME/Library/Application Support/MetaScience/installed.tsv"
 n "VS Code here before: Homebrew never asked for it" "^brew \(install\|upgrade\|reinstall\) .*visual-studio-code"
-n "VS Code here before: the OpenCode add-on it has is not installed again" "^code --install-extension sst-dev.opencode"
-t "VS Code here before: the missing Python add-on is added" "^code --install-extension ms-python.python$"
-if ! grep -q "^vscode	\(cask\|dir\|pkgdir\)	" "$REC" 2>/dev/null && ! grep -q "sst-dev.opencode\|someone.mine" "$REC" 2>/dev/null && grep -qxF "vscode	vsext	ms-python.python" "$REC" 2>/dev/null; then echo "PASS VS Code here before: only the added add-ons recorded"; pass=$((pass+1)); else echo "MISS VS Code here before: only the added add-ons recorded"; failn=$((failn+1)); fi
+n "VS Code here before: the current OpenCode add-on is not installed again" "^code --install-extension sst-dev.opencode"
+t "VS Code here before: the student's old Python add-on is updated" "^code --install-extension ms-python.python --force$"
+n "VS Code here before: no R add-on without the R part" "reditorsupport"
+if ! grep -q "^vscode	" "$REC" 2>/dev/null && grep -q "updated: Python" /tmp/run4.log; then echo "PASS VS Code here before: nothing recorded (the updated add-on stays the student's), says updated"; pass=$((pass+1)); else echo "MISS VS Code here before: nothing recorded (the updated add-on stays the student's), says updated"; failn=$((failn+1)); fi
+# A VS Code too old for the tested add-ons: the store gives older ones; a warning that says to update VS Code, no failure
+: > /tmp/codelist; rm -rf "$HOME"; mkdir -p "$HOME"; : > "$CALLS"; FAKE_CODE_OLD=1 bash setup-mac.sh --yes --skip-ai --components=r,vscode > /tmp/run5.log 2>&1
+if grep -q "WARN.*VS Code add-ons.*reditorsupport.r 2.8.8 (tested: 3.4.0).*Check for Updates" /tmp/run5.log && ! grep -q "FAIL.*VS Code add-ons" /tmp/run5.log; then echo "PASS VS Code too old: a warning naming the old add-on, no failure"; pass=$((pass+1)); else echo "MISS VS Code too old: a warning naming the old add-on, no failure"; failn=$((failn+1)); fi
+# A "code" on PATH that is not VS Code's (no version from --version): the code command inside the VS Code app is used
+printf '#!/bin/bash\necho "not vs code $*" >> /tmp/calls.log\necho not vs code\n' > "$STUB/code"; chmod +x "$STUB/code"
+A="/Applications/Visual Studio Code.app/Contents/Resources/app/bin"; mkdir -p "$A"; cp /tmp/code-fake "$A/code"
+: > /tmp/codelist; rm -rf "$HOME"; mkdir -p "$HOME"; : > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=vscode > /tmp/run6.log 2>&1
+if grep -q "OK.*VS Code add-ons.*OpenCode, Python ready" /tmp/run6.log && grep -q "^code --install-extension sst-dev.opencode$" "$CALLS"; then echo "PASS a code command that is not VS Code's: the one inside the app is used"; pass=$((pass+1)); else echo "MISS a code command that is not VS Code's: the one inside the app is used"; failn=$((failn+1)); fi
+rm -rf "/Applications/Visual Studio Code.app"
 rm -f "$STUB/code"
 # An old R (from Homebrew, then from elsewhere): the current R comes from CRAN next to it. The R installer deletes
 # every R it has an install receipt for, so the old R's receipt must be forgotten BEFORE the installer runs, and

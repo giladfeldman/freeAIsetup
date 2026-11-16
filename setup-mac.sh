@@ -217,7 +217,7 @@ has_part() { case " $PARTS " in *" $1 "*) return 0 ;; esac; return 1; }
 part_name() {
   case "$1" in r) echo "R and the course R packages" ;; rstudio) echo "RStudio (an editor for R; needs R)" ;;
     quarto) echo "Quarto (turns an analysis into a report)" ;; python) echo "Python course packages" ;;
-    node) echo "Node.js (a few optional AI tools need it)" ;; vscode) echo "VS Code (code editor; OpenCode + Python add-ons)" ;; esac
+    node) echo "Node.js (a few optional AI tools need it)" ;; vscode) echo "VS Code (code editor; OpenCode, Python and R add-ons)" ;; esac
 }
 r_current() { # R 4.5 or newer is here (an older R gets a current one next to it)
   local rv; have R || return 1; rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
@@ -465,17 +465,37 @@ record_uv() { # uv installed by this setup: its files, and the Python and downlo
 # The add-ons the course uses. sst-dev.opencode is OpenCode's own (github.com/anomalyco/opencode, sdks/vscode): it opens
 # a terminal in VS Code and starts the OpenCode this setup installed, with the same free models and settings
 # (its button at the top right of an open file, or Cmd+Esc). ms-python.python is Microsoft's, and brings Pylance, the Python debugger and Python Environments with it.
-# No R add-on: REditorSupport.r needs the languageserver R package and pops up errors without it; VS Code colours R
-# code by itself, and RStudio is the course's R editor.
-CODE_EXTENSIONS="sst-dev.opencode ms-python.python"
+# reditorsupport.r (the R add-on, brings R Syntax) only with the R part: it needs R, and the languageserver R package,
+# which the R package step then adds (without it the add-on keeps asking to install it).
+# Each add-on's version is the one this release was tested with: an older one is updated (owner, 2026-11-16: "only
+# installs/updates them if not installed/outdated"). VS Code itself is never upgraded.
+CODE_EXTENSIONS="sst-dev.opencode ms-python.python reditorsupport.r"
+code_min() { case "$1" in sst-dev.opencode) echo 1.0.0 ;; ms-python.python) echo 2026.10.0 ;; reditorsupport.r) echo 3.4.0 ;; esac; }
+code_label() { case "$1" in sst-dev.opencode) echo OpenCode ;; ms-python.python) echo Python ;; reditorsupport.r) echo R ;; *) echo "$1" ;; esac; }
+code_wanted() { local e; for e in $CODE_EXTENSIONS; do { [ "$e" != reditorsupport.r ] || has_part r; } && printf '%s ' "$e"; done; return 0; }
 CODE_ISO=()   # tests: MS_TEST_CODE_DIR gives VS Code a scratch add-on and settings folder, so a test never touches a real one
 [ -n "${MS_TEST_CODE_DIR:-}" ] && CODE_ISO=(--extensions-dir "$MS_TEST_CODE_DIR/ext" --user-data-dir "$MS_TEST_CODE_DIR/data")
 code_app() { local a; for a in "/Applications/Visual Studio Code.app" "$HOME/Applications/Visual Studio Code.app"; do
   [ -d "$a" ] && { echo "$a"; return 0; }; done; return 1; }
-code_cli() { # VS Code's code command: on PATH, or inside the app
-  local a; if have code; then command -v code; return 0; fi
-  a="$(code_app)" && [ -x "$a/Contents/Resources/app/bin/code" ] && { echo "$a/Contents/Resources/app/bin/code"; return 0; }; return 1; }
-code_exts() { "$1" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --list-extensions 2>/dev/null | tr 'A-Z' 'a-z' | tr -d '\r' | grep -E '^[a-z0-9-]+\.[a-z0-9-]+$'; }
+code_cli() { # VS Code's code command: on PATH, or inside the app. A "code" on PATH can be another editor's copy or a
+  # script, so each candidate must answer --version with a version number.
+  local c v; for c in "$(command -v code 2>/dev/null)" "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
+                      "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"; do
+    [ -n "$c" ] && [ -x "$c" ] || continue
+    v="$("$c" --version 2>/dev/null | head -1)"
+    case "$v" in [0-9]*.[0-9]*) echo "$c"; return 0 ;; esac
+    echo "not VS Code's code command (no version from --version): $c" >> "$LOG_FILE"
+  done; return 1; }
+code_exts() { # the add-ons VS Code has, one "id@version" per line, lower case; fails when VS Code did not answer
+  local out; out="$("$1" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --list-extensions --show-versions 2>/dev/null)" || { echo "code --list-extensions failed" >> "$LOG_FILE"; return 1; }
+  printf '%s\n' "$out" | tr 'A-Z' 'a-z' | tr -d '\r' | grep -E '^[a-z0-9-]+\.[a-z0-9-]+@[^ ]+$'; return 0; }
+ver_of() { printf '%s\n' "$2" | awk -F@ -v id="$1" '$1 == id { print $2; exit }'; }   # ver_of <id> <list>
+older_than() { # true only when both read as versions and $1 is lower; unreadable = leave it
+  awk -v a="$1" -v b="$2" 'BEGIN { sub(/[-+].*$/, "", a); if (a !~ /^[0-9]+(\.[0-9]+)*$/ || b !~ /^[0-9]+(\.[0-9]+)*$/) exit 1
+    na = split(a, x, "."); nb = split(b, y, "."); n = (na > nb ? na : nb)
+    for (i = 1; i <= n; i++) { p = (i <= na ? x[i] + 0 : 0); q = (i <= nb ? y[i] + 0 : 0); if (p < q) exit 0; if (p > q) exit 1 }
+    exit 1 }'; }
+recorded_exts() { awk -F'\t' '$1 == "vscode" && $2 == "vsext" { print tolower($3) }' "$STATE_DIR/installed.tsv" 2>/dev/null; return 0; }
 install_vscode() {
   if ! has_part vscode; then [ "$PLATFORM" = mac ] && [ "$SKIP_GUI" = 0 ] && skip "VS Code"; return 0; fi
   # VS Code keeps its add-ons and settings in these folders; when the setup brings the first VS Code, they are its too
@@ -502,26 +522,53 @@ install_vscode() {
   install_code_extensions
 }
 install_code_extensions() {
-  # Adds only the add-ons that are missing. An add-on already in VS Code is never updated (no --force), and each one
-  # this run adds is recorded, so the uninstall removes those and leaves the student's own.
-  if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] add the VS Code add-ons that are missing: $CODE_EXTENSIONS"; return 0; fi
-  local code before after e missing="" still=""
-  code="$(code_cli)" || { fail "VS Code add-ons" "VS Code's code command was not found"; return 0; }
-  before=" $(code_exts "$code" | tr '\n' ' ') "
-  for e in $CODE_EXTENSIONS; do case "$before" in *" $e "*) ;; *) missing="$missing $e" ;; esac; done
-  for e in $missing; do retry "$code" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --install-extension "$e"; done
-  after=" $(code_exts "$code" | tr '\n' ' ') "
-  for e in $after; do case "$before" in *" $e "*) ;; *) record_install vscode vsext "$e" ;; esac; done   # with the ones they brought
-  for e in $CODE_EXTENSIONS; do case "$after" in *" $e "*) ;; *) still="$still $e" ;; esac; done
-  if [ -n "$still" ]; then fail "VS Code add-ons" "could not add${still} (the add-on store may be blocked on this network); see $LOG_FILE"
-  elif [ -n "$missing" ]; then ok "VS Code add-ons" "OpenCode and Python added"
-  else ok "VS Code add-ons" "OpenCode and Python already there"; fi
+  # Checks each add-on the course uses: a missing one is added, one older than the version this release was tested
+  # with is updated (--force fetches the newest that this VS Code can run), one that is fine is left alone. Only the
+  # add-ons this setup added are recorded (with the ones they brought), so the uninstall removes those and never the
+  # student's own, even one the setup updated.
+  local want names="" e v code have now ours k added="" updated="" missing="" old="" what=""
+  want="$(code_wanted)"; for e in $want; do names="${names:+$names, }$(code_label "$e")"; done
+  if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] add the VS Code add-ons that are missing or too old: $want"; return 0; fi
+  code="$(code_cli)" || { fail "VS Code add-ons" "VS Code's code command was not found or did not answer; see $LOG_FILE"; return 0; }
+  have="$(code_exts "$code")" || { fail "VS Code add-ons" "VS Code could not list its add-ons; see $LOG_FILE"; return 0; }
+  ours=" $(recorded_exts | tr '\n' ' ') "
+  for e in $want; do
+    v="$(ver_of "$e" "$have")"
+    if [ -n "$v" ] && ! older_than "$v" "$(code_min "$e")"; then continue; fi
+    if [ -n "$v" ]; then retry "$code" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --install-extension "$e" --force
+    else retry "$code" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --install-extension "$e"; fi
+    now="$(code_exts "$code")" || now=""
+    [ -n "$(ver_of "$e" "$now")" ] || continue   # reported below
+    if [ -n "$v" ]; then echo "VS Code add-on $e updated from $v to $(ver_of "$e" "$now")" >> "$LOG_FILE"; updated="${updated:+$updated, }$(code_label "$e")"
+    else added="${added:+$added, }$(code_label "$e")"; fi
+    # what this step brought (a missing add-on's companions, or new ones an update of an add-on this setup added
+    # brings) is recorded; companions an update of the student's own add-on brings belong with that add-on
+    if [ -z "$v" ] || case "$ours" in *" $e "*) true ;; *) false ;; esac; then
+      for k in $(printf '%s\n' "$now" | cut -d@ -f1); do
+        [ -n "$(ver_of "$k" "$have")" ] && continue
+        case "$ours" in *" $k "*) ;; *) record_install vscode vsext "$k"; ours="$ours$k " ;; esac
+      done
+    fi
+    have="$now"
+  done
+  for e in $want; do
+    v="$(ver_of "$e" "$have")"
+    if [ -z "$v" ]; then missing="$missing $e"; elif older_than "$v" "$(code_min "$e")"; then old="${old:+$old, }$e $v (tested: $(code_min "$e"))"; fi
+  done
+  [ -n "$missing" ] && fail "VS Code add-ons" "could not add${missing} (the add-on store may be blocked on this network); see $LOG_FILE"
+  [ -n "$old" ] && warn "VS Code add-ons" "$old - this VS Code is too old for the newer one: in VS Code, Code > Check for Updates, then run the setup again"
+  if [ -z "$missing" ] && [ -z "$old" ]; then
+    [ -n "$added" ] && what="added: $added"; [ -n "$updated" ] && what="${what:+$what; }updated: $updated"
+    if [ -n "$what" ]; then ok "VS Code add-ons" "$names ready ($what)"; else ok "VS Code add-ons" "$names already there and up to date"; fi
+  fi
+  return 0
 }
 install_tools() {
   step "3/9  Core tools: Git, Node.js, uv (Python), R, Quarto, RStudio, VS Code"
   [ "${MS_TEST_CRASH:-}" = tools ] && { echo "test crash in step 3 (MS_TEST_CRASH)" >> "$LOG_FILE"; exit 3; }   # test hook: a crash mid-run
   [ "${MS_TEST_CRASH:-}" = unbound ] && echo "$MS_TEST_UNSET_VARIABLE"   # test hook: a bash error (set -u) mid-run
-  say "  Rule: this setup never upgrades or removes software that is already on this computer."
+  say "  Rule: this setup never upgrades or removes software that is already on this computer"
+  say "  (one exception: a VS Code add-on the course uses that is older than the course needs is updated)."
   if [ "$PLATFORM" = mac ]; then
     # tools another account installed for the whole Mac: make them usable from this account
     local d; for d in /Library/Frameworks/R.framework/Resources/bin /Applications/quarto/bin /opt/homebrew/bin /usr/local/bin; do
@@ -652,6 +699,8 @@ install_r_packages() {
   step "5/9  R packages for the course"
   has_part r || { skip "R packages"; return 0; }
   have Rscript || { fail "R packages" "R is not installed"; return 1; }
+  # with VS Code, its R add-on needs the languageserver R package (else it keeps asking to install it)
+  local pkgs="$R_PACKAGES"; has_part vscode && pkgs="$R_PACKAGES languageserver"
   local repo="$CRAN"
   if [ "$PLATFORM" = linux ]; then repo="https://packagemanager.posit.co/cran/__linux__/$(. /etc/os-release; echo "$VERSION_CODENAME")/latest"; fi
   local lib; lib="$(Rscript -e 'cat(Sys.getenv("R_LIBS_USER"))' 2>/dev/null)"
@@ -659,13 +708,13 @@ install_r_packages() {
   local before pk; before=" $(Rscript -e "cat(rownames(installed.packages(lib.loc='$lib')))" 2>/dev/null) "
   # On Linux, Posit's server sends ready-made (binary) packages only if R identifies itself this way
   local ua="options(HTTPUserAgent = sprintf('R/%s R (%s)', getRversion(), paste(getRversion(), R.version[['platform']], R.version[['arch']], R.version[['os']])));"
-  run Rscript -e "$ua pk <- strsplit('$R_PACKAGES',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; if (length(miss)) install.packages(miss, lib='$lib', repos='$repo', Ncpus=2)"
+  run Rscript -e "$ua pk <- strsplit('$pkgs',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; if (length(miss)) install.packages(miss, lib='$lib', repos='$repo', Ncpus=2)"
   for pk in $(Rscript -e "cat(rownames(installed.packages(lib.loc='$lib')))" 2>/dev/null); do
     case "$before" in *" $pk "*) ;; *) record_install r rpkg "$pk" ;; esac
   done
   # a package counts as ready only when it loads (its folder can be there while a package it needs is missing)
-  local missing; missing="$(Rscript -e "pk <- strsplit('$R_PACKAGES',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; cat(miss)" 2>/dev/null)"
-  if [ "$DRY_RUN" = 1 ]; then :; elif [ -z "$missing" ]; then ok "R packages" "$(echo $R_PACKAGES | wc -w | tr -d ' ') packages ready"; else fail "R packages" "missing or not loading: $missing"; fi
+  local missing; missing="$(Rscript -e "pk <- strsplit('$pkgs',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; cat(miss)" 2>/dev/null)"
+  if [ "$DRY_RUN" = 1 ]; then :; elif [ -z "$missing" ]; then ok "R packages" "$(echo $pkgs | wc -w | tr -d ' ') packages ready"; else fail "R packages" "missing or not loading: $missing"; fi
 }
 
 fix_pandoc() { # R needs a working pandoc for reports; if the first one on PATH is broken, use Quarto's own

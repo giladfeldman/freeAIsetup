@@ -8,7 +8,7 @@ subtitle: "Meta-science and open science course — step-by-step guide for stude
 - **OpenCode**: an AI assistant that can read your course files, write code, run it, and save results. It comes with free AI models. **You do not need an account or a credit card for it.**
 - **R, RStudio and Python**: the analysis tools the AI uses, and that you can use yourself.
 - **Quarto**: turns analyses into reports.
-- **VS Code** (Windows and Mac): a code editor, with an OpenCode button inside it and Python support.
+- **VS Code** (Windows and Mac): a code editor, with an OpenCode button inside it, Python support, and R support when R is installed.
 - A course folder called **MetaScience** in your home folder, with the course rules for the AI (`AGENTS.md`).
 
 The setup takes **20-40 minutes**, most of it waiting. You only need to do something at a few points, marked with a hand: ✋.
@@ -127,7 +127,7 @@ To start the AI helper again later:
 - **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Fix`
 - **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --fix`
 
-**Software you already have is safe.** If R, Git or another tool is already on the computer (also when another user account installed it), the setup uses it as it is. It never upgrades or removes it. One exception: the course packages need R 4.5 or newer, so next to an older R the setup installs the current R (on Windows just for your account; on a Mac it asks for your password). Your old R stays.
+**Software you already have is safe.** If R, Git or another tool is already on the computer (also when another user account installed it), the setup uses it as it is. It never upgrades or removes it. Two exceptions: VS Code add-ons the course uses (OpenCode, Python, R) are added if missing and updated if older than the course needs; and the course packages need R 4.5 or newer, so next to an older R the setup installs the current R (on Windows just for your account; on a Mac it asks for your password). Your old R stays.
 
 To re-run only the check:
 

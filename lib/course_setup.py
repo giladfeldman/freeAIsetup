@@ -431,8 +431,29 @@ PARTS = ("r", "rstudio", "quarto", "python", "node", "vscode")
 # what a check without --parts covers: the parts of every setup before VS Code was added (2026-11-16)
 DEFAULT_PARTS = ("r", "rstudio", "quarto", "python", "node")
 PART_NAMES = {"r": "R", "quarto": "Quarto", "python": "Python course packages", "node": "Node.js", "vscode": "VS Code"}
-# the VS Code add-ons the setup adds (setup-windows.ps1 $CodeExtensions, setup-mac.sh CODE_EXTENSIONS)
-CODE_EXTENSIONS = ("sst-dev.opencode", "ms-python.python")
+# the VS Code add-ons the setup adds or updates, with the version this release was tested with (setup-windows.ps1
+# $CodeExtensions/$CodeMinVersions, setup-mac.sh CODE_EXTENSIONS/code_min); the R add-on only with the R part
+CODE_EXTENSIONS = {"sst-dev.opencode": ("OpenCode", (1, 0, 0)), "ms-python.python": ("Python", (2026, 10, 0)),
+                   "reditorsupport.r": ("R", (3, 4, 0))}
+
+
+def code_addon_rows(listing: str, parts: tuple[str, ...]) -> tuple[list[str], list[str]]:
+    """From "code --list-extensions --show-versions": the wanted add-ons missing, and those older than tested."""
+    have = {}
+    for line in listing.splitlines():
+        ident, _, ver = line.strip().lower().partition("@")
+        have[ident] = ver
+    missing, old = [], []
+    for ident, (_name, need) in CODE_EXTENSIONS.items():
+        if ident == "reditorsupport.r" and "r" not in parts:
+            continue
+        if ident not in have:
+            missing.append(ident)
+            continue
+        m = re.match(r"(\d+)\.(\d+)\.(\d+)", have[ident])
+        if m and tuple(int(x) for x in m.groups()) < need:
+            old.append(f"{ident} {have[ident]} (tested: {'.'.join(map(str, need))})")
+    return missing, old
 
 
 def test_keys(course: pathlib.Path, t: "Table", record) -> list[dict]:
@@ -491,14 +512,15 @@ def test_keys(course: pathlib.Path, t: "Table", record) -> list[dict]:
 #   uv 0.3: "uv sync" / "uv run" for the course folder left preview in uv 0.3.0 (uv changelog)
 #   Rscript 4.5: the course R packages no longer come ready-built for older R (d-872f0e)
 #   quarto 1.0: Quarto 1.0.38 and 1.3.450 both rendered the check report (tested 2026-11-13); 1.0 was the first release
-#   code 1.95: the Python add-on needs VS Code 1.95 and the OpenCode add-on 1.94 (their "engines" fields, 2026-11-16)
+#   code 1.101: the R add-on 3.4.0 needs VS Code 1.101, the Python add-on 1.95, the OpenCode add-on 1.94 (their
+#     "engines" fields, 2026-11-16); an older VS Code gets older add-ons (VS Code 1.95 got the R add-on 2.8.8, tested)
 MIN_VERSIONS = {
     "git": ((2, 34), "OpenCode cannot save undo points of your files"),
     "node": ((20,), "the browser tool will not start"),
     "uv": ((0, 3), "the course Python environment may not build"),
     "Rscript": ((4, 5), "the course R packages will not install"),
     "quarto": ((1, 0), "reports may not render"),
-    "code": ((1, 95), "the OpenCode and Python add-ons will not install"),
+    "code": ((1, 101), "the course's VS Code add-ons will not be the tested versions"),
 }
 
 
@@ -566,15 +588,22 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
             # tests: MS_TEST_CODE_DIR = the scratch add-on folder the setup used
             iso = (["--extensions-dir", os.path.join(os.environ["MS_TEST_CODE_DIR"], "ext"), "--user-data-dir",
                     os.path.join(os.environ["MS_TEST_CODE_DIR"], "data")] if os.environ.get("MS_TEST_CODE_DIR") else [])
-            code, out = sh(["code", *iso, "--list-extensions"], timeout=120)
+            code, out = sh(["code", *iso, "--list-extensions", "--show-versions"], timeout=120)
             record("code --list-extensions", code, out)
-            have = {x.strip().lower() for x in out.splitlines()}
-            missing = [e for e in CODE_EXTENSIONS if e not in have]
-            if code != 0 or missing:
-                again = "install-windows.cmd" if IS_WIN else "bash setup-mac.sh"
-                t.add("FAIL", "VS Code add-ons", f"missing: {', '.join(missing or CODE_EXTENSIONS)}; run {again} again")
+            again = "install-windows.cmd" if IS_WIN else "bash setup-mac.sh"
+            missing, old = code_addon_rows(out if code == 0 else "", parts)
+            names = ", ".join(n for i, (n, _v) in CODE_EXTENSIONS.items() if i != "reditorsupport.r" or "r" in parts)
+            if missing:
+                t.add("FAIL", "VS Code add-ons", f"missing: {', '.join(missing)}; run {again} again")
+            elif old:
+                t.add("WARN", "VS Code add-ons", f"older than tested: {', '.join(old)}; update VS Code, then run {again} again")
             else:
-                t.add("OK", "VS Code add-ons", "OpenCode and Python")
+                t.add("OK", "VS Code add-ons", names)
+            if "r" in parts and "reditorsupport.r" not in missing:
+                code, out = sh(["Rscript", "-e", "cat(requireNamespace('languageserver', quietly=TRUE))"], timeout=120)
+                record("languageserver", code, out)
+                if "TRUE" not in out:
+                    t.add("WARN", "R in VS Code", f"the R package languageserver is missing (the R add-on needs it); run {again} again")
 
     c = course / "check"
     out_dir = c / "out"

@@ -158,7 +158,7 @@ rm -rf "$W/ps"; PO_PLATFORM=mac PO_NOGUI=1 parts_of "all" > "$W/p.txt" 2>&1
 check "Mac, --no-gui: neither RStudio nor VS Code" 'grep -q "PARTS=\[r quarto python node\]" "$W/p.txt"'
 { echo "cd /tmp/us; W=$W"; declare -f parts_of; echo 'PO_PLATFORM=$1 parts_of "" /dev/tty'; } > "$W/ask2.sh"
 rm -rf "$W/ps"; printf '7\n6\n' | script -qec "bash $W/ask2.sh mac" /dev/null > "$W/p.txt" 2>&1
-check "Mac, asked: VS Code is number 6, 7 is refused" 'grep -Eq "6\. VS Code \(code editor; OpenCode \+ Python add-ons\) +about 1\.0 GB" "$W/p.txt" && grep -q "0 to 6" "$W/p.txt" && grep -q "PARTS=\[vscode\]" "$W/p.txt"'
+check "Mac, asked: VS Code is number 6, 7 is refused" 'grep -Eq "6\. VS Code \(code editor; OpenCode, Python and R add-ons\) +about 1\.0 GB" "$W/p.txt" && grep -q "0 to 6" "$W/p.txt" && grep -q "PARTS=\[vscode\]" "$W/p.txt"'
 rm -rf "$W/ps"; printf '6\n\n' | script -qec "bash $W/ask2.sh linux" /dev/null > "$W/p.txt" 2>&1
 check "Linux, asked: VS Code not in the list, 6 is refused" '! grep -q "VS Code" "$W/p.txt" && grep -q "0 to 5" "$W/p.txt"'
 

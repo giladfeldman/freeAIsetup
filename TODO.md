@@ -95,3 +95,7 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Tests
 
 - [x] [MED · soon · val:med · S · sonnet-medium] tests/run-tests.ps1 must exit non-zero when a docker test container fails (src: tests/run-tests.ps1:7-11 (docker run result never checked; uninstall.sh fail=1 returned exit 0 on 2026-11-12)) ^d-0a2aff (fixed 2026-11-12: 2026-11-12: tests/run-tests.ps1 exits 1 when docker build or any test container fails; control: mac-stub.sh with 'exit 7' appended -> runner exit 1; real test -> exit 0)
+
+## VS Code
+
+- [ ] [LOW · later · val:med · S · sonnet-medium] Check that a 'code' command from another editor (e.g. Cursor's) is not taken for VS Code's when adding add-ons (src: setup-windows.ps1 Code-Cli, setup-mac.sh code_cli (2026-11-16: candidates are accepted when --version prints a version; another editor's code command also does; not tested, no such editor here)) ^d-a09ebb

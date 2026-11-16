@@ -24,7 +24,8 @@ CASES = [   # tool, first line of "<tool> --version", should it warn
     ("quarto", "1.0.38", False),
     ("quarto", "1.10.18", False),
     ("code", "1.94.2", True),             # VS Code: its first line is the bare version
-    ("code", "1.95.0", False),
+    ("code", "1.100.3", True),            # the R add-on 3.4.0 needs 1.101 (VS Code 1.95 got the R add-on 2.8.8)
+    ("code", "1.101.0", False),
     ("code", "1.146.0", False),
     ("opencode", "0.1.0", False),          # not in the table: never a warning
     ("git", "", False),                    # unknown version: never a warning
@@ -36,5 +37,23 @@ for tool, line, warn in CASES:
     ok = bool(got) == warn
     fails += not ok
     print(f"{'PASS' if ok else 'FAIL'}  {tool:8} {line!r:45} -> {got or 'ok'}")
-print(f"RESULT pass={len(CASES) - fails} fail={fails}")
+# the VS Code add-on row: missing and older-than-tested add-ons, read from "code --list-extensions --show-versions"
+UP = "sst-dev.opencode@1.0.0\nms-python.python@2026.10.0\nms-python.vscode-pylance@2026.4.1\nreditorsupport.r@3.4.0\n"
+ADDONS = [
+    ("all there and current, R chosen", UP, ("r", "vscode"), [], []),
+    ("upper-case ids and Windows line ends", UP.upper().replace("\n", "\r\n"), ("r", "vscode"), [], []),
+    ("R add-on missing, R chosen", UP.replace("reditorsupport.r@3.4.0\n", ""), ("r", "vscode"), ["reditorsupport.r"], []),
+    ("R add-on missing, R not chosen: not wanted", UP.replace("reditorsupport.r@3.4.0\n", ""), ("vscode",), [], []),
+    ("Python add-on older than tested", UP.replace("2026.10.0", "2025.2.0"), ("r", "vscode"), [], ["ms-python.python"]),
+    ("R add-on 2.8.8 (an old VS Code)", UP.replace("3.4.0", "2.8.8"), ("r", "vscode"), [], ["reditorsupport.r"]),
+    ("newer than tested is fine", UP.replace("2026.10.0", "2027.1.0"), ("r", "vscode"), [], []),
+    ("an unreadable version is left alone", UP.replace("1.0.0", "nightly"), ("r", "vscode"), [], []),
+    ("VS Code did not answer: all wanted missing", "", ("vscode",), ["sst-dev.opencode", "ms-python.python"], []),
+]
+for name, listing, parts, want_missing, want_old in ADDONS:
+    missing, old = cs.code_addon_rows(listing, parts)
+    ok = missing == want_missing and [o.split()[0] for o in old] == want_old
+    fails += not ok
+    print(f"{'PASS' if ok else 'FAIL'}  add-ons: {name} -> missing {missing}, old {old}")
+print(f"RESULT pass={len(CASES) + len(ADDONS) - fails} fail={fails}")
 sys.exit(fails)

@@ -9,7 +9,8 @@ export MS_LOG_ENV=local
 cp -r /src /tmp/ss && cd /tmp/ss
 REC=/tmp/record.jsonl; : > "$REC"; PORT=28765
 python3 tests/fake_logbox.py "$PORT" "$REC" & BOX=$!
-sleep 2
+# wait until the box answers (a fixed 2 s was sometimes too short: the first case then found no box, 2026-11-16)
+for _ in $(seq 60); do python3 -c "import socket,sys;socket.create_connection(('127.0.0.1',int(sys.argv[1])),1)" "$PORT" 2>/dev/null && break; sleep 0.5; done
 export MS_LOG_URL="http://127.0.0.1:$PORT" METASCIENCE_DIR=/tmp/MetaScience
 export MS_STATE_DIR=/tmp/ms-state; mkdir -p "$MS_STATE_DIR"; echo all > "$MS_STATE_DIR/parts.txt"   # no parts question
 pass=0; failn=0

@@ -1,7 +1,7 @@
 ﻿# =============================================================================
 #  Meta-science course: one-step setup for Windows 10/11
 #  Installs: OpenCode (desktop + command line), Git, Node.js, uv + Python,
-#            R + course packages, RStudio, Quarto, VS Code (with its OpenCode and Python add-ons);
+#            R + course packages, RStudio, Quarto, VS Code (with its OpenCode, Python and R add-ons);
 #            creates %USERPROFILE%\MetaScience;
 #            runs a real end-to-end check that uses every installed tool.
 #  Safe to run again: it skips what is already installed and repairs the rest.
@@ -290,15 +290,46 @@ function Install-RStudioDirect {
 # The add-ons the course uses. sst-dev.opencode is OpenCode's own (github.com/anomalyco/opencode, sdks/vscode): it opens
 # a terminal in VS Code and starts the OpenCode this setup installed, with the same free models and settings
 # (its button at the top right of an open file). ms-python.python is Microsoft's, and brings Pylance, the Python debugger and Python Environments with it.
-# No R add-on: REditorSupport.r needs the languageserver R package and pops up errors without it; VS Code colours R
-# code by itself, and RStudio is the course's R editor.
-$CodeExtensions = @('sst-dev.opencode', 'ms-python.python')
+# reditorsupport.r (the R add-on, brings R Syntax) only with the R part: it needs R, and the languageserver R package,
+# which the R package step then adds (without it the add-on keeps asking to install it).
+# Each add-on's version is the one this release was tested with: an older one is updated (owner, 2026-11-16: "only
+# installs/updates them if not installed/outdated"). VS Code itself is never upgraded.
+$CodeExtensions = @('sst-dev.opencode', 'ms-python.python', 'reditorsupport.r')
+$CodeMinVersions = @{ 'sst-dev.opencode' = '1.0.0'; 'ms-python.python' = '2026.10.0'; 'reditorsupport.r' = '3.4.0' }
+$CodeNames = @{ 'sst-dev.opencode' = 'OpenCode'; 'ms-python.python' = 'Python'; 'reditorsupport.r' = 'R' }
+function Code-Wanted { @($CodeExtensions | Where-Object { $_ -ne 'reditorsupport.r' -or (Has-Part 'r') }) }
 function Code-DataDirs { @((Join-Path $env:USERPROFILE '.vscode'), (Join-Path $env:APPDATA 'Code')) }   # add-ons; settings
 # tests: MS_TEST_CODE_DIR gives VS Code a scratch add-on and settings folder, so a test never touches a real VS Code
 function Code-Iso { if ($env:MS_TEST_CODE_DIR) { @('--extensions-dir', "`"$(Join-Path $env:MS_TEST_CODE_DIR 'ext')`"", '--user-data-dir', "`"$(Join-Path $env:MS_TEST_CODE_DIR 'data')`"") } else { @() } }
-function Code-Extensions($code) {   # the add-ons VS Code has, as lower-case ids
+function Code-Extensions($code) {   # the add-ons VS Code has: lower-case id -> version; $null when VS Code did not answer
   $iso = @(Code-Iso | ForEach-Object { $_.Trim('"') })
-  @((& $code @iso --list-extensions) 2>$null | ForEach-Object { "$_".Trim().ToLowerInvariant() } | Where-Object { $_ -match '^[a-z0-9-]+\.[a-z0-9-]+$' })
+  $out = @((& $code @iso --list-extensions --show-versions) 2>$null)
+  if ($LASTEXITCODE -ne 0) { Log "code --list-extensions exit $LASTEXITCODE"; return $null }
+  $h = @{}
+  foreach ($l in $out) { if ("$l".Trim().ToLowerInvariant() -match '^([a-z0-9-]+\.[a-z0-9-]+)@(\S+)$') { $h[$Matches[1]] = $Matches[2] } }
+  $h
+}
+function Older-Than($have, $need) {   # $true only when both read as versions and $have is lower; unreadable = leave it
+  $a = $null; $b = $null
+  if (-not [version]::TryParse(($have -replace '[-+].*$', ''), [ref]$a) -or -not [version]::TryParse($need, [ref]$b)) { return $false }
+  $a -lt $b
+}
+function Code-Cli($dir) {
+  # VS Code's own code.cmd. A "code" on PATH can be something else (another editor's copy, a script), so each
+  # candidate must answer --version with a version number; then VS Code's standard folders are tried.
+  $c = @((Join-Path $dir 'code.cmd'), (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'),
+         (Join-Path $env:ProgramFiles 'Microsoft VS Code\bin\code.cmd'))
+  foreach ($p in $c) {
+    if (-not (Test-Path -LiteralPath $p)) { continue }
+    $v = @((& $p --version) 2>$null | Select-Object -First 1)
+    if ("$v" -match '^\d+\.\d+') { return $p }
+    Log "not VS Code's code command (no version from --version): $p"
+  }
+  $null
+}
+function Recorded-Exts {   # the add-ons an earlier run of this setup added (installed.tsv)
+  $f = Join-Path $StateDir 'installed.tsv'
+  @(if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f | Where-Object { $_ -match "^vscode`tvsext`t" } | ForEach-Object { ($_ -split "`t")[2].ToLowerInvariant() } })
 }
 function Install-VSCodeDirect {
   # Second route for VS Code (winget often cannot start for minutes on a fresh laptop): Microsoft's own per-account
@@ -314,21 +345,43 @@ function Install-VSCodeDirect {
   Log "VS Code installer exit $code"; return $null
 }
 function Install-CodeExtensions {
-  # Adds only the add-ons that are missing. An add-on already in VS Code is never updated (no --force), and each
-  # one this run adds is recorded, so the uninstall removes those and leaves the student's own.
+  # Checks each add-on the course uses: a missing one is added, one older than the version this release was tested
+  # with is updated (--force fetches the newest that this VS Code can run), one that is fine is left alone. Only the
+  # add-ons this setup added are recorded (with the ones they brought), so the uninstall removes those and never the
+  # student's own, even one the setup updated.
   $dir = Find-Tool (Tool-Def 'VS Code')
   if (-not $dir) { return }   # VS Code itself failed above, and said so
-  $code = Join-Path $dir 'code.cmd'
-  if ($DryRun) { Say "  [dry-run] add the VS Code add-ons that are missing: $($CodeExtensions -join ', ')"; return }
-  $before = @(Code-Extensions $code)
-  $missing = @($CodeExtensions | Where-Object { $before -notcontains $_ })
-  foreach ($e in $missing) { $null = Run-Native $code (@(Code-Iso) + @('--install-extension', $e)) 900 }
-  $after = @(Code-Extensions $code)
-  foreach ($e in $after) { if ($before -notcontains $e) { Record-Install 'vscode' 'vsext' $e } }   # with the ones they brought
-  $still = @($CodeExtensions | Where-Object { $after -notcontains $_ })
-  if ($still.Count) { Fail 'VS Code add-ons' "could not add $($still -join ', ') (the add-on store may be blocked on this network); see $LogFile" }
-  elseif ($missing.Count) { Ok 'VS Code add-ons' 'OpenCode and Python added' }
-  else { Ok 'VS Code add-ons' 'OpenCode and Python already there' }
+  $want = @(Code-Wanted)
+  $names = ($want | ForEach-Object { $CodeNames[$_] }) -join ', '
+  if ($DryRun) { Say "  [dry-run] add the VS Code add-ons that are missing or too old: $($want -join ', ')"; return }
+  $code = Code-Cli $dir
+  if (-not $code) { Fail 'VS Code add-ons' "VS Code's code command was not found or did not answer; see $LogFile"; return }
+  $have = Code-Extensions $code
+  if ($null -eq $have) { Fail 'VS Code add-ons' "VS Code could not list its add-ons; see $LogFile"; return }
+  $ours = @(Recorded-Exts); $added = @(); $updated = @()
+  foreach ($e in $want) {
+    $v = $have[$e]
+    if ($v -and -not (Older-Than $v $CodeMinVersions[$e])) { continue }
+    $args2 = @(Code-Iso) + @('--install-extension', $e) + @(if ($v) { '--force' })
+    $null = Run-Native $code $args2 900
+    $now = Code-Extensions $code
+    if ($null -eq $now) { $now = @{} }
+    if (-not $now[$e]) { continue }   # reported below
+    if ($v) { Log "VS Code add-on $e updated from $v to $($now[$e])"; $updated += $e }
+    else { $added += $e }
+    # what this step brought (a missing add-on's companions, or new ones an update of an add-on this setup added
+    # brings) is recorded; companions an update of the student's own add-on brings belong with that add-on
+    if (-not $v -or $ours -contains $e) { foreach ($k in $now.Keys) { if (-not $have.ContainsKey($k) -and $ours -notcontains $k) { Record-Install 'vscode' 'vsext' $k; $ours += $k } } }
+    $have = $now
+  }
+  $missing = @($want | Where-Object { -not $have[$_] })
+  $old = @($want | Where-Object { $have[$_] -and (Older-Than $have[$_] $CodeMinVersions[$_]) })
+  if ($missing.Count) { Fail 'VS Code add-ons' "could not add $($missing -join ', ') (the add-on store may be blocked on this network); see $LogFile" }
+  if ($old.Count) { Warn 'VS Code add-ons' "$(($old | ForEach-Object { "$_ $($have[$_]) (tested: $($CodeMinVersions[$_]))" }) -join ', ') - this VS Code is too old for the newer one: in VS Code, Help > Check for Updates, then run the setup again" }
+  if (-not $missing.Count -and -not $old.Count) {
+    $what = @(if ($added.Count) { 'added: ' + (($added | ForEach-Object { $CodeNames[$_] }) -join ', ') }; if ($updated.Count) { 'updated: ' + (($updated | ForEach-Object { $CodeNames[$_] }) -join ', ') })
+    if ($what.Count) { Ok 'VS Code add-ons' "$names ready ($($what -join '; '))" } else { Ok 'VS Code add-ons' "$names already there and up to date" }
+  }
 }
 function Install-GitDirect {
   # Second route for Git: "MinGit", the official small zip edition of Git for Windows (no installer, no admin).
@@ -660,8 +713,8 @@ $PartInfo = @{
   quarto  = @{ name = 'Quarto (turns an analysis into a report)'; gb = 0.5 }
   python  = @{ name = 'Python course packages';                   gb = 0.5 }
   node    = @{ name = 'Node.js (a few optional AI tools need it)'; gb = 0.2 }
-  # VS Code 0.8 GB (one version) + its OpenCode and Python add-ons 0.17 GB (both measured on Windows 11, 2026-11-16)
-  vscode  = @{ name = 'VS Code (code editor; OpenCode + Python add-ons)'; gb = 1.0 }
+  # VS Code 0.8 GB (one version) + its OpenCode, Python and R add-ons 0.2 GB (measured on Windows 11, 2026-11-16)
+  vscode  = @{ name = 'VS Code (code editor; OpenCode, Python and R add-ons)'; gb = 1.0 }
 }
 $script:Parts = $AllParts
 function Has-Part($p) { $script:Parts -contains $p }
@@ -754,7 +807,8 @@ function Choose-Parts {
 function Install-Tools {
   Step '3/9  Core tools: Git, Node.js, uv (Python), R, RStudio, Quarto, VS Code'
   if ($env:MS_TEST_CRASH -eq 'tools') { throw 'test crash in step 3 (MS_TEST_CRASH)' }   # test hook: a crash mid-run
-  Say '  Rule: this setup never upgrades or removes software that is already on this computer.'
+  Say '  Rule: this setup never upgrades or removes software that is already on this computer'
+  Say '  (one exception: a VS Code add-on the course uses that is older than the course needs is updated).'
   Say '  Windows may ask "Do you want to allow this app to make changes?" - click Yes each time.'
   $tools = @()
   foreach ($t in (Tool-Defs)) {
@@ -887,15 +941,17 @@ function Install-RPackages {
   if (-not (Has-Part 'r')) { Skip 'R packages'; return }
   if ($DryRun) { Say '  [dry-run] install missing course R packages into this account''s R library'; return }
   if (-not (Have 'Rscript')) { Fail 'R packages' 'R is not installed'; return }
+  # with VS Code, its R add-on needs the languageserver R package (else it keeps asking to install it)
+  $pkgs = if (Has-Part 'vscode') { "$RPackages languageserver" } else { $RPackages }
   $listLib = "cat(rownames(installed.packages(lib.loc=Sys.getenv('R_LIBS_USER'))))"
   $before = @("$((& Rscript -e $listLib) 2>$null)" -split '\s+' | Where-Object { $_ })
-  $expr = "lib <- Sys.getenv('R_LIBS_USER'); dir.create(lib, recursive=TRUE, showWarnings=FALSE); .libPaths(c(lib,.libPaths())); pk <- strsplit('$RPackages',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; if (length(miss)) install.packages(miss, lib=lib, repos='$($script:Cran)', type='binary')"
+  $expr = "lib <- Sys.getenv('R_LIBS_USER'); dir.create(lib, recursive=TRUE, showWarnings=FALSE); .libPaths(c(lib,.libPaths())); pk <- strsplit('$pkgs',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; if (length(miss)) install.packages(miss, lib=lib, repos='$($script:Cran)', type='binary')"
   # a package counts as ready only when it loads (its folder can be there while a package it needs is missing)
   Run-Native 'Rscript' @('-e', "`"$expr`"") 1800 | Out-Null
-  $missing = (& Rscript -e "pk <- strsplit('$RPackages',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; cat(miss)") 2>$null
+  $missing = (& Rscript -e "pk <- strsplit('$pkgs',' ')[[1]]; miss <- pk[!vapply(pk, function(p) suppressWarnings(suppressMessages(requireNamespace(p, quietly=TRUE))), NA)]; cat(miss)") 2>$null
   foreach ($pk in @("$((& Rscript -e $listLib) 2>$null)" -split '\s+' | Where-Object { $_ })) { if ($before -notcontains $pk) { Record-Install 'r' 'rpkg' $pk } }
   if ($DryRun) { return }
-  if (-not $missing) { Ok 'R packages' "$(($RPackages -split ' ').Count) packages ready" } else { Fail 'R packages' "missing or not loading: $missing" }
+  if (-not $missing) { Ok 'R packages' "$(($pkgs -split ' ').Count) packages ready" } else { Fail 'R packages' "missing or not loading: $missing" }
 }
 function Fix-Pandoc {
   # R must find a working pandoc to make reports. If the first pandoc on PATH is broken for this

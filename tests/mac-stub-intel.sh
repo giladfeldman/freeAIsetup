@@ -10,12 +10,25 @@ NT=/tmp/nodetar; mkdir -p "$NT/node-v22.9.9-darwin-x64/bin"
 printf '#!/bin/bash\necho v22.9.9\n' > "$NT/node-v22.9.9-darwin-x64/bin/node"; chmod +x "$NT/node-v22.9.9-darwin-x64/bin/node"
 tar -czf "$NT/node-v22.9.9-darwin-x64.tar.gz" -C "$NT" node-v22.9.9-darwin-x64
 NSUM="$(sha256sum "$NT/node-v22.9.9-darwin-x64.tar.gz" | cut -d' ' -f1)"
-# a stand-in for VS Code's code command: keeps a list of add-ons (the Python add-on brings two more)
+# a stand-in for VS Code's code command: keeps a list of add-ons with versions, as the real add-on store gave them on
+# 2026-11-16 (the Python add-on brings two more, the R add-on one); FAKE_CODE_OLD = a VS Code too old for the newest
 cat > /tmp/code-fake <<'CODE'
 #!/bin/bash
 echo "code $*" >> /tmp/calls.log
-L=/tmp/codelist; case " $* " in *" --list-extensions "*) cat "$L" 2>/dev/null; exit 0 ;; esac
-prev=""; for a in "$@"; do [ "$prev" = --install-extension ] && { echo "$a" >> "$L"; [ "$a" = ms-python.python ] && printf 'ms-python.vscode-pylance\nms-python.debugpy\n' >> "$L"; }; prev="$a"; done; exit 0
+L=/tmp/codelist; touch "$L"
+case " $* " in *" --version "*) printf '1.139.1\nabc\narm64\n'; exit 0 ;; esac
+case " $* " in *" --list-extensions "*) case " $* " in *" --show-versions "*) cat "$L" ;; *) cut -d@ -f1 "$L" ;; esac; exit 0 ;; esac
+force=0; for a in "$@"; do [ "$a" = --force ] && force=1; done
+prev=""; for a in "$@"; do
+  if [ "$prev" = --install-extension ]; then
+    if grep -q "^$a@" "$L" && [ "$force" = 0 ]; then echo "Extension '$a' is already installed."
+    else
+      case "$a" in ms-python.python) v=2026.10.0; [ -n "${FAKE_CODE_OLD:-}" ] && v=2025.2.0 ;; reditorsupport.r) v=3.4.0; [ -n "${FAKE_CODE_OLD:-}" ] && v=2.8.8 ;; *) v=1.0.0 ;; esac
+      grep -v "^$a@" "$L" > "$L.t"; mv "$L.t" "$L"; echo "$a@$v" >> "$L"
+      case "$a" in ms-python.python) w="ms-python.vscode-pylance@2026.4.1 ms-python.debugpy@2026.6.0" ;; reditorsupport.r) w="reditorsupport.r-syntax@0.1.5" ;; *) w="" ;; esac
+      for c in $w; do grep -q "^${c%@*}@" "$L" || echo "$c" >> "$L"; done
+    fi
+  fi; prev="$a"; done; exit 0
 CODE
 chmod +x /tmp/code-fake; rm -f /tmp/codelist
 mk uname 'case "$1" in -s) echo Darwin;; -m) echo x86_64;; *) echo Darwin;; esac'
