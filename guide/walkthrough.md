@@ -277,7 +277,7 @@ and its add-ons, and the AI assistant with its tools). Type the numbers of what 
   of the setup. No name, no e-mail, no computer name, no files, no log, and no internet address is kept. It is sent
   once per computer account. This tells the teacher how widely the setup is used.
 - **Error reports, only if you say yes:** when something fails, the setup asks before sending its report. Your user
-  name, computer name and home folder are removed first. The reports are used only to fix setup problems and are
+  name, computer name and home folder are removed first. Of your VS Code add-ons, only the course's are named. The reports are used only to fix setup problems and are
   deleted after 180 days.
 
 Both kinds of message are stored only in the EU (a Cloudflare store restricted to the EU). The alert e-mails to the teacher go through Amazon's e-mail service in Ireland.

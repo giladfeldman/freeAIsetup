@@ -55,5 +55,12 @@ for name, listing, parts, want_missing, want_old in ADDONS:
     ok = missing == want_missing and [o.split()[0] for o in old] == want_old
     fails += not ok
     print(f"{'PASS' if ok else 'FAIL'}  add-ons: {name} -> missing {missing}, old {old}")
-print(f"RESULT pass={len(CASES) + len(ADDONS) - fails} fail={fails}")
+# the log may be sent to the teacher: only the course's add-ons in it, the student's own as a count
+LOG_IN = "sst-dev.opencode@1.0.0\nsomeone.private-tool@2.0.0\nMS-Python.Python@2026.10.0\nacme.employer-vpn@1.1.0\n"
+got = cs.course_addon_log(LOG_IN)
+logcase = ("sst-dev.opencode@1.0.0" in got and "MS-Python.Python@2026.10.0" in got and "someone" not in got
+           and "acme" not in got and "(+ 2 other add-ons, not listed)" in got)
+print(("PASS" if logcase else "FAIL") + " log: only the course add-ons, the student's own as a count")
+fails += 0 if logcase else 1
+print(f"RESULT pass={len(CASES) + len(ADDONS) + 1 - fails} fail={fails}")
 sys.exit(fails)

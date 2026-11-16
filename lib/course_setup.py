@@ -437,6 +437,14 @@ CODE_EXTENSIONS = {"sst-dev.opencode": ("OpenCode", (1, 0, 0)), "ms-python.pytho
                    "reditorsupport.r": ("R", (3, 4, 0))}
 
 
+def course_addon_log(listing: str) -> str:
+    """The add-on listing as it goes into the log, which may be sent to the teacher: the course's add-ons only, the
+    student's own add-ons as a count."""
+    lines = [ln.strip() for ln in listing.splitlines() if ln.strip()]
+    ours = [ln for ln in lines if ln.lower().split("@")[0] in CODE_EXTENSIONS]
+    return "\n".join(ours + [f"(+ {len(lines) - len(ours)} other add-ons, not listed)"])
+
+
 def code_addon_rows(listing: str, parts: tuple[str, ...]) -> tuple[list[str], list[str]]:
     """From "code --list-extensions --show-versions": the wanted add-ons missing, and those older than tested."""
     have = {}
@@ -589,7 +597,7 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
             iso = (["--extensions-dir", os.path.join(os.environ["MS_TEST_CODE_DIR"], "ext"), "--user-data-dir",
                     os.path.join(os.environ["MS_TEST_CODE_DIR"], "data")] if os.environ.get("MS_TEST_CODE_DIR") else [])
             code, out = sh(["code", *iso, "--list-extensions", "--show-versions"], timeout=120)
-            record("code --list-extensions", code, out)
+            record("code --list-extensions (course add-ons only)", code, course_addon_log(out))
             again = "install-windows.cmd" if IS_WIN else "bash setup-mac.sh"
             missing, old = code_addon_rows(out if code == 0 else "", parts)
             names = ", ".join(n for i, (n, _v) in CODE_EXTENSIONS.items() if i != "reditorsupport.r" or "r" in parts)

@@ -99,3 +99,11 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## VS Code
 
 - [ ] [LOW · later · val:med · S · sonnet-medium] Check that a 'code' command from another editor (e.g. Cursor's) is not taken for VS Code's when adding add-ons (src: setup-windows.ps1 Code-Cli, setup-mac.sh code_cli (2026-11-16: candidates are accepted when --version prints a version; another editor's code command also does; not tested, no such editor here)) ^d-a09ebb
+
+## Skills
+
+- [ ] [LOW · later · val:med · S · sonnet-medium] Re-tag freeaisetup-qa so its preflight loads the shared critical/hard-rule cards (heartbeat loads 8 critical + 2 hard-rule; SKILL.md says 46 + 87 apply) (src: preflight-filter.sh freeaisetup-qa heartbeat 2026-11-16) ^d-a825a0
+
+## Security
+
+- [ ] [MED · later · val:med · M · opus-medium] Check the publisher signature of installers downloaded directly from the vendor (VS Code, R, RStudio on Windows: Get-AuthenticodeSignature; Intel Mac VS Code: codesign/spctl) before running them (src: freeaisetup-review 2026-11-16: setup-windows.ps1:340,694,932; setup-mac.sh:512) ^d-4e90ed

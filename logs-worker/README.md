@@ -10,6 +10,7 @@ Installer reports carry the version `installer` when no release could be read, a
 
 - Address: `https://freeaisetup-logs.giladfel.workers.dev/upload` (POST only, write-only; nothing can be read through it).
 - Before sending, the setup replaces the home folder with `~`, and the user name and computer name with `<name>`.
+  The check step logs only the course's VS Code add-ons; the student's own are a count.
 - Each log is deleted automatically after 180 days. Up to 1.5 MB per log.
 - Stored in the EU only: the KV namespace `freeaisetup-logs-eu` was created with the EU jurisdiction (it can only
   be set at creation). The Worker itself runs on Cloudflare's worldwide network; choosing its region needs a paid

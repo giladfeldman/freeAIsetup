@@ -120,7 +120,8 @@ e-mail service in Ireland. The small program that receives the messages runs on 
   To switch it off, set the environment variable `MS_NO_COUNT=1` before running the setup.
 - **Error reports, only with your yes.** If the setup or the installer stops with a problem, it asks whether
   to send the setup report to the teacher. Only on yes, the report and log go to the log box, with the user
-  name, computer name and home folder removed. They are used only to find and fix setup problems, and are
+  name, computer name and home folder removed (of your VS Code add-ons, only the course's are named; your own
+  are only counted). They are used only to find and fix setup problems, and are
   deleted automatically after 180 days. The log box also records the country the report came from (from the
   network, not an address), which helps with network blocks in some countries.
 
