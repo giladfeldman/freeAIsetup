@@ -86,7 +86,8 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 - **Removing it:** `install-windows.cmd -Uninstall` (Windows) or `bash setup-mac.sh --uninstall` (Mac), run from the
   installed pack. The setup keeps a record of what it installed itself (since November 2026); the uninstall removes
   some or all of that record and nothing else, so software that was on the computer before is never touched. The
-  course folder is kept unless the student types DELETE.
+  course folder is kept unless the student types DELETE; with `-Uninstall -Yes -RemoveCourse` (Windows) or
+  `--uninstall --yes --remove-course` (Mac) it is deleted too, without asking.
 
 ## Money
 

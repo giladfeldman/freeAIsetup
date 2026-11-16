@@ -74,6 +74,7 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 
 - [x] [MED · soon · val:med · S · sonnet-medium] Uninstall of the AI/core part deletes the pack, so the other parts can no longer be uninstalled (src: lib/uninstall-windows.ps1:228, lib/uninstall-mac.sh:189) ^d-068c02 (fixed 2026-11-12: tests/uninstall.ps1 section 9 + tests/uninstall.sh section 9 ('ai only, RStudio stays', 6 checks each): FAIL before fix (Win 3, Mac 3), PASS after; uninstall.ps1 pass=46 fail=0, Docker uninstall.sh pass=39 fail=0, 2026-11-12)
 - [x] [LOW · later · val:low · S · sonnet-medium] install-windows.cmd handles -Uninstall only as the FIRST argument; with other arguments first the cmd runs from the pack folder while it is deleted (src: install-windows.cmd:24) ^d-775563 (fixed 2026-11-12: tests/uninstall.ps1 section 8 route 'cmd, -Uninstall not first' (-Yes -Uninstall -Components ai): 2 FAIL before fix, PASS after; uninstall.ps1 pass=46 fail=0, 2026-11-12)
+- [ ] [LOW · later · val:low · S · sonnet-medium] Record whether the setup created a PATH folder, so the uninstall removes only folders it made (now: any empty recorded PATH folder, which may be an empty one the student already had) (src: review of ca4451a, lib/uninstall-windows.ps1 + lib/uninstall-mac.sh (2026-11-15)) ^d-c97c73
 
 ## Log worker
 

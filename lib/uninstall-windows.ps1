@@ -229,8 +229,9 @@ foreach ($it in $todo) {
 # a folder the setup put on PATH that is empty now (uv's .local\bin once uv.exe, uvx.exe and uvw.exe are gone; VM
 # test 2026-11-15: it stayed, and so did its PATH entry): remove it. An empty folder holds nothing of the student's.
 foreach ($pth in @($todo | Where-Object { $_.kind -eq 'path' })) {
-  if (-not $DryRun -and (Test-Path -LiteralPath $pth.target -PathType Container) -and -not @(Get-ChildItem -LiteralPath $pth.target -Force -ErrorAction SilentlyContinue).Count) {
-    Remove-Item -LiteralPath $pth.target -Force -ErrorAction SilentlyContinue; Log "removed the empty folder $($pth.target)"
+  # [IO.Directory]::Delete refuses a folder that is not empty (or cannot be read) and never asks anything
+  if (-not $DryRun -and (Test-Path -LiteralPath $pth.target -PathType Container)) {
+    try { [IO.Directory]::Delete($pth.target); Log "removed the empty folder $($pth.target)" } catch {}
   }
 }
 # PATH entries the setup added, whose folders are gone now

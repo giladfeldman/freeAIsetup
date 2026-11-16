@@ -6,7 +6,7 @@
 #  Your course folder is kept unless you type DELETE when asked (or pass --remove-course together with --yes).
 #
 #  Start it with:  bash setup-mac.sh --uninstall     (from the pack folder ~/Library/Application Support/MetaScience/pack)
-#  or:             bash lib/uninstall-mac.sh [--components=rstudio,quarto|all] [--yes] [--dry-run]   (--parts= is the same)
+#  or:             bash lib/uninstall-mac.sh [--components=rstudio,quarto|all] [--yes [--remove-course]] [--dry-run]   (--parts= is the same)
 #  Parts: rstudio, r, quarto, node, ai (the AI assistant, Git, uv, this pack and its daily update), all.
 #  Written for bash 3.2 (the macOS default).
 # =============================================================================
