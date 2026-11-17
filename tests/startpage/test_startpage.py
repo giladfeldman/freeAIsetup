@@ -31,7 +31,7 @@ sp.cs.openrouter_exchange = lambda code, verifier: "sk-or-test" if code == "good
 real_save = sp.cs.save_key
 sp.cs.save_key = lambda pid, key: (saved.__setitem__(pid, key), real_save(pid, key))
 
-srv = sp.ThreadingHTTPServer(("127.0.0.1", 18600), sp.H)
+srv = sp.Server(("127.0.0.1", 18600), sp.H)   # the class the start page really runs (d-3dd775)
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 BASE = "http://127.0.0.1:18600"
 FAIL = 0
@@ -60,6 +60,8 @@ def check(ok, what):
     FAIL |= not ok
 
 
+check(sp.Server.request_queue_size >= 128 and srv.request_queue_size >= 128,
+      "the server's waiting line holds 128 connections, not Python's default 5 (d-3dd775)")
 code, page, _ = get("/")
 check(code == 200 and 'href="/open/opencode"' in page, "page has the Open OpenCode button")
 # Open OpenCode: a fake OpenCode server; the newest top-level chat in the course folder is reused, else one is made

@@ -278,5 +278,12 @@ class H(BaseHTTPRequestHandler):
         self.send(404, "not found", "text/plain")
 
 
+class Server(ThreadingHTTPServer):
+    # Python's default waiting line holds 5 connections; a browser opening the page and its parts at once can fill it,
+    # and further requests are then refused (seen on Windows, d-3dd775)
+    request_queue_size = 128
+    daemon_threads = True
+
+
 if __name__ == "__main__":
-    ThreadingHTTPServer(("0.0.0.0", PORT), H).serve_forever()
+    Server(("0.0.0.0", PORT), H).serve_forever()

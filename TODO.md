@@ -6,19 +6,19 @@
 **Open 14** · analysed 14 · partly tagged 0 · unanalysed 0
 
 1. [HIGH · soon · val:high · M · opus-medium] Find why the Windows Python check crashed with 0xC000070A on its first run (VM take 3, release 2026.11.10.2;… — *Windows* · ^d-8fb1bf
-2. [MED · soon · val:med · S · sonnet-medium] Check that OpenCode in the Codespace does not offer GitHub Copilot models or expose the Codespace GITHUB_TOKE… — *Codespaces* · ^d-8bf626
-3. [MED · soon · val:med · S · sonnet-medium] Check in a real Codespace that the sst-dev.opencode button finds opencode (in ~/.local/bin) in the VS Code te… — *Codespaces* · ^d-4384bc
-4. [MED · soon · val:high · M · opus-medium] Re-run tests/vm/real-install.ps1 on a VM with 8 GB: confirm the Node.js removal fallback and the empty .local… — *Windows setup* · ^d-3c0eb5
-5. [MED · soon · val:high · M · sonnet-medium] Run the VS Code part on a fresh Windows VM: winget user-scope install (and the direct-download fallback), add… — *Windows setup* · ^d-baa550
-6. [MED · soon · val:high · M · opus-medium] Run setup-mac.sh and then --uninstall --parts=all on a real Mac (GitHub free macOS machine, public repo) and… — *Mac setup* · ^d-a12ae9
-7. [MED · soon · val:high · M · sonnet-medium] Run the VS Code part on a real Mac (Apple chip via Homebrew cask, Intel via Microsoft's zip): VS Code install… — *Mac setup* · ^d-6eba85
-8. [MED · soon · val:med · M · opus-medium] Measure the disk space of each part on a fresh Windows VM and a fresh Mac (the estimates are from one used Wi… — *Windows setup* · ^d-d30643
-9. [MED · later · val:med · M · opus-medium] Check the publisher signature of installers downloaded directly from the vendor (VS Code, R, RStudio on Windo… — *Security* · ^d-4e90ed
-10. [LOW · later · val:med · S · sonnet-medium] Check on a Mac that 'brew list --cask r' finds the renamed cask r-app (brew_had --cask r decides whether R is… — *Mac setup* · ^d-82e950
-11. [LOW · later · val:med · S · sonnet-medium] Check that a 'code' command from another editor (e.g. Cursor's) is not taken for VS Code's when adding add-ons — *VS Code* · ^d-a09ebb
-12. [LOW · later · val:med · S · sonnet-medium] Re-tag freeaisetup-qa so its preflight loads the shared critical/hard-rule cards (heartbeat loads 8 critical… — *Skills* · ^d-a825a0
-13. [LOW · later · val:low · S · sonnet-medium] Check whether Ctrl+Esc (the OpenCode add-on's Windows shortcut) reaches VS Code or opens the Start menu; the… — *Guide* · ^d-261843
-14. [LOW · later · val:low · S · sonnet-medium] Record whether the setup created a PATH folder, so the uninstall removes only folders it made (now: any empty… — *Uninstall* · ^d-c97c73
+2. [MED · soon · val:high · S · sonnet-medium] Finish the real-Codespace checks: the 'Open in Browser' box in a NEWLY created Codespace, the start page and… — *Codespace* · ^d-93a9b1
+3. [MED · soon · val:high · S · sonnet-medium] Check a real Codespace made before a release updates its copy at the next start (start.sh git pull --ff-only;… — *Codespace* · ^d-61f8e8
+4. [MED · soon · val:high · S · sonnet-medium] Owner decision: which new free providers go into lib/free-ai.json (NVIDIA kimi-k2.6/glm-5.3/deepseek-v4.1-fla… — *Free AI list* · ^d-9bb4a8
+5. [MED · soon · val:med · S · sonnet-medium] Check that OpenCode in the Codespace does not offer GitHub Copilot models or expose the Codespace GITHUB_TOKE… — *Codespaces* · ^d-8bf626
+6. [MED · soon · val:med · S · sonnet-medium] Check in a real Codespace that the sst-dev.opencode button finds opencode (in ~/.local/bin) in the VS Code te… — *Codespaces* · ^d-4384bc
+7. [MED · soon · val:med · S · sonnet-medium] On a real Mac, read Gatekeeper's verdict (spctl) for the R and Quarto packages, RStudio and Intel VS Code, th… — *Mac setup* · ^d-b24363
+8. [MED · soon · val:high · M · opus-medium] Re-run tests/vm/real-install.ps1 on a VM with 8 GB: confirm the Node.js removal fallback and the empty .local… — *Windows setup* · ^d-3c0eb5
+9. [MED · soon · val:high · M · sonnet-medium] Run the VS Code part on a fresh Windows VM: winget user-scope install (and the direct-download fallback), add… — *Windows setup* · ^d-baa550
+10. [MED · soon · val:high · M · opus-medium] Run setup-mac.sh and then --uninstall --parts=all on a real Mac (GitHub free macOS machine, public repo) and… — *Mac setup* · ^d-a12ae9
+11. [MED · soon · val:high · M · sonnet-medium] Run the VS Code part on a real Mac (Apple chip via Homebrew cask, Intel via Microsoft's zip): VS Code install… — *Mac setup* · ^d-6eba85
+12. [MED · soon · val:med · M · opus-medium] Measure the disk space of each part on a fresh Windows VM and a fresh Mac (the estimates are from one used Wi… — *Windows setup* · ^d-d30643
+13. [LOW · later · val:med · S · sonnet-medium] Check on a Mac that 'brew list --cask r' finds the renamed cask r-app (brew_had --cask r decides whether R is… — *Mac setup* · ^d-82e950
+14. [LOW · later · val:low · S · sonnet-medium] Check whether Ctrl+Esc (the OpenCode add-on's Windows shortcut) reaches VS Code or opens the Start menu; the… — *Guide* · ^d-261843
 <!-- ready:end -->
 
 
@@ -144,4 +144,4 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 
 ## Startpage
 
-- [ ] [LOW · later · val:low · S · sonnet-medium] Set request_queue_size (e.g. 128) on the ThreadingHTTPServer that serves the browser page: Python's default queue of 5 makes Windows refuse requests while busy (Lehrplanung page stuck on load, 2026-11-17) (src: .devcontainer/startpage/server.py:282 (Linux container: refusal less likely, check)) ^d-3dd775
+- [x] [LOW · later · val:low · S · sonnet-medium] Set request_queue_size (e.g. 128) on the ThreadingHTTPServer that serves the browser page: Python's default queue of 5 makes Windows refuse requests while busy (a page served the same way stuck on load in another tool, 2026-11-17) (src: .devcontainer/startpage/server.py:282 (Linux container: refusal less likely, check)) ^d-3dd775 (fixed 2026-11-17: 2026-11-17: start page server is Server(ThreadingHTTPServer) with request_queue_size=128; tests/startpage/test_startpage.py asserts it (ALL PASS; AttributeError on the old code))
