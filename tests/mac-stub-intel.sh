@@ -17,6 +17,7 @@ cat > /tmp/code-fake <<'CODE'
 echo "code $*" >> /tmp/calls.log
 L=/tmp/codelist; touch "$L"
 case " $* " in *" --version "*) printf '1.139.1\nabc\narm64\n'; exit 0 ;; esac
+case " $* " in *" --help "*) printf 'Visual Studio Code 1.139.1\n\nUsage: code [options][paths...]\n'; exit 0 ;; esac
 case " $* " in *" --list-extensions "*) case " $* " in *" --show-versions "*) cat "$L" ;; *) cut -d@ -f1 "$L" ;; esac; exit 0 ;; esac
 force=0; for a in "$@"; do [ "$a" = --force ] && force=1; done
 prev=""; for a in "$@"; do
@@ -41,6 +42,7 @@ mk installer 'case "$2" in *R-*) printf "#!/bin/bash\necho \"R version 4.6.2 (20
 mk hdiutil 'if [ "$1" = attach ]; then mkdir -p "$5/RStudio.app"; fi; exit 0'
 mk ditto 'mkdir -p "${@: -1}"; if [ "$1" = -x ]; then case "$3" in *vscode.zip) b="$4/Visual Studio Code.app/Contents/Resources/app/bin"; mkdir -p "$b"; cp /tmp/code-fake "$b/code";; esac; elif [ -d "$1" ]; then cp -R "$1/." "${@: -1}/"; fi; exit 0'
 mk shasum 'sha256sum "$3"'
+mk spctl 'echo "rejected (stand-in)"; exit 3'   # Gatekeeper's verdict is recorded, not enforced yet (d-4e90ed)
 mk open 'exit 0'
 mk curl 'case " $* " in *" -w "*) echo 200; exit 0;; esac; url=""; out=""; prev=""; for a in "$@"; do case "$prev" in -o) out="$a";; esac; case "$a" in http*) url="$a";; esac; prev="$a"; done
 case "$url" in
@@ -58,8 +60,9 @@ mk unzip 'python3 -c "import zipfile,sys,os;z=zipfile.ZipFile(sys.argv[1]);z.ext
 mk df 'echo "Filesystem 1024-blocks Used Available"; echo "disk 1 1 52428800"'
 for b in git node npm R Rscript quarto uv; do while p="$(command -v $b)"; do /usr/bin/sudo rm -f "$p" || break; done; done
 export PATH="$STUB:$PATH" HOME=/tmp/fakehome; mkdir -p "$HOME"
+export MS_TEST_OC_UNCHECKED=1   # the stand-in downloads cannot match the pinned OpenCode checksums (tests/opencode-sums.sh tests the check)
 /usr/bin/sudo mkdir -p /Applications && /usr/bin/sudo chmod 777 /Applications
-cp -r /src /tmp/student-setup && cd /tmp/student-setup
+{ mkdir -p /tmp/student-setup && tar -C /src --exclude=./.claude/worktrees --exclude=./logs-worker/node_modules -cf - . | tar -C /tmp/student-setup -xf -; } && cd /tmp/student-setup
 bash setup-mac.sh --yes --skip-ai > /tmp/run.log 2>&1; rc=$?
 echo "exit=$rc"; echo "--- log tail ---"; tail -15 /tmp/run.log; echo "--- calls ---"; grep -v '^uname\|^sw_vers\|^df' "$CALLS" | head -40
 echo "--- step 2-3 output ---"; sed -n '/2\/9/,/4\/9/p' /tmp/run.log
@@ -75,6 +78,11 @@ t "RStudio disk image opened"        "^hdiutil attach"
 t "RStudio copied to Applications"   "^ditto .*RStudio.app /Applications/RStudio.app"
 t "Intel CLI downloaded"             "opencode-darwin-x64-baseline.zip"
 t "Intel: VS Code from Microsoft"    "update.code.visualstudio.com/latest/darwin/stable"
+t "Gatekeeper asked about the R package"     "^spctl --assess --type install -v .*R-4.6.10-x86_64.pkg"
+t "Gatekeeper asked about the Quarto package" "^spctl --assess --type install -v .*quarto-1.8.25-macos.pkg"
+t "Gatekeeper asked about RStudio"           "^spctl --assess --type execute -v .*/mnt/RStudio.app"
+t "Gatekeeper asked about VS Code"           "^spctl --assess --type execute -v .*/x/Visual Studio Code.app"
+o "a rejecting verdict does not stop an install yet (recorded only)" "OK    R  "
 n "Intel: Homebrew never asked for VS Code" "^brew .*visual-studio-code"
 t "Intel: OpenCode add-on added (code inside the app)" "^code --install-extension sst-dev.opencode$"
 REC="$HOME/Library/Application Support/MetaScience/installed.tsv"

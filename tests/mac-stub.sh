@@ -12,6 +12,7 @@ cat > /tmp/code-fake <<'CODE'
 #!/bin/bash
 echo "code $*" >> /tmp/calls.log
 L=/tmp/codelist; touch "$L"
+case " $* " in *" --help "*) printf 'Visual Studio Code 1.139.1\n\nUsage: code [options][paths...]\n'; exit 0 ;; esac
 case " $* " in *" --version "*) printf '1.139.1\nabc\narm64\n'; exit 0 ;; esac
 case " $* " in *" --list-extensions "*) case " $* " in *" --show-versions "*) cat "$L" ;; *) cut -d@ -f1 "$L" ;; esac; exit 0 ;; esac
 force=0; for a in "$@"; do [ "$a" = --force ] && force=1; done
@@ -42,9 +43,10 @@ mk curl 'case " $* " in *" -w "*) echo 200; exit 0;; esac; for a in "$@"; do cas
 mk unzip 'python3 -c "import zipfile,sys,os;z=zipfile.ZipFile(sys.argv[1]);z.extractall(sys.argv[2]);[os.chmod(os.path.join(sys.argv[2],n),0o755) for n in z.namelist()]" "$3" "$5"'
 mk df 'echo "Filesystem 1024-blocks Used Available"; echo "disk 1 1 52428800"'
 export PATH="$STUB:$PATH" HOME=/tmp/fakehome; mkdir -p "$HOME"
+export MS_TEST_OC_UNCHECKED=1   # the stand-in downloads cannot match the pinned OpenCode checksums (tests/opencode-sums.sh tests the check)
 # make /Applications writable for the fake install
 /usr/bin/sudo mkdir -p /Applications && /usr/bin/sudo chmod 777 /Applications
-cp -r /src /tmp/student-setup && cd /tmp/student-setup
+{ mkdir -p /tmp/student-setup && tar -C /src --exclude=./.claude/worktrees --exclude=./logs-worker/node_modules -cf - . | tar -C /tmp/student-setup -xf -; } && cd /tmp/student-setup
 bash setup-mac.sh --yes --skip-ai > /tmp/run.log 2>&1; rc=$?
 echo "exit=$rc"; echo "--- calls ---"; cat "$CALLS" | grep -v '^uname\|^sw_vers\|^df' | head -40
 echo "--- checks ---"
@@ -92,6 +94,11 @@ printf '#!/bin/bash\necho "not vs code $*" >> /tmp/calls.log\necho not vs code\n
 A="/Applications/Visual Studio Code.app/Contents/Resources/app/bin"; mkdir -p "$A"; cp /tmp/code-fake "$A/code"
 : > /tmp/codelist; rm -rf "$HOME"; mkdir -p "$HOME"; : > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=vscode > /tmp/run6.log 2>&1
 if grep -q "OK.*VS Code add-ons.*OpenCode, Python ready" /tmp/run6.log && grep -q "^code --install-extension sst-dev.opencode$" "$CALLS"; then echo "PASS a code command that is not VS Code's: the one inside the app is used"; pass=$((pass+1)); else echo "MISS a code command that is not VS Code's: the one inside the app is used"; failn=$((failn+1)); fi
+# Another editor's code command (an editor built from VS Code): it answers --version with a version, but its --help
+# names that editor, so the one inside the VS Code app is used (d-a09ebb)
+printf '#!/bin/bash\necho "other editor $*" >> /tmp/calls.log\ncase " $* " in *" --help "*) echo "Cursor 1.2.3";; *" --version "*) printf "1.2.3\\nabc\\narm64\\n";; *) echo other;; esac\n' > "$STUB/code"; chmod +x "$STUB/code"
+: > /tmp/codelist; rm -rf "$HOME"; mkdir -p "$HOME"; : > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=vscode > /tmp/run6b.log 2>&1
+if grep -q "OK.*VS Code add-ons.*OpenCode, Python ready" /tmp/run6b.log && grep -q "^code --install-extension sst-dev.opencode$" "$CALLS" && ! grep -q "^other editor --install-extension" "$CALLS"; then echo "PASS another editor's code command: the one inside the VS Code app is used"; pass=$((pass+1)); else echo "MISS another editor's code command: the one inside the VS Code app is used"; failn=$((failn+1)); fi
 rm -rf "/Applications/Visual Studio Code.app"
 rm -f "$STUB/code"
 # An old R (from Homebrew, then from elsewhere): the current R comes from CRAN next to it. The R installer deletes
@@ -134,7 +141,7 @@ for has in yes no; do
     grep -q "OK.*Quarto.*the Quarto inside RStudio" /tmp/run3.log && { echo "PASS no GitHub: the Quarto inside RStudio is used"; pass=$((pass+1)); } || { echo "MISS no GitHub: the Quarto inside RStudio is used"; failn=$((failn+1)); }
     grep -q "FAIL.*Quarto" /tmp/run3.log && { echo "MISS no GitHub: no Quarto failure reported"; failn=$((failn+1)); } || { echo "PASS no GitHub: no Quarto failure reported"; pass=$((pass+1)); }
     grep -qF "$Q" "$HOME/.zprofile" 2>/dev/null && { echo "PASS no GitHub: RStudio's Quarto on PATH"; pass=$((pass+1)); } || { echo "MISS no GitHub: RStudio's Quarto on PATH"; failn=$((failn+1)); }
-    grep -qxF "core	path	$Q" "$REC" 2>/dev/null && ! grep -q "RStudio.app/Contents" <(grep -v "	path	" "$REC") && { echo "PASS no GitHub: only the PATH entry recorded"; pass=$((pass+1)); } || { echo "MISS no GitHub: only the PATH entry recorded"; failn=$((failn+1)); }
+    grep -qxF "core	path	$Q" "$REC" 2>/dev/null && ! grep -q "RStudio.app/Contents" <(grep -Ev "	(path|pathdir)	" "$REC") && { echo "PASS no GitHub: only the PATH entry recorded"; pass=$((pass+1)); } || { echo "MISS no GitHub: only the PATH entry recorded"; failn=$((failn+1)); }
   else
     grep -q "FAIL.*Quarto.*no Quarto inside RStudio" /tmp/run3.log && { echo "PASS no GitHub, no Quarto in RStudio: failure reported"; pass=$((pass+1)); } || { echo "MISS no GitHub, no Quarto in RStudio: failure reported"; failn=$((failn+1)); }
   fi

@@ -3,7 +3,7 @@
 # (tests/run-tests.ps1 -Only uninstall) and removes nothing real: the record points at scratch folders, and other
 # programs' removers (brew, apt, launchctl, crontab, R, uv) are only named in the log (MS_TEST_FAKE_UNINSTALL).
 set -u
-cp -r /src /tmp/us && cd /tmp/us
+{ mkdir -p /tmp/us && tar -C /src --exclude=./.claude/worktrees --exclude=./logs-worker/node_modules -cf - . | tar -C /tmp/us -xf -; } && cd /tmp/us
 W=/tmp/uw; export MS_STATE_DIR="$W/state" MS_TEST_FAKE_UNINSTALL=1
 pass=0; failn=0
 check() { if eval "$2"; then echo "PASS $1"; pass=$((pass+1)); else echo "FAIL $1"; failn=$((failn+1)); fi; }
@@ -33,6 +33,9 @@ check "rstudio only: brew asked to remove the cask, app folder gone" 'logof | gr
 check "rstudio only: other parts untouched" '[ -d "$W/quarto" ] && [ -d "$MS_STATE_DIR/pack" ] && [ -e "$W/uv" ]'
 check "rstudio only: record no longer lists it, still lists the rest" '! rec | grep -q "^rstudio" && [ "$(rec | wc -l)" = 13 ]'
 check "rstudio only: not reinstalled by the next update (parts.txt)" '[ "$(cat "$MS_STATE_DIR/parts.txt")" = "r quarto python node" ]'
+# a list saved as "all" (by hand; the setup saves each part): removing R takes R and RStudio out of it
+make_state; echo all > "$MS_STATE_DIR/parts.txt"; rc="$(un '' --parts=r --yes)"
+check "saved all, R removed: each other part kept, R and RStudio gone" '[ "$(cat "$MS_STATE_DIR/parts.txt")" = "quarto python node vscode web codex claude" ]'
 
 # 2. everything, no questions
 make_state; rc="$(un '' --parts=all --yes)"; L="$(logof)"
@@ -107,12 +110,14 @@ bash "$MS_STATE_DIR/pack/setup-mac.sh" --uninstall --parts=rstudio --yes --remov
 check "setup-mac.sh --uninstall --yes --remove-course: the course folder is deleted ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/course" ]'
 
 # 11. a folder the setup put on PATH goes once it is empty (Windows VM 2026-11-15: uv's .local\bin stayed, with its
-#     PATH entry); one holding anything else stays
-make_state; mkdir -p "$W/localbin" "$W/keepbin"; : > "$W/localbin/uv2"; : > "$W/keepbin/other"
-printf '%s\n' "core${T}file${T}$W/localbin/uv2" "core${T}path${T}$W/localbin" "core${T}path${T}$W/keepbin" >> "$MS_STATE_DIR/installed.tsv"
+#     PATH entry); one holding anything else stays, and so does an empty one the student already had (no 'pathdir'
+#     record: the setup only put it on PATH; d-c97c73)
+make_state; mkdir -p "$W/localbin" "$W/keepbin" "$W/ownbin"; : > "$W/localbin/uv2"; : > "$W/keepbin/other"
+printf '%s\n' "core${T}file${T}$W/localbin/uv2" "core${T}path${T}$W/localbin" "core${T}pathdir${T}$W/localbin" "core${T}path${T}$W/keepbin" "core${T}pathdir${T}$W/keepbin" "core${T}path${T}$W/ownbin" >> "$MS_STATE_DIR/installed.tsv"
 rc="$(un '' --parts=all --yes)"
 check "all: a PATH folder the setup made, empty now, is removed ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/localbin" ]'
 check "all: a PATH folder holding something else stays" '[ -f "$W/keepbin/other" ]'
+check "all: an empty PATH folder the student already had stays" '[ -d "$W/ownbin" ]'
 
 # 8. setup-mac.sh: record_install and the part choice
 (
@@ -121,6 +126,15 @@ check "all: a PATH folder holding something else stays" '[ -f "$W/keepbin/other"
   record_install quarto dir /x; record_install quarto dir /x; record_install r rpkg irr; DRY_RUN=1; record_install node brew node
 )
 check "record_install: tab-separated lines, no duplicate, nothing in a dry run" '[ "$(cat "$W/rs/installed.tsv")" = "$(printf "quarto\tdir\t/x\nr\trpkg\tirr")" ]'
+# add_path records 'pathdir' only for a folder made during this run (d-c97c73): the uninstall removes only those
+(
+  STATE_DIR="$W/pd"; DRY_RUN=0; HOME="$W/pdhome"; mkdir -p "$HOME" "$W/pd-old"
+  eval "$(sed -n '/^record_install() {/,/^}/p; /^add_path() {/,/^}/p' setup-mac.sh)"
+  RUN_START=$(( $(date +%s) + 3600 )); add_path "$W/pd-old" core     # made "before" this run (start set an hour ahead)
+  RUN_START=$(( $(date +%s) - 2 )); mkdir -p "$W/pd-new"; add_path "$W/pd-new" core
+)
+check "add_path: a folder made in this run gets a pathdir record" 'grep -qxF "$(printf "core\tpathdir\t%s" "$W/pd-new")" "$W/pd/installed.tsv"'
+check "add_path: a folder that was here before gets none (both get a path record)" '! grep -qF "pathdir	$W/pd-old" "$W/pd/installed.tsv" && grep -qxF "$(printf "core\tpath\t%s" "$W/pd-old")" "$W/pd/installed.tsv"'
 parts_of() { # runs the part functions of setup-mac.sh; $1 = --components value or "", $2 = answers
   ( set +u; STATE_DIR="$W/ps"; DRY_RUN=0; SKIP_GUI="${PO_NOGUI:-0}"; ASSUME_YES="${PO_YES:-0}"; CHOOSE="${PO_CHOOSE:-1}"; COMPONENTS="$1"
     COURSE_DIR=/nonexistent; PLATFORM="${PO_PLATFORM:-linux}"; NO_BREW=0; FROM_UPDATE="${PO_FROM_UPDATE:-0}"
@@ -139,27 +153,39 @@ cd /tmp/us; W=$W
 $(declare -f parts_of)
 parts_of "" /dev/tty
 EOF
-printf '3 9\n3\n' | script -qec "bash $W/ask.sh" /dev/null > "$W/p.txt" 2>&1
+printf '3 9\n3\nno\nno\nno\n' | script -qec "bash $W/ask.sh" /dev/null > "$W/p.txt" 2>&1
 check "asked: a wrong answer is asked again, then 3 = Quarto only" 'grep -q "Please type only numbers" "$W/p.txt" && grep -q "PARTS=\[quarto\]" "$W/p.txt"'
 check "asked: the list shows a size or 'already on this computer' per part" 'grep -Eq "1\. R and the course R packages +(about [0-9.]+ GB|already on this computer)" "$W/p.txt"'
 
 # 12. VS Code (added 2026-11-16): offered on a Mac only, never added by an update, its add-ons go first on removal
 rm -rf "$W/ps"; parts_of "all" > "$W/p.txt" 2>&1
-check "Linux, --components=all: VS Code is not offered" 'grep -q "PARTS=\[r rstudio quarto python node\]" "$W/p.txt"'
+check "Linux, --components=all: VS Code is not offered (all = every part, the three optional ones too)" 'grep -q "PARTS=\[r rstudio quarto python node web codex claude\]" "$W/p.txt"'
 rm -rf "$W/ps"; PO_PLATFORM=mac parts_of "all" > "$W/p.txt" 2>&1
-check "Mac, --components=all: VS Code included" 'grep -q "PARTS=\[r rstudio quarto python node vscode\]" "$W/p.txt"'
+check "Mac, --components=all: VS Code included" 'grep -q "PARTS=\[r rstudio quarto python node vscode web codex claude\]" "$W/p.txt"'
 rm -rf "$W/ps"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 parts_of "" > "$W/p.txt" 2>&1
-check "Mac, --yes, first run: VS Code included (on by default)" 'grep -q "PARTS=\[r rstudio quarto python node vscode\]" "$W/p.txt"'
+check "Mac, --yes, first run: VS Code and the website tools included, Codex and Claude Code not (their default is no)" 'grep -q "PARTS=\[r rstudio quarto python node vscode web\]" "$W/p.txt"'
 rm -rf "$W/ps"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 PO_FROM_UPDATE=1 parts_of "" > "$W/p.txt" 2>&1
 check "Mac, an update of an older setup (no parts.txt): VS Code not added" 'grep -q "PARTS=\[r rstudio quarto python node\]" "$W/p.txt"'
 rm -rf "$W/ps"; mkdir -p "$W/ps"; echo "r rstudio quarto python node" > "$W/ps/parts.txt"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 parts_of "" > "$W/p.txt" 2>&1
 check "Mac, parts chosen before VS Code existed: VS Code not added" 'grep -q "PARTS=\[r rstudio quarto python node\]" "$W/p.txt"'
 rm -rf "$W/ps"; PO_PLATFORM=mac PO_NOGUI=1 parts_of "all" > "$W/p.txt" 2>&1
-check "Mac, --no-gui: neither RStudio nor VS Code" 'grep -q "PARTS=\[r quarto python node\]" "$W/p.txt"'
+check "Mac, --no-gui: neither RStudio nor VS Code" 'grep -q "PARTS=\[r quarto python node web codex claude\]" "$W/p.txt"'
+# a parts list saved by an older setup ("all", the three extras not yet answered) never brings Codex or Claude Code
+rm -rf "$W/ps"; mkdir -p "$W/ps"; echo all > "$W/ps/parts.txt"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 parts_of "" > "$W/p.txt" 2>&1
+check "Mac, older 'all' with --yes: no Codex or Claude Code" 'grep -q "PARTS=\[r rstudio quarto python node vscode web\]" "$W/p.txt"'
+rm -rf "$W/ps"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 parts_of "" > "$W/p.txt" 2>&1
+check "Mac, --yes, first run: its parts are saved (a later check and update know them)" '[ "$(cat "$W/ps/parts.txt")" = "r rstudio quarto python node vscode web" ]'
+rm -rf "$W/ps"; PO_PLATFORM=mac PO_YES=1 PO_CHOOSE=0 PO_NOGUI=1 parts_of "" > "$W/p.txt" 2>&1
+check "Mac, --yes --no-gui, first run: saved without RStudio and VS Code" '[ "$(cat "$W/ps/parts.txt")" = "r quarto python node web" ]'
+{ echo "cd /tmp/us; W=$W"; declare -f parts_of; echo 'PO_PLATFORM=mac PO_CHOOSE=0 parts_of "" /dev/tty'; } > "$W/ask3.sh"
+rm -rf "$W/ps"; mkdir -p "$W/ps"; echo "r web" > "$W/ps/parts.txt"; printf 'no\nno\nno\n' | script -qec "bash $W/ask3.sh" /dev/null > "$W/p.txt" 2>&1
+check "Mac, saved 'r web', answers no/no/no: the website tools are not kept (Node.js, which they brought, stays)" 'grep -q "PARTS=\[r node\]" "$W/p.txt"'
+rm -rf "$W/ps"; mkdir -p "$W/ps"; echo all > "$W/ps/parts.txt"; printf 'yes\nno\n\n\n\n' | script -qec "bash $W/ask3.sh" /dev/null > "$W/p.txt" 2>&1
+check "Mac, older 'all', answers yes/no/(Enter x3): asked once, website tools only" 'grep -q "offers three more optional parts" "$W/p.txt" && grep -q "PARTS=\[r rstudio quarto python node vscode web\]" "$W/p.txt" && [ -f "$W/ps/asked.txt" ]'
 { echo "cd /tmp/us; W=$W"; declare -f parts_of; echo 'PO_PLATFORM=$1 parts_of "" /dev/tty'; } > "$W/ask2.sh"
-rm -rf "$W/ps"; printf '7\n6\n' | script -qec "bash $W/ask2.sh mac" /dev/null > "$W/p.txt" 2>&1
+rm -rf "$W/ps"; printf '7\n6\nno\nno\nno\n' | script -qec "bash $W/ask2.sh mac" /dev/null > "$W/p.txt" 2>&1
 check "Mac, asked: VS Code is number 6, 7 is refused" 'grep -Eq "6\. VS Code \(code editor; OpenCode, Python and R add-ons\) +about 1\.0 GB" "$W/p.txt" && grep -q "0 to 6" "$W/p.txt" && grep -q "PARTS=\[vscode\]" "$W/p.txt"'
-rm -rf "$W/ps"; printf '6\n\n' | script -qec "bash $W/ask2.sh linux" /dev/null > "$W/p.txt" 2>&1
+rm -rf "$W/ps"; printf '6\n\nno\nno\nno\n' | script -qec "bash $W/ask2.sh linux" /dev/null > "$W/p.txt" 2>&1
 check "Linux, asked: VS Code not in the list, 6 is refused" '! grep -q "VS Code" "$W/p.txt" && grep -q "0 to 5" "$W/p.txt"'
 
 make_state; mkdir -p "$W/dotvscode"; echo "r rstudio quarto python node vscode" > "$MS_STATE_DIR/parts.txt"

@@ -3,6 +3,7 @@
 #  Meta-science course: one-step setup for macOS (and Linux, used for testing)
 #  Installs: OpenCode (desktop + command line), Git, Node.js, uv + Python,
 #            R + course packages, RStudio, Quarto, VS Code (+ OpenCode, Python add-ons); creates ~/MetaScience;
+#            optionally the website tools (GitHub CLI, Vercel, Neon, Railway), Codex and Claude Code;
 #            runs a real end-to-end check that uses every installed tool.
 #  Safe to run again: it skips what is already installed and repairs the rest.
 #
@@ -12,7 +13,7 @@
 #          bash setup-mac.sh --fix      start the AI setup helper on the last setup log
 #          bash setup-mac.sh --dry-run  show what would be done, change nothing
 #          bash setup-mac.sh --choose   ask again which parts to install
-#          bash setup-mac.sh --components=r,rstudio,quarto,python,node,vscode   (or all / none) the parts, without asking
+#          bash setup-mac.sh --components=r,rstudio,quarto,python,node,vscode,web,codex,claude   (or all / none) the parts, without asking
 #          bash setup-mac.sh --uninstall   remove some or all of what this setup installed
 #                                          (with --yes --remove-course: the course folder too)
 #          bash setup-mac.sh --help
@@ -21,6 +22,34 @@
 set -u
 
 OPENCODE_VERSION="1.19.5"
+# The checksum of each OpenCode $OPENCODE_VERSION download, so a changed file is never used (d-8e46a7). GitHub's own
+# SHA-256 of each release file (read with the GitHub API 2026-11-17; linux-x64 and darwin-arm64 also downloaded and
+# hashed here, both equal) and npm's sha512 of each npm package (the second source). A new OPENCODE_VERSION needs new
+# lines here: without them the download is refused, never used unchecked (tests/opencode-sums.sh checks every line).
+oc_sum() {
+  case "$OPENCODE_VERSION:$1" in
+    1.19.5:opencode-darwin-arm64.zip)          echo c1c9e62521192192ef4c3ed1355ada2144055bddb61682217e997b03c55203c1 ;;
+    1.19.5:opencode-darwin-x64-baseline.zip)   echo e1235374cb7e712cdc15e21ba915a029a5d22312b460606d0783754739706775 ;;
+    1.19.5:opencode-linux-arm64.tar.gz)        echo fae5be262d693b7c5e562856cc473e59e741772936db0c0600ac0d5ed5bd088b ;;
+    1.19.5:opencode-linux-x64-baseline.tar.gz) echo 17c200fd4b2289954cc01552559f9b6d03ec157b2ddfb5eb54144f491656333d ;;
+    1.19.5:opencode-desktop-mac-arm64.zip)     echo cd9710eece3ab6ee6f39d19f2af837ae6ddbc23089715c021991e791fcf7bb97 ;;
+    1.19.5:opencode-desktop-mac-x64.zip)       echo 5c0ed06b1d29bd780bffdad9ff2aca2816235b5cb1d0f381dd730f1245717b79 ;;
+    1.19.5:opencode-darwin-arm64.tgz)          echo sha512-0MbSbKkmwVHtgP31GJyyECe6QVy4T7W4Wp7s2TsmXHTPPyf01ne3dWSX97X9dkNK28Lc6kt+zMPQUP/9GgDLZg== ;;
+    1.19.5:opencode-darwin-x64-baseline.tgz)   echo sha512-rftvAoHBWPVkvwBLr3SQWRZvcIjyMTN0SlhMzlt+lgvoQBBGNEmZQ/7sS/Ux1oHsJV/++UDuLVso4n5L95YD5Q== ;;
+    1.19.5:opencode-linux-arm64.tgz)           echo sha512-u2HFRI6v1nNMVKiV34An8XrGBxJeZ+RCg2tYu3SqlGODKqKsr5RoEbaX1tnsfGb+rETh9AJVX9kS8dSZXPufsA== ;;
+    1.19.5:opencode-linux-x64-baseline.tgz)    echo sha512-9kA+st3XXtCXMPx5f3Ld1u19uoHTO2u2Btt8a2cqhJ4GIqVbD1mXLevj3LHFEmtuQoFGk+UstGnl38sCqXj5sQ== ;;
+  esac
+}
+oc_ok() { # $1 = downloaded file, $2 = its name in oc_sum: 0 only when the file has the pinned checksum
+  [ "$DRY_RUN" = 1 ] && return 0   # nothing was downloaded
+  [ "${MS_TEST_OC_UNCHECKED:-}" = 1 ] && { echo "OpenCode checksum not checked (test stand-in files)" >> "$LOG_FILE"; return 0; }
+  local want got; want="$(oc_sum "$2")"
+  [ -n "$want" ] || { echo "no checksum for $2 of OpenCode $OPENCODE_VERSION: refused" >> "$LOG_FILE"; return 1; }
+  case "$want" in sha512-*) got="sha512-$(openssl dgst -sha512 -binary "$1" 2>/dev/null | openssl base64 -A 2>/dev/null)" ;;
+                  *) got="$(sha256_of "$1")" ;; esac
+  [ "$got" = "$want" ] && return 0
+  echo "checksum of $2 is $got, not $want: refused" >> "$LOG_FILE"; rm -f "$1"; return 1
+}
 COURSE_DIR="${METASCIENCE_DIR:-$HOME/MetaScience}"
 KEY_DIR="$HOME/.config/metascience/keys"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -33,6 +62,7 @@ PACK_ITEMS="install-windows.cmd setup-windows.ps1 setup-mac.sh VERSION lib cours
 # What this setup remembers for this account: the chosen parts and a record of what it installed (tests: MS_STATE_DIR)
 STATE_DIR="${MS_STATE_DIR:-$(dirname "$PACK_DIR")}"
 LOG_FILE="${TMPDIR:-/tmp}/metascience-setup-$(date +%Y%m%d-%H%M%S).log"
+RUN_START=$(( $(date +%s) - 2 ))   # a folder created after this was made by this run (PATH folders, d-c97c73)
 R_PACKAGES="rmarkdown knitr readr dplyr tidyr ggplot2 metafor statcheck irr here mcptools"
 
 DRY_RUN=0; MODE="full"; ASSUME_YES=0; SKIP_AI=0; SKIP_GUI=0; NO_AUTO_UPDATE=0; FROM_UPDATE=0; CHOOSE=0; COMPONENTS=""
@@ -76,6 +106,15 @@ record_install() {
   mkdir -p "$STATE_DIR" 2>/dev/null || return 0
   grep -qxF "$line" "$f" 2>/dev/null || printf '%s\n' "$line" >> "$f"
 }
+recorded_paths() { # the short modes (--check, --fix, --keys) may run in a shell that has not read the start-up files
+  # since the setup added a folder to PATH (Docker test 2026-11-17: Node.js and the website tools "not found" by the
+  # check right after an install): every folder the setup recorded is put on PATH for this run (nothing is written)
+  local part kind target
+  [ -f "$STATE_DIR/installed.tsv" ] || return 0
+  while IFS=$'	' read -r part kind target; do
+    [ "$kind" = path ] && [ -d "$target" ] && case ":$PATH:" in *":$target:"*) ;; *) PATH="$target:$PATH" ;; esac
+  done < "$STATE_DIR/installed.tsv"; export PATH; return 0
+}
 brew_had() { brew list "$@" >/dev/null 2>&1; }   # Homebrew already has it (maybe not on PATH): a later brew install says "ok" and installs nothing, so it is not ours to record
 run()   { # run a command, log its output; in dry-run only print it
   if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] $*"; return 0; fi
@@ -95,12 +134,19 @@ SUDO=""; if [ "$(id -u)" != 0 ]; then SUDO="sudo"; fi
 NO_BREW=0; [ "$PLATFORM" = mac ] && [ "$ARCH_ID" = x64 ] && NO_BREW=1
 QUARTO_VERSION="1.8.25"
 
-add_path() { # add a directory to PATH now and in the shell start-up files (once)
+add_path() { # add a directory to PATH now and in the shell start-up files (once); $2 = the part it belongs to
   case ":$PATH:" in *":$1:"*) ;; *) export PATH="$1:$PATH" ;; esac
   [ "$DRY_RUN" = 1 ] && return 0
   local f; for f in "$HOME/.zprofile" "$HOME/.bash_profile"; do
-    touch "$f"; grep -qF "$1" "$f" 2>/dev/null || { printf '\nexport PATH="%s:$PATH"  # added by MetaScience setup\n' "$1" >> "$f"; record_install core path "$1"; }
+    touch "$f"; grep -qF "$1" "$f" 2>/dev/null || { printf '\nexport PATH="%s:$PATH"  # added by MetaScience setup\n' "$1" >> "$f"; record_install "${2:-core}" path "$1"; }
   done
+  # made by this run: the uninstall may remove it once empty (a folder the student already had is never removed).
+  # Birth time: Linux stat -c %W (0 or "-" where the file system does not keep it: then not recorded); macOS stat -f %B.
+  # Linux first, and only a successful answer counts: on Linux "stat -f" means file-system information, which prints
+  # several lines even when it fails (Docker test 2026-11-17).
+  local born; born="$(stat -c %W "$1" 2>/dev/null)" || born="$(stat -f %B "$1" 2>/dev/null)" || born=""
+  case "$born" in ''|*[!0-9]*|0) ;; *) [ "$born" -ge "$RUN_START" ] && record_install "${2:-core}" pathdir "$1" ;; esac
+  return 0
 }
 
 # ---------- network: proxy, blocked sites, mirror sites ------------------------
@@ -113,7 +159,7 @@ site_ok() { # reachable = any HTTP answer within 12 s (an HTTP error still prove
   [ -n "$code" ] && [ "$code" != "000" ]
 }
 uv_from_pypi() { # second route for uv: the same uv program is published on the Python package site (and its mirrors)
-  local plat idx page url tmp
+  local plat idx page url tmp want
   case "$(uname -s)-$(uname -m)" in
     Darwin-arm64) plat='macosx_[0-9_]+_arm64' ;; Darwin-*) plat='macosx_[0-9_]+_x86_64' ;;
     Linux-aarch64) plat='manylinux[0-9_a-z.]*aarch64' ;; *) plat='manylinux[0-9_a-z.]*x86_64' ;;
@@ -124,8 +170,10 @@ uv_from_pypi() { # second route for uv: the same uv program is published on the 
     [ -n "$url" ] || continue
     case "$url" in http*) ;; /*) url="$(printf '%s' "$idx" | sed -E 's#(https?://[^/]+).*#\1#')$url" ;; *) url="$idx/uv/$url" ;; esac
     echo "uv wheel: $url" >> "$LOG_FILE"
+    # the package site gives each file's SHA-256 in its link (#sha256=...): a file without it, or not matching it, is not used
+    case "$url" in *"#sha256="*) want="${url##*#sha256=}"; want="${want%%&*}" ;; *) echo "uv wheel without a checksum: not used" >> "$LOG_FILE"; continue ;; esac
     tmp="$(mktemp -d)"
-    if curl -fsSL -m 300 -o "$tmp/uv.zip" "${url%%#*}" && { unzip -q -o "$tmp/uv.zip" -d "$tmp" || python3 -m zipfile -e "$tmp/uv.zip" "$tmp"; } >> "$LOG_FILE" 2>&1; then
+    if curl -fsSL -m 300 -o "$tmp/uv.zip" "${url%%#*}" && { [ "$(sha256_of "$tmp/uv.zip")" = "$want" ] || { echo "uv wheel checksum does not match: not used" >> "$LOG_FILE"; false; }; } && { unzip -q -o "$tmp/uv.zip" -d "$tmp" || python3 -m zipfile -e "$tmp/uv.zip" "$tmp"; } >> "$LOG_FILE" 2>&1; then
       mkdir -p "$HOME/.local/bin"; find "$tmp" -type f \( -name uv -o -name uvx \) -path '*scripts*' -exec cp {} "$HOME/.local/bin/" \;
       chmod +x "$HOME/.local/bin/uv" "$HOME/.local/bin/uvx" 2>/dev/null; rm -rf "$tmp"; add_path "$HOME/.local/bin"
       have uv && return 0
@@ -201,9 +249,14 @@ setup_network() {
 # ---------- 1. pre-checks ----------------------------------------------------
 # ---------- parts the student chooses (owner request 2026-11-12) ---------------------
 # The AI assistant (OpenCode), Git and uv (which runs the setup's own Python helper) are always installed.
-ALL_PARTS="r rstudio quarto python node vscode"
+ALL_PARTS="r rstudio quarto python node vscode web codex claude"
+MENU_PARTS="r rstudio quarto python node vscode"   # the numbered list; Enter = all of these (that this computer is offered)
+# Owner request 2026-11-16: these three are each explained and asked on their own, and only a typed yes or no counts
+# (Enter alone does not). Recommended answers: web yes; codex and claude no (they need a ChatGPT or Claude plan).
+ASK_PARTS="web codex claude"
+DEFAULT_PARTS="r rstudio quarto python node vscode web"   # unattended runs (--yes, a new Codespace)
 # The parts of a setup from before the student could choose (no parts.txt). An update never adds a part the student
-# did not choose: VS Code (added 2026-11-16) comes only when they run the setup themselves.
+# did not choose: VS Code and the three extras (added 2026-11-16) come only when they run the setup themselves.
 LEGACY_PARTS="r rstudio quarto python node"
 # Parts this computer can get: VS Code is offered on a Mac only (a course Codespace gets its add-ons from
 # .devcontainer/devcontainer.json, and Linux laptops install their own editor); --no-gui leaves out the desktop programs.
@@ -212,12 +265,20 @@ offered_parts() { local p o=""; for p in $ALL_PARTS; do
   o="$o $p"; done; echo "${o# }"; }
 only_offered() { # $PARTS without the parts this computer is not offered
   local p k="" o; o=" $(offered_parts) "; for p in $PARTS; do case "$o" in *" $p "*) k="$k $p" ;; esac; done; PARTS="${k# }"; }
-PARTS="$ALL_PARTS"
+# Pinned versions (checked 2026-11-16). npm installs each part into a folder of its own; the GitHub CLI is its official
+# archive, SHA-256 checked. A tool already on this computer is used as it is (never upgraded).
+WEB_PKGS="vercel@65.16.0:vercel neonctl@9.5.1:neonctl @railway/cli@5.74.1:railway"
+CODEX_PKG="@openai/codex@0.169.0:codex"
+CLAUDE_PKG="@anthropic-ai/claude-code@2.1.325:claude"
+GH_VERSION="2.104.0"
+PARTS="$DEFAULT_PARTS"
 has_part() { case " $PARTS " in *" $1 "*) return 0 ;; esac; return 1; }
 part_name() {
   case "$1" in r) echo "R and the course R packages" ;; rstudio) echo "RStudio (an editor for R; needs R)" ;;
     quarto) echo "Quarto (turns an analysis into a report)" ;; python) echo "Python course packages" ;;
-    node) echo "Node.js (a few optional AI tools need it)" ;; vscode) echo "VS Code (code editor; OpenCode, Python and R add-ons)" ;; esac
+    node) echo "Node.js (a few optional AI tools need it)" ;; vscode) echo "VS Code (code editor; OpenCode, Python and R add-ons)" ;;
+    web) echo "Website tools (GitHub CLI, Vercel, Neon, Railway)" ;; codex) echo "Codex (OpenAI; for a ChatGPT plan)" ;;
+    claude) echo "Claude Code (Anthropic; for a paid Claude plan)" ;; esac
 }
 r_current() { # R 4.5 or newer is here (an older R gets a current one next to it)
   local rv; have R || return 1; rv="$(R --version 2>/dev/null | head -1 | sed -n 's/^R version \([0-9]*\.[0-9]*\).*/\1/p')"
@@ -234,6 +295,10 @@ part_gb() {
     node) if have node; then echo 0; else echo 0.2; fi ;;
     # VS Code 0.8 GB + its add-ons 0.17 GB (measured on Windows 11, 2026-11-16); with VS Code here, its add-ons may be missing
     vscode) if code_app >/dev/null || have code; then echo 0.2; else echo 1.0; fi ;;
+    # npm installs measured on Windows 2026-11-16 (462, 492, 356 MB); not yet measured on a Mac
+    web) if have gh && have vercel && have neonctl && have railway; then echo 0; else echo 0.5; fi ;;
+    codex) if have codex; then echo 0; else echo 0.5; fi ;;
+    claude) if have claude; then echo 0; else echo 0.4; fi ;;
   esac
 }
 estimate_gb() { # disk space this run will use: only the chosen parts that are not on this computer yet
@@ -252,45 +317,96 @@ PARSED=""; BAD_PARTS=""
 parse_parts() { # $1 = text -> PARSED (valid parts, in order) and BAD_PARTS (unknown words)
   local w want="" p; BAD_PARTS=""
   for w in $(printf '%s' "$1" | tr ',;' '  ' | tr 'A-Z' 'a-z'); do
-    case "$w" in all) want="$want $ALL_PARTS" ;; none) ;; r|rstudio|quarto|python|node|vscode) want="$want $w" ;; *) BAD_PARTS="$BAD_PARTS $w" ;; esac
+    case "$w" in all) want="$want $ALL_PARTS" ;; none) ;; r|rstudio|quarto|python|node|vscode|web|codex|claude) want="$want $w" ;; *) BAD_PARTS="$BAD_PARTS $w" ;; esac
   done
   case " $want " in *" rstudio "*) case " $want " in *" r "*) ;; *) want="$want r" ;; esac ;; esac   # RStudio needs R
+  case " $want " in *" web "*|*" codex "*|*" claude "*) want="$want node" ;; esac   # these come with npm, part of Node.js
   PARSED=""; for p in $ALL_PARTS; do case " $want " in *" $p "*) PARSED="$PARSED $p" ;; esac; done
   PARSED="${PARSED# }"; BAD_PARTS="${BAD_PARTS# }"
 }
 save_parts() { [ "$DRY_RUN" = 1 ] && return 0; mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "${PARTS:-none}" > "$STATE_DIR/parts.txt"; }
+save_asked() { [ "$DRY_RUN" = 1 ] && return 0; mkdir -p "$STATE_DIR" 2>/dev/null && printf '%s\n' "$ASK_PARTS" > "$STATE_DIR/asked.txt"; }
+ask_yes_no() { # $1 = question; only a typed yes or no counts, Enter alone asks again (owner request 2026-11-16)
+  local a try
+  for try in 1 2 3; do
+    printf '%s Type yes or no: ' "$1"; read -r a || a=""; a="$(printf '%s' "$a" | tr 'A-Z' 'a-z' | tr -d ' ')"
+    case "$a" in y|yes) return 0 ;; n|no) return 1 ;; esac
+    say "  Please type yes or no (pressing Enter alone does not choose)."
+  done
+  say "  No answer, so it is not installed. To choose again later: bash setup-mac.sh --choose"; return 1
+}
+EXTRA=""
+ask_extras() { # the three optional extras, each explained and answered with a typed yes or no -> EXTRA
+  EXTRA=""
+  say ""; say "--- Optional: publishing your tools as websites  (recommended: yes; about 0.5 GB) ---"
+  say "  Installs four free command-line tools that the AI assistant can use for you:"
+  say "    GitHub CLI (gh) - keeps your code on GitHub     Vercel - puts your tool online as a website"
+  say "    Neon - a database for it                        Railway - a small server, if your tool needs one"
+  say "  Each needs its own free account, which you create only when you want to publish something."
+  say "  Their free plans need no payment card: never enter a card on any of these sites."
+  ask_yes_no "  Install the website tools?" && EXTRA="$EXTRA web"
+  say ""; say "--- Optional: Codex, the AI assistant from OpenAI  (recommended: no, unless you have ChatGPT; about 0.5 GB) ---"
+  say "  Codex signs in with your ChatGPT account and uses that plan's AI, which is stronger than the free models."
+  say "  It is meant for a paid ChatGPT plan (Plus or higher). If you have one, you can ALSO use it inside OpenCode"
+  say "  without Codex: in OpenCode type /connect, choose OpenAI, then \"ChatGPT Plus/Pro\"."
+  say "  The course itself needs only the free AI. Without a ChatGPT plan, answer no."
+  ask_yes_no "  Install Codex?" && EXTRA="$EXTRA codex"
+  say ""; say "--- Optional: Claude Code, the AI assistant from Anthropic  (recommended: no, unless you pay for Claude; about 0.4 GB) ---"
+  say "  Claude Code signs in with a paid Claude plan (Pro, Max or Ultra); it does not work with the free Claude plan."
+  say "  It is the way Anthropic allows a Claude plan to be used for this kind of work: a Claude plan cannot be"
+  say "  connected to OpenCode. The course itself needs only the free AI. Without a paid Claude plan, answer no."
+  ask_yes_no "  Install Claude Code?" && EXTRA="$EXTRA claude"
+  return 0
+}
+without() { # $1 minus the words in $2
+  local w out=""; for w in $1; do case " $2 " in *" $w "*) ;; *) out="$out $w" ;; esac; done; printf '%s' "${out# }"
+}
 load_parts() { # the parts chosen last time; everything when nothing was chosen (older setups installed all)
   if [ -f "$STATE_DIR/parts.txt" ]; then parse_parts "$(cat "$STATE_DIR/parts.txt")"; PARTS="$PARSED"; else PARTS="$LEGACY_PARTS"; fi
+  # Until the student has answered the extras questions, a saved list never brings Codex or Claude Code (their answer
+  # must be a typed yes): "all" saved by an older setup meant the parts of that time. The website tools (default yes)
+  # stay when an unattended run saved them.
+  if [ ! -f "$STATE_DIR/asked.txt" ]; then PARTS="$(without "$PARTS" "codex claude")"; fi
   only_offered; return 0
 }
 choose_parts() {
   local offer; offer="$(offered_parts)"
   if [ -n "$COMPONENTS" ]; then
     parse_parts "$COMPONENTS"
-    [ -n "$BAD_PARTS" ] && { say "Unknown part: $BAD_PARTS. Use any of: r, rstudio, quarto, python, node, vscode, or all, or none."; FINISHED=1; exit 2; }
-    PARTS="$PARSED"; save_parts
-  elif [ -f "$STATE_DIR/parts.txt" ] && [ "$CHOOSE" = 0 ]; then load_parts
+    [ -n "$BAD_PARTS" ] && { say "Unknown part: $BAD_PARTS. Use any of: r, rstudio, quarto, python, node, vscode, web, codex, claude, or all, or none."; FINISHED=1; exit 2; }
+    PARTS="$PARSED"; save_parts; save_asked
+  elif [ -f "$STATE_DIR/parts.txt" ] && [ "$CHOOSE" = 0 ]; then
+    load_parts
+    # chosen with a setup from before 2026-11-16: the three newer extras are asked once (never by an update)
+    if [ ! -f "$STATE_DIR/asked.txt" ] && [ "$ASSUME_YES" = 0 ] && [ "$FROM_UPDATE" = 0 ] && [ "$DRY_RUN" = 0 ] && [ -t 0 ]; then
+      say ""; say "This version of the setup offers three more optional parts."
+      ask_extras; parse_parts "$(without "$PARTS" "$ASK_PARTS") $EXTRA"; PARTS="$PARSED"; only_offered; save_parts; save_asked   # the answers decide these three
+    fi
   elif [ "$FROM_UPDATE" = 1 ]; then PARTS="$LEGACY_PARTS"   # an update never adds a part (see LEGACY_PARTS)
-  elif [ "$ASSUME_YES" = 1 ] || [ ! -t 0 ]; then PARTS="$ALL_PARTS"
+  elif [ "$ASSUME_YES" = 1 ] || [ ! -t 0 ]; then PARTS="$DEFAULT_PARTS"; only_offered; save_parts   # saved, so a later check and update know them
   else
     say ""; say "What should the setup install? The AI assistant (OpenCode), Git and uv (for Python) are always installed."
-    local i=0 p g a n try picked cnt; cnt="$(echo $offer | wc -w | tr -d ' ')"
-    for p in $offer; do i=$((i+1)); g="$(part_gb "$p")"
+    local i=0 p g a n try picked menu="" cnt
+    for p in $offer; do case " $MENU_PARTS " in *" $p "*) menu="$menu $p" ;; esac; done
+    menu="${menu# }"; cnt="$(echo $menu | wc -w | tr -d ' ')"; picked="$menu"
+    for p in $menu; do i=$((i+1)); g="$(part_gb "$p")"
       if [ "$g" = 0 ]; then g="already on this computer"; else g="about $g GB"; fi
       say "$(printf '  %d. %-44s %s' "$i" "$(part_name "$p")" "$g")"
     done
     for try in 1 2 3; do
       printf 'Press Enter to install all of them (recommended), or type the numbers you want, for example 1 3 (0 = none): '
       read -r a || a=""; a="$(printf '%s' "$a" | tr ',;' '  ')"
-      if [ -z "${a// /}" ]; then PARTS="$ALL_PARTS"; break; fi
+      if [ -z "${a// /}" ]; then picked="$menu"; break; fi
       picked=""; for n in $a; do case "$n" in *[!0-9]*) picked=bad; break ;; esac; [ "$n" -le "$cnt" ] || { picked=bad; break; }; done
-      [ "$picked" = bad ] && { say "  Please type only numbers from the list (0 to $cnt)."; continue; }
-      for n in $a; do [ "$n" = 0 ] || picked="$picked $(echo $offer | cut -d' ' -f"$n")"; done
-      parse_parts "$picked"; PARTS="$PARSED"
+      [ "$picked" = bad ] && { picked="$menu"; say "  Please type only numbers from the list (0 to $cnt)."; continue; }
+      for n in $a; do [ "$n" = 0 ] || picked="$picked $(echo $menu | cut -d' ' -f"$n")"; done
       case " $picked " in *" rstudio "*) case " $picked " in *" r "*) ;; *) say "  RStudio needs R, so R is installed too." ;; esac ;; esac
       break
     done
-    save_parts
+    ask_extras
+    if [ -n "$EXTRA" ]; then case " $picked " in *" node "*) ;; *) say "  Node.js is installed too: the tools you chose need it." ;; esac; fi
+    parse_parts "$picked $EXTRA"; PARTS="$PARSED"
+    save_parts; save_asked
   fi
   only_offered
   local names="" p; for p in $PARTS; do names="$names, $(part_name "$p")"; done
@@ -350,9 +466,17 @@ pkg_manager() {
 }
 
 # ---------- 3. core tools ----------------------------------------------------
+gatekeeper_note() { # $1 = a downloaded app or installer package, $2 = execute (app) | install (package)
+  # macOS's own check of who made a download (Gatekeeper, what a double-click runs) is skipped by a command-line
+  # install. The setup asks for its verdict and RECORDS it in the log; it does not yet refuse a download on it, until a
+  # real Mac run confirms each real download passes (d-4e90ed; Windows refuses an unsigned download already).
+  local out rc; out="$(spctl --assess --type "$2" -v "$1" 2>&1)"; rc=$?
+  echo "Gatekeeper check ($2, not enforced yet) of $1: exit $rc: $out" | tr '\n' ' ' >> "$LOG_FILE"; echo >> "$LOG_FILE"
+  return 0
+}
 mac_pkg() { # $1 = official installer package address: download it and install it for this Mac (needs the password)
   local d f rc; d="$(mktemp -d)"; f="$d/$(basename "$1")"
-  retry curl -fL -m 900 -A "MetaScience-setup" -o "$f" "$1" && run $SUDO installer -pkg "$f" -target /
+  retry curl -fL -m 900 -A "MetaScience-setup" -o "$f" "$1" && gatekeeper_note "$f" install && run $SUDO installer -pkg "$f" -target /
   rc=$?; rm -rf "$d"; return $rc
 }
 cran_r() { # $1 = the old R version, if any. Installs the newest R from CRAN for this Mac's chip, keeping an old R.
@@ -374,6 +498,26 @@ cran_r() { # $1 = the old R version, if any. Installs the newest R from CRAN for
   add_path /Library/Frameworks/R.framework/Resources/bin
   CRAN_R="$nv"
 }
+node_direct() { # $1 = temp folder. Node.js: the official current 22.x build, unpacked into your own folder (no password)
+  # Used on Intel Macs, and on Linux, where the system's own Node.js (18 on Ubuntu 24.04) is too old for the website
+  # tools, Codex and Claude Code (2026-11-16).
+  local t="$1" pat
+  case "$PLATFORM-$ARCH_ID" in mac-*) pat="darwin-$ARCH_ID" ;; linux-x64) pat="linux-x64" ;; linux-arm64) pat="linux-arm64" ;; esac
+  if ! has_part node; then skip "node"
+  elif have node; then ok "node" "already installed"
+  elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Node.js"
+  else
+    local nb="https://nodejs.org/dist/latest-v22.x" sums nf
+    sums="$(curl -fsSL -m 60 "$nb/SHASUMS256.txt" 2>>"$LOG_FILE")"
+    nf="$(printf '%s\n' "$sums" | awk -v p="$pat" '$2 ~ ("-" p "\\.tar\\.gz$") {print $2; exit}')"
+    if [ -n "$nf" ] && retry curl -fL -m 900 -o "$t/$nf" "$nb/$nf" \
+       && [ "$(sha256_of "$t/$nf")" = "$(printf '%s\n' "$sums" | awk -v f="$nf" '$2 == f {print $1}')" ]; then
+      mkdir -p "$HOME/.local/share" && tar -xzf "$t/$nf" -C "$HOME/.local/share" \
+        && ln -sfn "$HOME/.local/share/${nf%.tar.gz}" "$HOME/.local/share/node" && add_path "$HOME/.local/share/node/bin" node
+      have node && { record_install node dir "$HOME/.local/share/${nf%.tar.gz}"; record_install node file "$HOME/.local/share/node"; ok "node" "installed ($(node --version))"; } || fail "node" "could not unpack $nf"
+    else fail "node" "download from nodejs.org failed or did not match its checksum"; fi
+  fi
+}
 install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the makers' own download pages
   local t; t="$(mktemp -d)"
   # Git comes with Apple's command line tools. /usr/bin/git exists without them (it only opens Apple's install
@@ -389,21 +533,7 @@ install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the ma
     else fail "git" "Apple command line tools did not install: run  xcode-select --install  then run the setup again"; fi
     rm -f "$flag"
   fi
-  # Node.js: the official current 22.x build, unpacked into your own folder (no password needed)
-  if ! has_part node; then skip "node"
-  elif have node; then ok "node" "already installed"
-  elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install Node.js"
-  else
-    local nb="https://nodejs.org/dist/latest-v22.x" sums nf
-    sums="$(curl -fsSL -m 60 "$nb/SHASUMS256.txt" 2>>"$LOG_FILE")"
-    nf="$(printf '%s\n' "$sums" | awk '/darwin-x64\.tar\.gz$/ {print $2; exit}')"
-    if [ -n "$nf" ] && retry curl -fL -m 900 -o "$t/$nf" "$nb/$nf" \
-       && [ "$(shasum -a 256 "$t/$nf" | cut -d' ' -f1)" = "$(printf '%s\n' "$sums" | awk -v f="$nf" '$2 == f {print $1}')" ]; then
-      mkdir -p "$HOME/.local/share" && tar -xzf "$t/$nf" -C "$HOME/.local/share" \
-        && ln -sfn "$HOME/.local/share/${nf%.tar.gz}" "$HOME/.local/share/node" && add_path "$HOME/.local/share/node/bin"
-      have node && { record_install node dir "$HOME/.local/share/${nf%.tar.gz}"; record_install node file "$HOME/.local/share/node"; ok "node" "installed ($(node --version))"; } || fail "node" "could not unpack $nf"
-    else fail "node" "download from nodejs.org failed or did not match its checksum"; fi
-  fi
+  node_direct "$t"
   if have uv; then ok "uv" "already installed"
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install uv"
   else curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >> "$LOG_FILE" 2>&1; add_path "$HOME/.local/bin"
@@ -433,6 +563,7 @@ install_tools_direct() { # Intel Macs (no Homebrew): the same tools, from the ma
     elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install RStudio"
     elif retry curl -fL -m 900 -o "$t/RStudio.dmg" "https://rstudio.org/download/latest/stable/desktop/mac/RStudio-latest.dmg" \
          && run hdiutil attach -nobrowse -readonly -mountpoint "$t/mnt" "$t/RStudio.dmg"; then
+      gatekeeper_note "$t/mnt/RStudio.app" execute
       run $SUDO ditto "$t/mnt/RStudio.app" /Applications/RStudio.app
       run hdiutil detach "$t/mnt" -quiet
       [ -d /Applications/RStudio.app ] && { record_install rstudio pkgdir /Applications/RStudio.app; ok "RStudio" "installed"; } || fail "RStudio" "could not copy RStudio into Applications"
@@ -478,13 +609,14 @@ CODE_ISO=()   # tests: MS_TEST_CODE_DIR gives VS Code a scratch add-on and setti
 code_app() { local a; for a in "/Applications/Visual Studio Code.app" "$HOME/Applications/Visual Studio Code.app"; do
   [ -d "$a" ] && { echo "$a"; return 0; }; done; return 1; }
 code_cli() { # VS Code's code command: on PATH, or inside the app. A "code" on PATH can be another editor's copy or a
-  # script, so each candidate must answer --version with a version number.
+  # script, so each candidate's --help must start with VS Code's own name ("Visual Studio Code 1.139.1", from its
+  # product.json nameLong); an editor built from VS Code prints its own name there (d-a09ebb).
   local c v; for c in "$(command -v code 2>/dev/null)" "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code" \
                       "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"; do
     [ -n "$c" ] && [ -x "$c" ] || continue
-    v="$("$c" --version 2>/dev/null | head -1)"
-    case "$v" in [0-9]*.[0-9]*) echo "$c"; return 0 ;; esac
-    echo "not VS Code's code command (no version from --version): $c" >> "$LOG_FILE"
+    v="$("$c" --help 2>/dev/null | head -1)"
+    case "$v" in "Visual Studio Code "[0-9]*.[0-9]*|"Visual Studio Code - Insiders "[0-9]*.[0-9]*) echo "$c"; return 0 ;; esac
+    echo "not VS Code's code command (its --help starts '$v', not 'Visual Studio Code'): $c" >> "$LOG_FILE"
   done; return 1; }
 code_exts() { # the add-ons VS Code has, one "id@version" per line, lower case; fails when VS Code did not answer
   local out; out="$("$1" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --list-extensions --show-versions 2>/dev/null)" || { echo "code --list-extensions failed" >> "$LOG_FILE"; return 1; }
@@ -511,6 +643,7 @@ install_vscode() {
     t="$(mktemp -d)"; say "  Downloading VS Code from Microsoft (about 400 MB; on slow Wi-Fi 10 minutes or more)..."
     if retry curl -fL -m 1800 -o "$t/vscode.zip" "https://update.code.visualstudio.com/latest/darwin/stable" \
        && run ditto -x -k "$t/vscode.zip" "$t/x" && [ -d "$t/x/Visual Studio Code.app" ] \
+       && gatekeeper_note "$t/x/Visual Studio Code.app" execute \
        && run $SUDO ditto "$t/x/Visual Studio Code.app" "/Applications/Visual Studio Code.app" && [ -d "/Applications/Visual Studio Code.app" ]; then
       record_install vscode pkgdir "/Applications/Visual Studio Code.app"; fresh=1; ok "VS Code" "installed (direct download from Microsoft)"
     else fail "VS Code" "download from Microsoft or unpacking failed; see $LOG_FILE"; rm -rf "$t"; return 0; fi
@@ -613,13 +746,14 @@ install_tools() {
     # only what is missing (a course Codespace already brings current Node.js and R; never replace them)
     local want="curl ca-certificates unzip python3" added="" a
     have git || added="$added git"
-    has_part node && ! have node && added="$added nodejs npm"
     has_part r && ! have R && added="$added r-base r-base-dev"
     want="$want$added"
     retry $SUDO apt-get install -y --no-install-recommends $want \
-      && { for a in $added; do case "$a" in git) record_install core apt git ;; nodejs|npm) record_install node apt "$a" ;; *) record_install r apt "$a" ;; esac; done; true; } \
-      && ok "Git, Node.js, R" "ready (git $(git --version 2>/dev/null | cut -d' ' -f3), node $(node --version 2>/dev/null), R $(R --version 2>/dev/null | head -1 | cut -d' ' -f3))" \
+      && { for a in $added; do case "$a" in git) record_install core apt git ;; *) record_install r apt "$a" ;; esac; done; true; } \
+      && ok "Git, R" "ready (git $(git --version 2>/dev/null | cut -d' ' -f3), R $(R --version 2>/dev/null | head -1 | cut -d' ' -f3))" \
       || fail "apt packages" "see $LOG_FILE"
+    # Node.js from nodejs.org, not apt: Ubuntu's own is 18, too old for the website tools, Codex and Claude Code
+    local nt; nt="$(mktemp -d)"; node_direct "$nt"; rm -rf "$nt"
     if have uv; then ok "uv" "already installed"
     elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install uv"
     else curl -LsSf https://astral.sh/uv/install.sh | env UV_NO_MODIFY_PATH=1 sh >> "$LOG_FILE" 2>&1; add_path "$HOME/.local/bin"
@@ -654,7 +788,7 @@ install_opencode() {
     else [ "$ARCH_ID" = arm64 ] && asset="opencode-linux-arm64.tar.gz" || asset="opencode-linux-x64-baseline.tar.gz"; fi
     local got=0 pkg reg bin
     case "$BLOCKED" in *" github.com "*) ;; *)
-      if retry curl -fsSL -o "$tmp/$asset" "$base/$asset"; then
+      if retry curl -fsSL -o "$tmp/$asset" "$base/$asset" && oc_ok "$tmp/$asset" "$asset"; then
         case "$asset" in *.zip) run unzip -o -q "$tmp/$asset" -d "$tmp/x" ;; *) run mkdir -p "$tmp/x"; run tar -xzf "$tmp/$asset" -C "$tmp/x" ;; esac
         got=1
       fi ;;
@@ -663,7 +797,7 @@ install_opencode() {
       # the same program, published as an npm package: npm's own site, then a mirror reachable from China
       pkg="opencode-$( [ "$PLATFORM" = mac ] && echo darwin || echo linux )-$( [ "$ARCH_ID" = arm64 ] && echo arm64 || echo x64-baseline )"
       for reg in https://registry.npmjs.org https://registry.npmmirror.com; do
-        if curl -fsSL -m 300 -o "$tmp/oc.tgz" "$reg/$pkg/-/$pkg-$OPENCODE_VERSION.tgz" 2>>"$LOG_FILE"; then
+        if curl -fsSL -m 300 -o "$tmp/oc.tgz" "$reg/$pkg/-/$pkg-$OPENCODE_VERSION.tgz" 2>>"$LOG_FILE" && oc_ok "$tmp/oc.tgz" "$pkg.tgz"; then
           mkdir -p "$tmp/x" && tar -xzf "$tmp/oc.tgz" -C "$tmp/x" 2>>"$LOG_FILE"
           bin="$(find "$tmp/x" -type f -name opencode | head -1)"
           if [ -n "$bin" ]; then cp "$bin" "$tmp/x/opencode" 2>/dev/null; got=1; echo "OpenCode from $reg" >> "$LOG_FILE"; break; fi
@@ -675,23 +809,124 @@ install_opencode() {
       run cp "$tmp/x/opencode" "$bindir/opencode"; run chmod +x "$bindir/opencode"
       add_path "$bindir"
       [ "$DRY_RUN" = 1 ] || { [ "$(opencode --version 2>/dev/null)" = "$OPENCODE_VERSION" ] && ok "OpenCode command line" "installed $OPENCODE_VERSION" || fail "OpenCode command line" "installed but does not start"; }
-    else fail "OpenCode command line" "download failed from GitHub and from npm; see $LOG_FILE"; fi
+    else fail "OpenCode command line" "download failed (or its checksum did not match) from GitHub and from npm; see $LOG_FILE"; fi
   fi
   if [ "$PLATFORM" = mac ] && [ "$SKIP_GUI" = 0 ]; then
     if [ -d "/Applications/OpenCode.app" ] || [ -d "$HOME/Applications/OpenCode.app" ]; then ok "OpenCode desktop app" "already installed"
     else
       local app="opencode-desktop-mac-$ARCH_ID.zip"
       case "$BLOCKED" in *" github.com "*) warn "OpenCode desktop app" "GitHub is blocked here, so only the command-line OpenCode is installed (type opencode in Terminal)"; rm -rf "$tmp"; return 0 ;; esac
-      if retry curl -fsSL -o "$tmp/$app" "$base/$app"; then
+      if retry curl -fsSL -o "$tmp/$app" "$base/$app" && oc_ok "$tmp/$app" "$app"; then
         run ditto -x -k "$tmp/$app" "$tmp/app"
         local found; found="$(find "$tmp/app" -maxdepth 2 -name '*.app' | head -1)"
         if [ -n "$found" ] && run cp -R "$found" /Applications/; then record_install core dir "/Applications/$(basename "$found")"; ok "OpenCode desktop app" "in Applications"
         elif [ -n "$found" ] && run mkdir -p "$HOME/Applications" && run cp -R "$found" "$HOME/Applications/"; then record_install core dir "$HOME/Applications/$(basename "$found")"; ok "OpenCode desktop app" "in your personal Applications folder"
         else [ "$DRY_RUN" = 1 ] || fail "OpenCode desktop app" "could not unpack"; fi
-      else fail "OpenCode desktop app" "download failed"; fi
+      else fail "OpenCode desktop app" "download failed or its checksum did not match; see $LOG_FILE"; fi
     fi
   fi
   rm -rf "$tmp"
+}
+
+# ---------- 4b. optional: website tools, Codex, Claude Code (owner request 2026-11-16) -----------------
+# Everything goes into folders of this account (no password): npm installs each part into
+# ~/.local/share/metascience-<part> (commands in its bin folder), so the uninstall can remove exactly that folder.
+gh_sha256() {
+  case "$1" in
+    linux_amd64.tar.gz) echo 98cb101ad87dbbd3f6b2f2bfcbd43197ccd07643140121d8a9cfaa91eadbc24e ;;
+    linux_arm64.tar.gz) echo cb34cefc6f4e77b90731374a2b737516bb8f3033c6ca46aa949e5344f68069e3 ;;
+    macOS_amd64.zip)    echo a8c2a708dbae89dc7c05ba7b0beafc95bd8d09ab4a3505467b77d32ebf364dc6 ;;
+    macOS_arm64.zip)    echo 23b12706219b9892e44236f988444a24adcf29284e16b35e03ba5b863fb6eb8e ;;
+  esac
+}
+sha256_of() { if have shasum; then shasum -a 256 "$1" | cut -d' ' -f1; else sha256sum "$1" | cut -d' ' -f1; fi; }
+node_at_least() { # $1 = minimum major.minor, e.g. 20.19: Node.js here is at least that version
+  local v; have node || return 1; v="$(node --version 2>/dev/null | sed -n 's/^v\([0-9]*\.[0-9]*\).*/\1/p')"
+  [ -n "$v" ] && [ "$(printf '%s\n%s\n' "$v" "$1" | sort -t. -k1,1n -k2,2n | head -1)" = "$1" ]
+}
+install_gh() {
+  if have gh; then ok "GitHub CLI" "already installed"; return 0; fi
+  local prefix="$HOME/.local/share/metascience-web" os ext asset tmp
+  if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] download GitHub CLI $GH_VERSION into $prefix/bin"; return 0; fi
+  case "$BLOCKED" in *" github.com "*) warn "GitHub CLI" "GitHub is blocked on this network; run the setup again on another network to add it"; return 0 ;; esac
+  if [ "$PLATFORM" = mac ]; then os=macOS; ext=zip; else os=linux; ext=tar.gz; fi
+  asset="${os}_$( [ "$ARCH_ID" = arm64 ] && echo arm64 || echo amd64 ).$ext"
+  tmp="$(mktemp -d)"
+  if ! retry curl -fsSL -o "$tmp/gh.$ext" "https://github.com/cli/cli/releases/download/v$GH_VERSION/gh_${GH_VERSION}_$asset"; then
+    fail "GitHub CLI" "download failed; see $LOG_FILE"; rm -rf "$tmp"; return 1; fi
+  if [ "$(sha256_of "$tmp/gh.$ext")" != "$(gh_sha256 "$asset")" ]; then
+    fail "GitHub CLI" "the download does not match its published checksum, so it was not installed"; rm -rf "$tmp"; return 1; fi
+  mkdir -p "$tmp/x"
+  if [ "$ext" = zip ]; then unzip -o -q "$tmp/gh.zip" -d "$tmp/x"; else tar -xzf "$tmp/gh.tar.gz" -C "$tmp/x"; fi
+  local bin; bin="$(find "$tmp/x" -type f -path '*/bin/gh' | head -1)"
+  [ -d "$prefix" ] || record_install web dir "$prefix"
+  [ -e "$HOME/.config/gh" ] || record_install web dir "$HOME/.config/gh"   # its sign-in
+  if [ -n "$bin" ] && mkdir -p "$prefix/bin" && cp "$bin" "$prefix/bin/gh" && chmod +x "$prefix/bin/gh"; then
+    add_path "$prefix/bin" web; ok "GitHub CLI" "installed $GH_VERSION"
+  else fail "GitHub CLI" "could not unpack it; see $LOG_FILE"; fi
+  rm -rf "$tmp"
+}
+npm_tools() { # $1 = part, $2 = minimum Node.js (major.minor), $3 = name for messages, rest = package@version:command ...
+  local part="$1" min="$2" label="$3" prefix="$HOME/.local/share/metascience-$1" todo="" item reg cache code=1
+  shift 3
+  for item in "$@"; do
+    if have "${item##*:}"; then ok "${item##*:}" "already installed"; else todo="$todo $item"; fi
+  done
+  [ -n "$todo" ] || return 0
+  if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] npm install --global --prefix $prefix$(for item in $todo; do printf ' %s' "${item%:*}"; done)"; return 0; fi
+  if ! node_at_least "$min"; then
+    fail "$label" "$(have node && echo "Node.js $(node --version) is too old" || echo "Node.js is missing"); it needs Node.js $min or newer (this setup never upgrades software that is already here)"
+    return 1
+  fi
+  [ -d "$prefix" ] || record_install "$part" dir "$prefix"
+  cache="$(mktemp -d)"   # a throw-away download cache: no copy is left behind
+  local pkg cmd
+  for item in $todo; do   # one at a time: one tool that cannot be installed never takes the others with it
+    pkg="${item%:*}"; cmd="${item##*:}"; code=1
+    case "$pkg" in @railway/*) case "$BLOCKED" in *" github.com "*)   # its installer downloads from GitHub
+      warn "$cmd" "its installer needs GitHub, which is blocked on this network; run the setup again on another network to add it"; continue ;; esac ;; esac
+    # the mirror is for networks that block npm's site; it can lag behind (a missing version), so npm's site gets a second try
+    for reg in https://registry.npmjs.org https://registry.npmmirror.com https://registry.npmjs.org; do
+      echo "\$ npm install --global --prefix $prefix --registry $reg $pkg" >> "$LOG_FILE"
+      npm install --global --prefix "$prefix" --cache "$cache" --registry "$reg" --no-fund --no-audit --loglevel=error "$pkg" >> "$LOG_FILE" 2>&1 && { code=0; break; }
+    done
+    [ "$code" = 0 ] && add_path "$prefix/bin" "$part"
+    if [ "$code" = 0 ] && have "$cmd"; then ok "$cmd" "installed"
+    elif [ "$code" = 0 ]; then fail "$cmd" "npm finished but '$cmd' was not found; see $LOG_FILE"
+    else fail "$cmd" "npm could not install it; see $LOG_FILE"; fi
+  done
+  rm -rf "$cache"
+}
+install_extras() {
+  step "4b/9  Optional: website tools, Codex, Claude Code"
+  local p; for p in $ASK_PARTS; do has_part "$p" || skip "$(part_name "$p")"; done
+  if has_part web; then
+    # their sign-ins (paths read from each tool's own code, 2026-11-16), recorded only for a tool this setup installs
+    # and only when the folder is not there yet, so a student's existing sign-in is never removed
+    local d vd vc; if [ "$PLATFORM" = mac ]; then vd="$HOME/Library/Application Support/com.vercel.cli"; vc="$HOME/Library/Caches/com.vercel.cli"
+    else vd="$HOME/.local/share/com.vercel.cli"; vc="$HOME/.cache/com.vercel.cli"; fi
+    if ! have vercel; then for d in "$vd" "$vc"; do [ -e "$d" ] || record_install web dir "$d"; done; fi
+    if ! have neonctl; then d="${XDG_CONFIG_HOME:-$HOME/.config}/neon"; [ -e "$d" ] || record_install web dir "$d"; fi
+    if ! have railway; then [ -e "$HOME/.railway" ] || record_install web dir "$HOME/.railway"; fi
+    install_gh
+    # shellcheck disable=SC2086
+    npm_tools web 20.19 "Website tools" $WEB_PKGS
+  fi
+  if has_part codex; then
+    have codex || [ -e "$HOME/.codex" ] || record_install codex dir "$HOME/.codex"   # its sign-in and settings
+    npm_tools codex 20.19 "Codex" "$CODEX_PKG"
+  fi
+  if has_part claude; then
+    if ! have claude; then   # its sign-in and settings, when this is the first Claude Code on this account
+      [ -e "$HOME/.claude" ] || record_install claude dir "$HOME/.claude"
+      [ -e "$HOME/.claude.json" ] || record_install claude file "$HOME/.claude.json"
+    fi
+    npm_tools claude 22.0 "Claude Code" "$CLAUDE_PKG"
+  fi
+  has_part web && say "  Website tools: nothing to sign in to now. When you want to publish, follow Part 6 of the student guide."
+  has_part codex && say "  Codex: type codex in a terminal, choose \"Sign in with ChatGPT\", and sign in in the browser."
+  has_part claude && say "  Claude Code: type claude in a terminal and sign in with your Claude account in the browser."
+  return 0
 }
 
 # ---------- 5. R packages ------------------------------------------------------
@@ -925,10 +1160,10 @@ case "$MODE" in
   rollback) FINISHED=1; bash "$updater" --rollback; exit $? ;;
   uninstall) FINISHED=1; un=(); [ -n "$COMPONENTS" ] && un+=("--parts=$COMPONENTS"); [ "$ASSUME_YES" = 1 ] && un+=(--yes)
              [ "$DRY_RUN" = 1 ] && un+=(--dry-run); [ "${REMOVE_COURSE:-0}" = 1 ] && un+=(--remove-course); bash "$SCRIPT_DIR/lib/uninstall-mac.sh" ${un[@]+"${un[@]}"}; exit $? ;;
-  fix)   FINISHED=1; add_path "$HOME/.local/bin"; start_doctor; exit 0 ;;
-  check) add_path "$HOME/.local/bin"; [ "$PLATFORM" = mac ] && for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$p" ] && eval "$("$p" shellenv)"; done
+  fix)   FINISHED=1; add_path "$HOME/.local/bin"; recorded_paths; start_doctor; exit 0 ;;
+  check) add_path "$HOME/.local/bin"; recorded_paths; [ "$PLATFORM" = mac ] && for p in /opt/homebrew/bin/brew /usr/local/bin/brew; do [ -x "$p" ] && eval "$("$p" shellenv)"; done
          load_parts; run_check; summary ;;
-  keys)  add_path "$HOME/.local/bin"; load_parts; key_wizard; run_check
+  keys)  add_path "$HOME/.local/bin"; recorded_paths; load_parts; key_wizard; run_check
          # a Codespace runs OpenCode as a web server that read its settings at start: restart it so it sees the new key
          if [ -n "${CODESPACES:-}" ] && [ -f "$SCRIPT_DIR/.devcontainer/start.sh" ]; then
            pkill -f "^opencode web" 2>/dev/null; sleep 1; bash "$SCRIPT_DIR/.devcontainer/start.sh"
@@ -938,7 +1173,7 @@ case "$MODE" in
   full)  # a stop in step 1 or 2 skips the installs but still ends with the summary and the offer to send the report
          choose_parts
          if precheck && pkg_manager; then
-           install_tools; install_opencode; install_r_packages; fix_pandoc; setup_course_folder
+           install_tools; install_opencode; install_extras; install_r_packages; fix_pandoc; setup_course_folder
            [ "$FROM_UPDATE" = 1 ] || install_pack
            if [ "$DRY_RUN" = 0 ] && [ "$FROM_UPDATE" = 0 ]; then
              if [ "$ASSUME_YES" = 0 ] && [ -t 0 ]; then

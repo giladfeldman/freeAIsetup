@@ -54,6 +54,7 @@ try {
   Set-Content -LiteralPath $fake -Encoding UTF8 -Value @"
 `$list = '$list'; `$calls = '$calls'
 Add-Content -LiteralPath `$calls -Value (`$args -join ' ')
+if (`$args -contains '--help') { if (`$env:FAKE_CODE_NOVERSION) { exit 0 }; 'Visual Studio Code 1.139.1'; ''; 'Usage: code.exe [options][paths...]'; exit 0 }
 if (`$args -contains '--version') { if (`$env:FAKE_CODE_NOVERSION) { exit 0 }; '1.139.1'; 'abc'; 'x64'; exit 0 }
 `$have = [ordered]@{}; if (Test-Path `$list) { foreach (`$l in Get-Content -LiteralPath `$list) { `$p = `$l -split '@'; `$have[`$p[0]] = `$p[1] } }
 function Save { Set-Content -LiteralPath `$list -Value @(foreach (`$k in `$have.Keys) { "`$k@`$(`$have[`$k])" }) }
@@ -140,6 +141,14 @@ exit 0
   Reset-Fake $cur
   $r = Run-Step $bad (Join-Path $work 'sA9')
   Check "A9 a code command that is not VS Code's: VS Code's own folder used" ($r.log -match 'not VS Code''s code command' -and $r.log -match 'already there and up to date') $r.log
+  # another editor's code command (an editor built from VS Code): --version gives a version, but --help names that
+  # editor, so it is not used (d-a09ebb)
+  $fork = Join-Path $work 'fork'; New-Item -ItemType Directory -Force -Path $fork | Out-Null
+  Set-Content -LiteralPath (Join-Path $fork 'code.cmd') -Encoding ASCII -Value @('@echo off', "echo %* >> `"$work\fork-calls.txt`"", 'if "%1"=="--help" (echo Cursor 1.2.3& exit /b 0)', 'if "%1"=="--version" (echo 1.2.3& echo abc& echo x64& exit /b 0)', 'echo other editor')
+  Reset-Fake $null
+  $r = Run-Step $fork (Join-Path $work 'sA9b')
+  $forkCalls = @(if (Test-Path "$work\fork-calls.txt") { Get-Content "$work\fork-calls.txt" })
+  Check "A9b another editor's code command: not used, VS Code's own folder used" ($r.log -match "its --help starts 'Cursor 1\.2\.3'" -and @($forkCalls -match 'install-extension').Count -eq 0 -and @(Calls | Where-Object { $_ -match '--install-extension sst-dev\.opencode' }).Count -ge 1) "$($r.log) | fork: $($forkCalls -join '; ')"
   Remove-Item -LiteralPath $fakeLocal -Recurse -Force
   Reset-Fake $cur
   $r = Run-Step $bad (Join-Path $work 'sA10')

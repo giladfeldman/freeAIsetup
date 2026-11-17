@@ -7,13 +7,18 @@ It installs, on Windows, Mac and Linux:
 - OpenCode (an AI coding and research assistant) with free AI models
 - R and RStudio, Python (via uv), Quarto, Git and Node.js
 - a course folder with a real end-to-end check that uses every tool
+- optionally: the website tools (GitHub CLI, Vercel, Neon, Railway) so the AI can publish a tool as a website on
+  free plans, and Codex or Claude Code for students who already pay for ChatGPT or Claude
 
 The setup never upgrades or removes software you already have (one exception: a VS Code add-on the course uses that is older than the tested version is updated), and never changes security settings.
 (Next to an R older than 4.5, which the course packages no longer support, it installs the current R (on
 Windows for the student's account only) and keeps the old one. On a Mac the new R becomes the one that starts; the old one stays
 in the R framework and can still be chosen.)
-The AI assistant is always installed; R, RStudio, Quarto, the Python course packages and Node.js are optional (the
-setup asks once, and installs all of them when you press Enter).
+The AI assistant is always installed; R, RStudio, Quarto, the Python course packages, Node.js and VS Code are optional (the
+setup asks once, and installs all of them when you press Enter). Then it explains three more optional parts and asks
+about each one, accepting only a typed yes or no: the website tools (recommended yes), Codex and Claude Code
+(recommended no, unless the student already has a ChatGPT or paid Claude plan). Unattended runs (`-Yes`, a new
+Codespace) install the website tools and not Codex or Claude Code.
 
 ## Quick start
 
@@ -71,6 +76,13 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 - A short daily check downloads only the files that changed and installs any newly added tools.
 - Every release is signed. The pack refuses any update whose signature does not match the key it carries,
   and it never touches files you changed.
+- On Windows, a program the setup downloads straight from its maker (VS Code, R, RStudio, Quarto, Git, uv,
+  OpenCode) is used only if Windows confirms it is signed by that maker; otherwise the step stops with a
+  warning. On a Mac and Linux, OpenCode is used only if its download has the checksum the release was tested
+  with, and uv only if it matches the checksum its source publishes; macOS's own check of each other download is
+  written to the setup log, but does not yet stop the install.
+- A Codespace brings its copy of the setup up to date each time it starts (only if nothing in that copy was
+  changed in the Codespace), so fixes to its start page reach Codespaces made before a release.
 - To update by hand: `install-windows.cmd -Update` (Windows) or `bash setup-mac.sh --update` (Mac).
 - To go back to the previous version: `-Rollback` / `--rollback`. To switch the daily check off:
   `-NoAutoUpdate` / `--no-auto-update`.
@@ -79,7 +91,7 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 
 - **Parts:** the setup asks once which optional parts to install and remembers the answer. To choose again:
   `install-windows.cmd -Choose` (Windows) or `bash setup-mac.sh --choose` (Mac). Without asking:
-  `-Components r,quarto` (`-Parts` works too) / `--components=r,quarto` (`--parts=` works too) (any of `r`, `rstudio`, `quarto`, `python`, `node`, `vscode`, `all`, `none`).
+  `-Components r,quarto` (`-Parts` works too) / `--components=r,quarto` (`--parts=` works too) (any of `r`, `rstudio`, `quarto`, `python`, `node`, `vscode`, `web`, `codex`, `claude`, `all`, `none`).
 - **VS Code** (on Windows and Mac, chosen by default): the code editor, with OpenCode's own add-on (a button at the
   top right of an open file starts OpenCode in a terminal next to the code, with the same free models), Microsoft's
   Python add-on and, when R is chosen, the R add-on (with the R package `languageserver` it needs). A VS Code that is
@@ -95,7 +107,16 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
   installed pack. The setup keeps a record of what it installed itself (since November 2026); the uninstall removes
   some or all of that record and nothing else, so software that was on the computer before is never touched. The
   course folder is kept unless the student types DELETE; with `-Uninstall -Yes -RemoveCourse` (Windows) or
-  `--uninstall --yes --remove-course` (Mac) it is deleted too, without asking.
+  `--uninstall --yes --remove-course` (Mac) it is deleted too, without asking. A folder the setup created and added
+  to the PATH is removed once it is empty; the sign-in folders of the website tools, Codex and Claude Code are
+  removed only when the setup installed that tool and the folder did not exist before.
+- **Opened inside the zip (Windows):** if `install-windows.cmd` is double-clicked inside `metascience-setup.zip`
+  without unpacking it, it finds the zip (Downloads, Desktop, Documents, OneDrive), unpacks it into a new folder next
+  to it (never over an existing one) and starts the setup from there; if it cannot find the zip, it explains how to
+  unpack it.
+- **Node.js on Linux** (and on Intel Macs) comes from nodejs.org (the current 22.x, checksum-checked, in the
+  student's own folder): Ubuntu's own Node.js is too old for the website tools, Codex and Claude Code. A Node.js
+  already on the computer is kept as it is; when it is too old for these tools, the step says so.
 
 ## Money
 
@@ -103,7 +124,11 @@ Everything is free, for students and teacher. Every service used charges only th
 billing account on the user's own account there; a free account without one gets an error or a wait at its limit,
 never a bill. Students should never enter a card anywhere, and use a separate free account where they already pay
 for a service (or, for Codespaces, set a $0 budget with "Stop usage"). The setup only uses free models; on
-OpenRouter, OpenCode is limited to the `:free` models.
+OpenRouter, OpenCode is limited to the `:free` models. The optional website tools work with free plans (Vercel
+Hobby, Neon Free, Railway's trial and Free plan), which pause at their limits. Codex and Claude Code are only for
+students who already pay for ChatGPT or Claude; nobody needs them, and the setup recommends no. A Claude plan is used
+only in Anthropic's own Claude Code: Anthropic does not allow other tools to offer Claude plan sign-in without its
+approval, and OpenCode removed its earlier Claude sign-in in March 2026.
 
 ## Privacy
 

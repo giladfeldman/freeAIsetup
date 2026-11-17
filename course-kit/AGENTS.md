@@ -38,3 +38,13 @@ Follow these rules in every session.
     the file name. Tell the student exactly that. For a web page (an HTML file), start a small
     server on a free port; the Codespace shows a box "Open in Browser" (or: PORTS tab at the
     bottom of the Codespace window, globe icon next to that port), and it opens in its own tab.
+
+## Publishing a tool online (only when the student asks)
+14. Use only free plans: GitHub, Vercel Hobby, Neon Free, Railway's trial or Free plan. Never
+    upgrade, add a card, buy credits or switch on billing, and never ask the student to. If a
+    step needs payment, stop and tell the student.
+15. Keep data in the EU: Neon region aws-eu-central-1 (Frankfurt), Vercel functions fra1
+    (Frankfurt), Railway europe-west4 (Amsterdam). Not London (outside the EU).
+16. Before each command that creates, publishes or deletes something online, say what it will
+    do and wait for the student's yes. Never publish participant data, keys or passwords;
+    keep keys in the service's own settings, never in the code.

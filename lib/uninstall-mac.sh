@@ -7,7 +7,7 @@
 #
 #  Start it with:  bash setup-mac.sh --uninstall     (from the pack folder ~/Library/Application Support/MetaScience/pack)
 #  or:             bash lib/uninstall-mac.sh [--components=rstudio,quarto|all] [--yes [--remove-course]] [--dry-run]   (--parts= is the same)
-#  Parts: rstudio, r, quarto, node, vscode, ai (the AI assistant, Git, uv, this pack and its daily update), all.
+#  Parts: rstudio, r, quarto, node, vscode, web, codex, claude, ai (the AI assistant, Git, uv, this pack and its daily update), all.
 #  Written for bash 3.2 (the macOS default).
 # =============================================================================
 set -u
@@ -31,10 +31,12 @@ LOG_FILE="${TMPDIR:-/tmp}/metascience-uninstall-$(date +%Y%m%d-%H%M%S).log"
 FAKE="${MS_TEST_FAKE_UNINSTALL:-}"     # tests: other programs' uninstallers are only named, never run
 SUDO=""; [ "$(id -u)" != 0 ] && SUDO="sudo"
 TAB="$(printf '\t')"
-GROUPS_ORDER="rstudio r quarto node vscode core"
+GROUPS_ORDER="rstudio r quarto node vscode web codex claude core"
 group_name() {
   case "$1" in rstudio) echo "RStudio" ;; r) echo "R and the course R packages" ;; quarto) echo "Quarto" ;; node) echo "Node.js" ;;
     vscode) echo "VS Code and the add-ons the setup added to it (OpenCode, Python)" ;;
+    web) echo "Website tools (GitHub CLI, Vercel, Neon, Railway) and their sign-ins" ;; codex) echo "Codex and its sign-in" ;;
+    claude) echo "Claude Code and its sign-in" ;;
     core) echo "The AI assistant and the setup's own tools (OpenCode, Git, uv, this course pack and its daily update)" ;; esac
 }
 FAILED=0
@@ -71,8 +73,8 @@ fi
 CHOSEN=""
 if [ -n "$PARTS_ARG" ]; then
   for w in $(printf '%s' "$PARTS_ARG" | tr ',;' '  ' | tr 'A-Z' 'a-z'); do
-    case "$w" in all) CHOSEN="$CHOSEN $PRESENT" ;; ai|core) CHOSEN="$CHOSEN core" ;; rstudio|r|quarto|node|vscode) CHOSEN="$CHOSEN $w" ;; python) ;;
-      *) say "Unknown part: $w. Use any of: rstudio, r, quarto, node, vscode, ai, all."; exit 2 ;; esac
+    case "$w" in all) CHOSEN="$CHOSEN $PRESENT" ;; ai|core) CHOSEN="$CHOSEN core" ;; rstudio|r|quarto|node|vscode|web|codex|claude) CHOSEN="$CHOSEN $w" ;; python) ;;
+      *) say "Unknown part: $w. Use any of: rstudio, r, quarto, node, vscode, web, codex, claude, ai, all."; exit 2 ;; esac
   done
 elif [ "$YES" = 1 ]; then say "Say what to remove with --components (for example --components=rstudio,quarto, or --components=all)."; exit 2
 else
@@ -174,7 +176,7 @@ fi
 HOMEBREW_NOTE=""
 while IFS="$TAB" read -r part kind target; do
   [ -n "$kind" ] || continue
-  case "$kind" in rpkg|path|vsext) continue ;; esac
+  case "$kind" in rpkg|path|pathdir|vsext) continue ;; esac
   if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] remove $kind $target"; continue; fi
   case "$kind" in
     uvdata) if have uv || [ -n "$FAKE" ]; then run uv cache clean; run uv python uninstall --all; fi
@@ -205,9 +207,12 @@ done <<EOF
 $TODO
 EOF
 # a folder the setup put on PATH that is empty now (uv's ~/.local/bin once uv and uvx are gone; Windows VM test
-# 2026-11-15: it stayed, and so did its PATH entry): rmdir removes only an empty folder
+# 2026-11-15: it stayed, and so did its PATH entry): rmdir removes only an empty folder, and only one the setup made
+# itself (a 'pathdir' record, since 2026-11-16): an empty folder the student already had stays (d-c97c73)
 if [ "$DRY_RUN" = 0 ]; then while IFS="$TAB" read -r part kind target; do
-  [ "$kind" = path ] && [ -d "$target" ] && rmdir "$target" 2>/dev/null && echo "removed the empty folder $target" >> "$LOG_FILE"
+  [ "$kind" = pathdir ] || continue
+  [ -d "$target" ] && rmdir "$target" 2>/dev/null && echo "removed the empty folder $target" >> "$LOG_FILE"
+  [ -e "$target" ] || done_item "$part" "$kind" "$target"   # gone: its record goes too
 done <<EOF
 $TODO
 EOF
@@ -242,9 +247,12 @@ if [ "$DRY_RUN" = 0 ]; then
     if [ -n "$LEFT" ]; then printf '%s\n' "$LEFT" > "$RECORD"; else rm -f "$RECORD"; fi
     # a removed part must not come back with the next update or the next run of the setup
     if [ -f "$STATE_DIR/parts.txt" ]; then
-      keep=""; for p in $(cat "$STATE_DIR/parts.txt"); do
+      words="$(cat "$STATE_DIR/parts.txt")"
+      case " $(echo $words) " in *" all "*) words="$words r rstudio quarto python node vscode web codex claude" ;; esac   # "all": each part
+      keep=""; for p in $words; do
         case " $CHOSEN " in *" $p "*) continue ;; esac
-        [ "$p" = none ] && continue
+        case " $keep " in *" $p "*) continue ;; esac
+        [ "$p" = none ] || [ "$p" = all ] && continue
         [ "$p" = rstudio ] && case " $CHOSEN " in *" r "*) continue ;; esac
         keep="$keep $p"; done
       keep="${keep# }"; printf '%s\n' "${keep:-none}" > "$STATE_DIR/parts.txt"

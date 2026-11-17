@@ -428,6 +428,10 @@ class Table:
 
 # Parts a student may leave out (setup -Components / --components); the AI assistant, Git and uv are always installed.
 PARTS = ("r", "rstudio", "quarto", "python", "node", "vscode")
+# optional extras (owner request 2026-11-16): checked only when chosen
+EXTRA_PARTS = ("web", "codex", "claude")
+EXTRA_TOOLS = (("gh", "web"), ("vercel", "web"), ("neonctl", "web"), ("railway", "web"),
+               ("codex", "codex"), ("claude", "claude"))
 # what a check without --parts covers: the parts of every setup before VS Code was added (2026-11-16)
 DEFAULT_PARTS = ("r", "rstudio", "quarto", "python", "node")
 PART_NAMES = {"r": "R", "quarto": "Quarto", "python": "Python course packages", "node": "Node.js", "vscode": "VS Code"}
@@ -562,7 +566,8 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
     print("answer, R re-checks the reported statistic with statcheck, and Quarto renders a report.\n")
     part_of = {"node": "node", "Rscript": "r", "quarto": "quarto"}
     for tool, args in [("git", ["--version"]), ("node", ["--version"]), ("uv", ["--version"]),
-                       ("Rscript", ["--version"]), ("quarto", ["--version"]), ("opencode", ["--version"])]:
+                       ("Rscript", ["--version"]), ("quarto", ["--version"]), ("opencode", ["--version"])] \
+            + [(tool, ["--version"]) for tool, part in EXTRA_TOOLS if part in parts]:
         if tool in part_of and part_of[tool] not in parts:
             skip(tool, part_of[tool])
             continue
@@ -747,7 +752,7 @@ def main() -> int:
                     help="the optional parts this computer has, separated by spaces or commas "
                          "(default: all but vscode)")
     a = ap.parse_args()
-    parts = tuple(x for x in a.parts.replace(",", " ").split() if x in PARTS)
+    parts = tuple(x for x in a.parts.replace(",", " ").split() if x in PARTS + EXTRA_PARTS)
     course = pathlib.Path(a.course).expanduser()
     if a.command == "config":
         write_config(course)

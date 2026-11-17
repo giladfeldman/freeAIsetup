@@ -10,6 +10,8 @@ subtitle: "Meta-science and open science course — step-by-step guide for stude
 - **Quarto**: turns analyses into reports.
 - **VS Code** (Windows and Mac): a code editor, with an OpenCode button inside it, Python support, and R support when R is installed.
 - A course folder called **MetaScience** in your home folder, with the course rules for the AI (`AGENTS.md`).
+- If you say yes: the **website tools** (GitHub CLI, Vercel, Neon, Railway), so the AI can put a tool you built online
+  (Part 6), and, only if you pay for ChatGPT or Claude, **Codex** or **Claude Code** (Part 7).
 
 The setup takes **20-40 minutes**, most of it waiting. You only need to do something at a few points, marked with a hand: ✋.
 
@@ -58,6 +60,10 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
    - ✋ **If the window fills with program text** (lines starting with `#` and `$`) and nothing installs: the end of the line, ` | iex`, was missing. Nothing was installed and nothing is broken. Copy the **whole** line again, including ` | iex` at the end, and paste it.
 4. It says *"downloading the setup files"*, then *"downloaded and checked. Starting the setup"*, and shows the steps. Leave the window open.
    - ✋ It asks *"What should the setup install?"* and lists R, RStudio, Quarto, the Python course packages, Node.js and VS Code, each with the space it needs. Press **Enter** to install all of them (recommended). Leave a part out only if your teacher says you will not need it: type the numbers you want (for example `1 3`) and press Enter. The AI assistant is always installed. You are asked only once (to choose again later, see Part 5).
+   - ✋ Then it asks about three **optional extras**, one at a time. Each is explained on screen. For each one, type **yes** or **no** and press Enter (Enter alone does not count):
+     - *Publishing your tools as websites*: the free website tools (Part 6). Recommended: **yes**.
+     - *Codex*: only if you have a ChatGPT plan (Part 7). Otherwise: **no**.
+     - *Claude Code*: only if you pay for Claude (Part 7). Otherwise: **no**.
    - ✋ **If it says *"Smart App Control is ON"*:** this Windows protection blocks parts of R and Python that the course needs. Windows Security opens by itself. Click **Smart App Control settings**, choose **Off**, confirm (Windows asks for the computer's administrator password; on a laptop owned by your employer or school, ask its IT), then go back to the PowerShell window and press **Enter**. Your normal virus protection stays on. Windows may not let you switch it back on later without a reset; if you do not want that, type **Q** and ask your teacher about the browser-only option.
    - ✋ Windows may ask *"Do you want to allow this app to make changes to your device?"* If you know your computer's admin password, click **Yes**. If you do not, click **No**: the setup then installs that tool just for your account.
 5. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
@@ -75,6 +81,10 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
 3. Click in the Terminal window, paste with **⌘ + V**, and press **Enter**.
    - ✋ **If the window fills with program text** and nothing installs: the end of the line, ` | bash`, was missing. Nothing was installed. Copy the **whole** line again, including ` | bash`, and paste it.
 4. ✋ It asks *"What should the setup install?"* and lists R, RStudio, Quarto, the Python course packages, Node.js and VS Code, each with the space it needs. Press **Enter** to install all of them (recommended). Leave a part out only if your teacher says you will not need it: type the numbers you want (for example `1 3`) and press Enter. The AI assistant is always installed. You are asked only once (to choose again later, see Part 5).
+   - ✋ Then it asks about three **optional extras**, one at a time. Each is explained on screen. For each one, type **yes** or **no** and press Enter (Enter alone does not count):
+     - *Publishing your tools as websites*: the free website tools (Part 6). Recommended: **yes**.
+     - *Codex*: only if you have a ChatGPT plan (Part 7). Otherwise: **no**.
+     - *Claude Code*: only if you pay for Claude (Part 7). Otherwise: **no**.
    - ✋ When asked for a **Password**, type your Mac login password and press Enter. **Nothing appears while you type**, which is normal.
 5. ✋ If a window asks to install *"command line developer tools"*, click **Install**, then **Agree**. This alone can take 10–40 minutes; the setup continues by itself afterwards. If the screen goes dark or locks meanwhile, log in again: the setup keeps running underneath.
    - ✋ If macOS asks whether *"Terminal"* may access your **Downloads** folder, click **Allow**.
@@ -256,7 +266,7 @@ Leaving a part out here does not remove it; the setup just stops installing and 
 - **Mac:** in Terminal, paste: `bash "$HOME/Library/Application Support/MetaScience/pack/setup-mac.sh" --uninstall`
 
 It lists what the setup itself installed (for example RStudio, R and the course R packages, Quarto, Node.js, VS Code
-and its add-ons, and the AI assistant with its tools). Type the numbers of what to remove, or **A** for all of it, and confirm with **y**.
+and its add-ons, the website tools, Codex, Claude Code, and the AI assistant with its tools). Type the numbers of what to remove, or **A** for all of it, and confirm with **y**.
 
 - It removes only what the setup installed. Programs that were on your laptop before the setup are not listed and
   are never touched.
@@ -267,6 +277,44 @@ and its add-ons, and the AI assistant with its tools). Type the numbers of what 
   update can be removed this way. Remove other programs yourself (Windows: **Settings > Apps > Installed apps**;
   Mac: drag them from **Applications** to the **Bin**).
 - On a Mac, Homebrew stays in place, because other programs may use it.
+
+# Part 6 — Optional: publish a tool as a website
+
+If you said **yes** to the website tools, the AI assistant can put a tool you built online, for free. You need these
+free accounts only when you want to publish; sign in to each one once. **Never enter a card on any of them** (see
+"Money" above): their free plans need none, and at a free limit the service pauses until the next month.
+
+| Tool | What it does | Free plan (checked Nov 2026) | Sign in once (in a terminal, or let the AI run it) |
+|---|---|---|---|
+| GitHub CLI (`gh`) | keeps your code on GitHub | free | `gh auth login` |
+| Vercel (`vercel`) | puts your tool online as a website | Hobby plan: free; at a monthly limit that feature pauses for 30 days | `vercel login` |
+| Neon (`neonctl`) | a Postgres database for your tool | Free plan: 1 GB per project, 100 compute hours a month; at the limit the database pauses, nothing is deleted | `neonctl auth` |
+| Railway (`railway`) | a small server, only if your tool needs one | a one-time $5 trial for 30 days, then $1 of free use a month | `railway login` |
+
+Each sign-in opens your browser; sign in with GitHub where you can. Railway gives its full trial only after you
+connect GitHub. Railway deletes the stored data of a trial 30 days after its free credit runs out, so keep a copy of
+anything important.
+
+**Keep your data in the EU.** When the AI creates something, ask it to choose the EU location: Neon
+`aws-eu-central-1` (Frankfurt), Vercel functions `fra1` (Frankfurt), Railway `europe-west4` (Amsterdam). Not London:
+it is outside the EU.
+
+**Ask the AI**, for example: *"Put this tool online as a website on Vercel, with a Neon database in Frankfurt. Explain
+each step before you do it."* Never publish personal data of participants.
+
+# Part 7 — Optional: use your ChatGPT or Claude plan
+
+Only if you **already pay** for ChatGPT or Claude. The course needs only the free AI. Do not buy a plan for it.
+
+- **ChatGPT plan (Plus or higher), inside OpenCode:** in OpenCode type `/connect`, choose **OpenAI**, then
+  **ChatGPT Plus/Pro**, and sign in in the browser. OpenCode then offers the ChatGPT models.
+- **ChatGPT plan, with Codex** (if you installed it): open a terminal in your course folder, type `codex`, choose
+  **Sign in with ChatGPT**, and sign in in the browser.
+- **Claude plan (Pro, Max or Ultra), with Claude Code** (if you installed it): open a terminal in your course folder,
+  type `claude`, and sign in with your Claude account in the browser. A Claude plan **cannot** be connected to
+  OpenCode: Anthropic allows it only in its own Claude Code.
+
+These use your plan's own limits. Never choose "extra usage", "buy credits" or an API key that bills you.
 
 # Privacy rules
 

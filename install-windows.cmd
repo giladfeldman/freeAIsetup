@@ -1,16 +1,7 @@
 @echo off
 rem MetaScience course setup for Windows: double-click this file.
 cd /d "%~dp0"
-if not exist "%~dp0setup-windows.ps1" (
-  echo.
-  echo  The setup files are still inside the zip file.
-  echo  Close this window. Right-click metascience-setup.zip, choose "Extract All...", click Extract,
-  echo  then open the new folder student-setup and double-click install-windows.cmd there.
-  echo.
-  echo Press any key to close this window.
-  pause >nul
-  exit /b 2
-)
+if not exist "%~dp0setup-windows.ps1" goto inzip
 rem Files from a downloaded zip are marked "from the internet"; unmark this folder's own files so Windows runs them.
 set "MS_DIR=%~dp0"
 powershell -NoProfile -Command "Get-ChildItem -LiteralPath $env:MS_DIR -Recurse -File | Unblock-File" >nul 2>&1
@@ -55,3 +46,51 @@ echo.
 echo Press any key to close this window.
 pause >nul
 exit /b 3
+:inzip
+rem Opened from inside the zip: Windows copied only this one file to a temporary folder. Find the zip, unpack it
+rem into a new folder next to it (never over an existing one) and start the setup from there (d-1ee3b4).
+set "MS_SELF=%~f0"
+set "MS_NEXT="
+for /f "usebackq delims=" %%n in (`powershell -NoProfile -ExecutionPolicy Bypass -Command "iex ((Get-Content -LiteralPath $env:MS_SELF -Raw) -split ('#MS-ZIP' + '-RECOVER#'))[1]"`) do set "MS_NEXT=%%n"
+if not defined MS_NEXT goto inzip_manual
+if not exist "%MS_NEXT%" goto inzip_manual
+call "%MS_NEXT%" %*
+exit /b %ERRORLEVEL%
+:inzip_manual
+echo.
+echo  The setup files are still inside the zip file.
+echo  Close this window. Right-click metascience-setup.zip, choose "Extract All...", click Extract,
+echo  then open the new folder student-setup and double-click install-windows.cmd there.
+echo.
+echo Press any key to close this window.
+pause >nul
+exit /b 2
+
+rem ---- PowerShell code read by the :inzip step above; cmd never runs past the exit above ----
+#MS-ZIP-RECOVER#
+$ErrorActionPreference = 'Stop'
+function Say($m) { [Console]::Error.WriteLine($m) }   # stdout carries only the result (the path to run)
+try {
+  $here = Split-Path -Parent $env:MS_SELF   # e.g. %TEMP%\Temp1_metascience-setup.zip\student-setup
+  $zipName = 'metascience-setup.zip'
+  foreach ($d in @($here, (Split-Path -Parent $here))) { if ((Split-Path -Leaf $d) -match '^Temp\d+_(.+\.zip)$') { $zipName = $Matches[1] } }
+  $roots = @()
+  try { $roots += (New-Object -ComObject Shell.Application).NameSpace('shell:Downloads').Self.Path } catch {}
+  $roots += @("$env:USERPROFILE\Downloads", "$env:USERPROFILE\Desktop", "$env:USERPROFILE\Documents")
+  foreach ($od in @($env:OneDrive, $env:OneDriveConsumer, $env:OneDriveCommercial)) { if ($od) { $roots += @("$od\Downloads", "$od\Desktop", "$od\Documents") } }
+  $zip = $roots | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -Unique |
+    ForEach-Object { Get-ChildItem -LiteralPath $_ -Filter $zipName -File -ErrorAction SilentlyContinue } |
+    Sort-Object LastWriteTime -Descending | Select-Object -First 1
+  if (-not $zip) { exit 1 }
+  $base = Join-Path $zip.DirectoryName ([IO.Path]::GetFileNameWithoutExtension($zip.Name)); $dest = $base; $n = 2
+  while (Test-Path -LiteralPath $dest) { $dest = "$base ($n)"; $n++ }   # never unpack over an existing folder
+  Say ''
+  Say "  The setup was opened from inside the zip file. Unpacking it into $dest ..."
+  Add-Type -AssemblyName System.IO.Compression.FileSystem
+  [IO.Compression.ZipFile]::ExtractToDirectory($zip.FullName, $dest)
+  $cmd = Join-Path $dest 'student-setup\install-windows.cmd'
+  if (-not ((Test-Path -LiteralPath $cmd) -and (Test-Path -LiteralPath (Join-Path $dest 'student-setup\setup-windows.ps1')))) { Say '  The zip does not hold the setup files.'; exit 1 }
+  Say '  Unpacked. Starting the setup from there.'
+  Say ''
+  Write-Output $cmd
+} catch { Say "  Could not unpack the zip by itself: $_"; exit 1 }

@@ -46,6 +46,11 @@ try {
   Check 'rstudio only: record still lists the rest' (@(Rec | Where-Object { $_ -match '^(quarto|r|node|core|course)\t' }).Count -eq 14) "$(@(Rec).Count) lines"
   Check 'rstudio only: not reinstalled by the next update (parts.txt)' ((Get-Content (Join-Path $state 'parts.txt') -Raw).Trim() -eq 'r quarto python node')
 
+  # 1b. a list saved as "all" (by hand; the setup saves each part): removing R takes R and RStudio out of it
+  Make-State; Set-Content -LiteralPath (Join-Path $state 'parts.txt') -Value 'all' -Encoding ASCII
+  $null = Run-Un @('-Parts', 'r', '-Yes')
+  Check 'saved all, R removed: each other part kept, R and RStudio gone' ((Get-Content (Join-Path $state 'parts.txt') -Raw).Trim() -eq 'quarto python node vscode web codex claude') (Get-Content (Join-Path $state 'parts.txt') -Raw)
+
   # 2. everything, no questions: all recorded things go, the course folder and what was here before stay
   Make-State
   $code = Run-Un @('-Parts', 'all', '-Yes')
@@ -65,14 +70,15 @@ try {
   #     the switch: PowerShell names ignore case; found 2026-11-15). A folder the setup put on PATH goes once it is empty
   #     (VM 2026-11-15: uv's .local\bin stayed, and so did its PATH entry); one holding anything else stays.
   Make-State
-  foreach ($d in 'localbin', 'keepbin') { New-Item -ItemType Directory -Force -Path (D $d) | Out-Null }
+  foreach ($d in 'localbin', 'keepbin', 'ownbin') { New-Item -ItemType Directory -Force -Path (D $d) | Out-Null }
   Set-Content -LiteralPath (D 'localbin\uv2.exe') -Value 'x'; Set-Content -LiteralPath (D 'keepbin\other.exe') -Value 'x'
-  Add-Content -LiteralPath (Join-Path $state 'installed.tsv') -Value @("core`tfile`t$(D 'localbin\uv2.exe')", "core`tpath`t$(D 'localbin')", "core`tpath`t$(D 'keepbin')") -Encoding UTF8
+  Add-Content -LiteralPath (Join-Path $state 'installed.tsv') -Value @("core`tfile`t$(D 'localbin\uv2.exe')", "core`tpath`t$(D 'localbin')", "core`tpathdir`t$(D 'localbin')", "core`tpath`t$(D 'keepbin')", "core`tpathdir`t$(D 'keepbin')", "core`tpath`t$(D 'ownbin')") -Encoding UTF8
   $code = Run-Un @('-Parts', 'all', '-Yes', '-RemoveCourse')
   Check 'all -RemoveCourse: exit 0' ($code -eq 0) "exit $code $(Out)"
   Check 'all -RemoveCourse: the course folder is deleted' (-not (Test-Path (D 'course'))) (Out)
   Check 'all: a PATH folder the setup made, empty now, is removed' (-not (Test-Path (D 'localbin'))) (Out)
   Check 'all: a PATH folder holding something else stays' (Test-Path (D 'keepbin\other.exe'))
+  Check 'all: an empty PATH folder the student already had stays (no pathdir record; d-c97c73)' (Test-Path (D 'ownbin'))
   Check 'all -RemoveCourse: something that was here before is untouched' (Test-Path (D 'was-here-before\keep.txt'))
 
   # 2c. winget says "no installed package found" (-1978335212) for Node.js although it is installed (VM 2026-11-15):
@@ -224,6 +230,20 @@ try {
   & ([scriptblock]::Create("$def`n`$StateDir = '$rs'; `$LogFile = '$work\r.log'; `$DryRun = `$true; Record-Install 'node' 'winget' 'X'"))
   $lines = @(Get-Content -LiteralPath (Join-Path $rs 'installed.tsv'))
   Check 'Record-Install: tab-separated lines, no duplicate, nothing in a dry run' ($lines.Count -eq 2 -and $lines[0] -eq "quarto`tdir`tC:\x" -and $lines[1] -eq "r`trpkg`tirr") ($lines -join ' | ')
+  # Add-UserPath records 'pathdir' only for a folder made during this run (d-c97c73); the PATH itself is a stand-in
+  $def2 = ($ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -in 'Record-Install', 'Log', 'Add-UserPath', 'Split-PathList' }, $true) | ForEach-Object { $_.Extent.Text }) -join "`n"
+  $pd = Join-Path $work 'pdstate'; $old = Join-Path $work 'pd-old'; $new = Join-Path $work 'pd-new'
+  New-Item -ItemType Directory -Force -Path $old | Out-Null
+  $stub = "`$script:fakePath = ''; function Get-UserPathRaw { `$script:fakePath }; function Set-UserPathRaw(`$v) { `$script:fakePath = `$v }; function Say(`$m) {}"
+  $envSave = $env:Path
+  try {
+    & ([scriptblock]::Create("$def2`n$stub`n`$StateDir = '$pd'; `$LogFile = '$work\pd.log'; `$DryRun = `$false
+      `$script:RunStart = (Get-Date).AddHours(1); Add-UserPath '$old' 'core'
+      `$script:RunStart = (Get-Date).AddSeconds(-2); New-Item -ItemType Directory -Force -Path '$new' | Out-Null; Add-UserPath '$new' 'core'"))
+  } finally { $env:Path = $envSave }
+  $pl = @(Get-Content -LiteralPath (Join-Path $pd 'installed.tsv'))
+  Check 'Add-UserPath: a folder made in this run gets a pathdir record' ($pl -contains "core`tpathdir`t$new") ($pl -join ' | ')
+  Check 'Add-UserPath: a folder that was here before gets none (both get a path record)' ($pl -notcontains "core`tpathdir`t$old" -and $pl -contains "core`tpath`t$old" -and $pl -contains "core`tpath`t$new") ($pl -join ' | ')
 } finally {
   foreach ($v in 'MS_STATE_DIR', 'MS_TEST_FAKE_UNINSTALL') { Remove-Item "Env:\$v" -ErrorAction SilentlyContinue }
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue

@@ -8,7 +8,7 @@
 #  (setup-windows.ps1 runs a copy of this file from the temp folder, because Windows cannot delete the pack folder
 #  while a program runs from it). Options: [-Components rstudio,quarto|all] [-Yes] [-DryRun] [-RemoveCourse]
 #  (-Parts is the same as -Components, in both places: before 2026-11-13 the setup ignored -Parts)
-#  Parts: rstudio, r, quarto, node, vscode, ai (the AI assistant, Git, uv, this pack and its daily update), all.
+#  Parts: rstudio, r, quarto, node, vscode, web, codex, claude, ai (the AI assistant, Git, uv, this pack and its daily update), all.
 # =============================================================================
 param(
   [Alias('Components')][string]$Parts = '',   # what to remove without asking for the list (all = everything except the course folder)
@@ -30,6 +30,9 @@ $Groups = [ordered]@{
   quarto  = 'Quarto'
   node    = 'Node.js'
   vscode  = 'VS Code and the add-ons the setup added to it (OpenCode, Python)'
+  web     = 'Website tools (GitHub CLI, Vercel, Neon, Railway) and their sign-ins'
+  codex   = 'Codex and its sign-in'
+  claude  = 'Claude Code and its sign-in'
   core    = 'The AI assistant and the setup''s own tools (OpenCode, Git, uv, this course pack and its daily update)'
 }
 
@@ -113,7 +116,7 @@ if ($Parts) {
     elseif ($w -eq 'ai') { $chosen += 'core' }
     elseif ($Groups.Contains($w)) { $chosen += $w }
     elseif ($w -eq 'python') { }   # the Python course packages live in the course folder (asked separately)
-    else { Say "Unknown part: $w. Use any of: rstudio, r, quarto, node, vscode, ai, all."; exit 2 }
+    else { Say "Unknown part: $w. Use any of: rstudio, r, quarto, node, vscode, web, codex, claude, ai, all."; exit 2 }
   }
   $chosen = @($present | Where-Object { $chosen -contains $_ })
 } elseif ($Yes) { Say 'Say what to remove with -Components (for example -Components rstudio,quarto, or -Components all).'; exit 2 }
@@ -161,7 +164,7 @@ if (-not $Yes -and -not $DryRun) {
 # order: R packages before R, uv's own data before uv, the desktop app, the update task, programs, folders, the
 # pack itself, and last the PATH entries whose folders are now gone
 # (VS Code's add-ons before VS Code: its own command removes them)
-$order = @{ rpkg = 0; uvdata = 1; app = 2; vsext = 2; task = 3; winget = 4; inno = 4; dir = 5; file = 5; pack = 6; path = 7 }
+$order = @{ rpkg = 0; uvdata = 1; app = 2; vsext = 2; task = 3; winget = 4; inno = 4; dir = 5; file = 5; pack = 6; path = 7; pathdir = 7 }
 $todo = @($items | Where-Object { $chosen -contains $_.part -and -not ($keepPack -and $_.kind -in 'pack', 'task') } | Sort-Object { $order[$_.kind] })
 if ($delCourse) { $todo += $course[0] }
 $done = @()
@@ -214,7 +217,7 @@ if ($ext.Count) {
   }
 }
 foreach ($it in $todo) {
-  if ($it.kind -in 'rpkg', 'path', 'vsext') { continue }
+  if ($it.kind -in 'rpkg', 'path', 'pathdir', 'vsext') { continue }
   $t = $it.target
   if ($DryRun) { Say "  [dry-run] remove $($it.kind) $t"; continue }
   switch ($it.kind) {
@@ -267,12 +270,14 @@ foreach ($it in $todo) {
   }
 }
 # a folder the setup put on PATH that is empty now (uv's .local\bin once uv.exe, uvx.exe and uvw.exe are gone; VM
-# test 2026-11-15: it stayed, and so did its PATH entry): remove it. An empty folder holds nothing of the student's.
-foreach ($pth in @($todo | Where-Object { $_.kind -eq 'path' })) {
+# test 2026-11-15: it stayed, and so did its PATH entry): remove it, but only a folder this setup made itself (a
+# 'pathdir' record, since 2026-11-16); an empty folder the student already had stays (d-c97c73).
+foreach ($pth in @($todo | Where-Object { $_.kind -eq 'pathdir' })) {
   # [IO.Directory]::Delete refuses a folder that is not empty (or cannot be read) and never asks anything
   if (-not $DryRun -and (Test-Path -LiteralPath $pth.target -PathType Container)) {
     try { [IO.Directory]::Delete($pth.target); Log "removed the empty folder $($pth.target)" } catch {}
   }
+  if (-not $DryRun -and -not (Test-Path -LiteralPath $pth.target)) { $done += $pth }   # gone: its record goes too
 }
 # PATH entries the setup added, whose folders are gone now
 $gonePaths = @($todo | Where-Object { $_.kind -eq 'path' -and -not (Test-Path -LiteralPath $_.target) })
@@ -302,7 +307,7 @@ if (-not $DryRun) {
     # a removed part must not come back with the next update or the next run of the setup
     $pf = Join-Path $StateDir 'parts.txt'
     if (Test-Path -LiteralPath $pf) {
-      $keepParts = @((Get-Content -LiteralPath $pf -Raw) -split '\s+' | Where-Object { $_ -and $_ -ne 'none' -and ($chosen -notcontains $_) -and -not ($_ -eq 'rstudio' -and $chosen -contains 'r') })
+      $keepParts = @(((Get-Content -LiteralPath $pf -Raw) -replace '\ball\b', 'r rstudio quarto python node vscode web codex claude') -split '\s+' | Select-Object -Unique | Where-Object { $_ -and $_ -ne 'none' -and ($chosen -notcontains $_) -and -not ($_ -eq 'rstudio' -and $chosen -contains 'r') })
       Set-Content -LiteralPath $pf -Value $(if ($keepParts.Count) { $keepParts -join ' ' } else { 'none' }) -Encoding ASCII
     }
   }

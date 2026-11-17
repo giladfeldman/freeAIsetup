@@ -16,6 +16,7 @@ $env:METASCIENCE_DIR = Join-Path $work 'MetaScience'      # never the real cours
 $env:MS_STATE_DIR = Join-Path $work 'state'               # never the real record of parts and installs
 New-Item -ItemType Directory -Force -Path $env:MS_STATE_DIR | Out-Null
 Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Value 'all' -Encoding ASCII   # no parts question
+Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'asked.txt') -Value 'web codex claude' -Encoding ASCII   # nor the extras questions
 $pass = 0; $fail = 0
 function Check($name, [bool]$ok, $detail = '') { if ($ok) { "PASS $name"; $script:pass++ } else { "FAIL $name $detail"; $script:fail++ } }
 function Records { @(Get-Content -LiteralPath $rec -Encoding UTF8 | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json }) }
@@ -60,6 +61,36 @@ try {
   Check '-Yes: no question, nothing sent, exit 1' ((Records).Count -eq 0 -and $code -eq 1)
   Reset-Env
 
+  # ---- a parts list saved by an older setup ("all", no answers to the three extras yet): asked once, and only a yes
+  #      counts; Codex and Claude Code never come from the saved "all" (they did before this check, 2026-11-17)
+  Reset-Env; $env:MS_TEST_FAIL_AT = 'precheck'; Remove-Item -LiteralPath (Join-Path $env:MS_STATE_DIR 'asked.txt')
+  $null = Run-Setup @('yes', 'no', '', '', '', 'n', 'n')
+  $o = Get-Content (Join-Path $work 'out.txt') -Raw
+  $line = [regex]::Match($o, '(?m)^\s*Installing: .*$').Value
+  Check 'older "all", answers yes/no/(Enter x3): asked once' ($o -match 'offers three more optional parts') "$line"
+  Check 'older "all": the website tools installed (yes)' ($line -match 'Website tools') "$line"
+  Check 'older "all": Codex and Claude Code not installed (no, no answer)' ($line -and $line -notmatch 'Codex' -and $line -notmatch 'Claude Code') "$line"
+  Check 'older "all": the answers are remembered' (Test-Path -LiteralPath (Join-Path $env:MS_STATE_DIR 'asked.txt'))
+  Remove-Item -LiteralPath (Join-Path $env:MS_STATE_DIR 'asked.txt'); Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Value 'all' -Encoding ASCII
+  $null = Run-Setup @() @('-Yes')
+  $line = [regex]::Match((Get-Content (Join-Path $work 'out.txt') -Raw), '(?m)^\s*Installing: .*$').Value
+  Check 'older "all" with -Yes: not asked, no Codex or Claude Code' ($line -and $line -match 'Website tools' -and $line -notmatch 'Codex|Claude Code') "$line"
+  # an unattended first run saves its parts, so a later check and update know them (VS Code and the website tools
+  # were checked by neither before 2026-11-17)
+  Remove-Item -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt')
+  $null = Run-Setup @() @('-Yes')
+  Check '-Yes, first run: its parts are saved' ((Get-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Raw).Trim() -eq 'r rstudio quarto python node vscode web') "$(Get-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Raw)"
+  Remove-Item -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt')
+  $null = Run-Setup @() @('-Yes', '-NoGui')
+  Check '-Yes -NoGui, first run: saved without RStudio and VS Code' ((Get-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Raw).Trim() -eq 'r quarto python node web')
+  # a saved list with the website tools, the student now answers no to all three: the answers decide
+  Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Value 'r web' -Encoding ASCII
+  $null = Run-Setup @('no', 'no', 'no', 'n', 'n')
+  $line = [regex]::Match((Get-Content (Join-Path $work 'out.txt') -Raw), '(?m)^\s*Installing: .*$').Value
+  Check 'saved "r web", answers no/no/no: the website tools are not kept' ($line -and $line -notmatch 'Website tools' -and $line -match 'R and the course') "$line"
+  Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Value 'all' -Encoding ASCII
+  Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'asked.txt') -Value 'web codex claude' -Encoding ASCII
+  Reset-Env
   # ---- success count: the function itself, with its state folder pointed at a scratch folder
   $tokens = $null; $errs = $null
   $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)

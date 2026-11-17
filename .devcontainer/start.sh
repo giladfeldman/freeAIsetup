@@ -6,9 +6,28 @@
 # Every program is started with setsid -f (its own session): the Codespace ends whatever this script started
 # when the script exits. OpenCode web vanished that way on the first start of a new Codespace (2026-11-10:
 # "opencode web started" in the log, no process, empty log); RStudio survived only because it detaches itself.
-exec >>/tmp/start.log 2>&1
+exec >>"${MS_START_LOG:-/tmp/start.log}" 2>&1
 echo "== start.sh $(date -u +%FT%TZ)"
 HERE="$(cd "$(dirname "$0")" && pwd)"
+# A Codespace keeps the copy of this repository from the day it was made, so fixes to the start page and to this
+# script released later never reached it (d-c09bc7). Each start brings that copy up to date first: only a
+# fast-forward, only when nothing tracked was changed here (the student's work lives in the course folder, not here),
+# at most 20 s, and then the new start.sh runs once. Changes to devcontainer.json (tools, add-ons) still need a new
+# Codespace; the course pack itself is updated by update.sh below.
+REPO="$(cd "$HERE/.." && pwd)"
+if [ -z "${MS_START_UPDATED:-}" ] && command -v git >/dev/null && git -C "$REPO" rev-parse --git-dir >/dev/null 2>&1 \
+   && git -C "$REPO" diff --quiet HEAD -- 2>/dev/null; then
+  before="$(git -C "$REPO" rev-parse HEAD)"
+  timeout 20 git -C "$REPO" pull --ff-only --quiet 2>&1 | tail -3
+  after="$(git -C "$REPO" rev-parse HEAD)"
+  if [ "$before" != "$after" ]; then
+    echo "this Codespace's copy of the setup updated ($before -> $after); running the new start.sh"
+    MS_START_UPDATED=1 exec bash "$HERE/start.sh"
+  fi
+  echo "this Codespace's copy of the setup is current ($after)"
+elif [ -z "${MS_START_UPDATED:-}" ]; then
+  echo "this Codespace's copy of the setup was not updated (no git, or files in it were changed here)"
+fi
 export PATH="$HOME/.local/bin:$PATH"
 COURSE="${METASCIENCE_DIR:-/workspaces/MetaScience}"
 PACK="${XDG_DATA_HOME:-$HOME/.local/share}/metascience/pack"

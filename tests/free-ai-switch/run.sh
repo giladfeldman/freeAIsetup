@@ -89,11 +89,13 @@ grep -q "Automatic note from the course setup" "$T/msgs.json" && pass "1 the cha
 grep -q '/zen/' "$T/requests.log" && pass "1 control: the free models were really tried first" || fail "1 free models never tried"
 
 # --- case 2: next message goes straight to the backup
-sleep 4   # let the first chat's own late requests (title, aborted retry) finish before counting
-zen_before=$(grep -c '/zen/' "$T/requests.log")
-if ask "$S" "second" 2; then pass "2 new message answered by the backup"; else fail "2 no answer to second message"; fi
-zen_after=$(grep -c '/zen/' "$T/requests.log")
-[ "$zen_after" = "$zen_before" ] && pass "2 no request went to the used-up free models" || fail "2 free models asked again ($zen_before -> $zen_after)"
+# Count only requests that carry the second message itself: the first chat's late requests (its title, an aborted
+# retry) may still reach the free models at any moment, which made a plain count flaky (d-c39084).
+if ask "$S" "SECOND-MSG-7Q" 2; then pass "2 new message answered by the backup"; else fail "2 no answer to second message"; fi
+zen_second=$(grep '/zen/' "$T/requests.log" | grep -c '"second": true')
+backup_second=$(grep '/backup/' "$T/requests.log" | grep -c '"second": true')
+[ "$zen_second" = 0 ] && pass "2 the second message never went to the used-up free models" || fail "2 the second message went to the free models ($zen_second requests)"
+[ "$backup_second" -ge 1 ] && pass "2 control: the second message is visible in the backup's requests" || fail "2 control: the marker was never seen, so the count above proves nothing"
 
 # --- case 4: first backup out of requests -> next backup
 printf '[{"providerID":"tired","modelID":"tired-free","name":"Tired Free","free":true},{"providerID":"backup","modelID":"backup-free","name":"Backup Free","free":true}]' > "$MS_FREE_AI_FALLBACK"

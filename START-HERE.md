@@ -38,6 +38,10 @@ Keep that tab open. You can always come back to this tab and tap the link again.
 - The Codespace switches off by itself after 30 minutes without use. Nothing is lost; open it again from
   [github.com/codespaces](https://github.com/codespaces).
 - It is deleted if you do not open it for 30 days, so download what you hand in.
+- The setup also adds the free **website tools** (GitHub CLI, Vercel, Neon, Railway), so the AI can put a tool you
+  built online: see Part 6 of the student guide. **Codex** and **Claude Code** are not added here; only if you already
+  pay for ChatGPT or Claude: menu (☰) > **Terminal** > **New Terminal**, paste `bash setup-mac.sh --choose`, and
+  answer the questions.
 
 ### Money: all free
 

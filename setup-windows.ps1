@@ -3,12 +3,13 @@
 #  Installs: OpenCode (desktop + command line), Git, Node.js, uv + Python,
 #            R + course packages, RStudio, Quarto, VS Code (with its OpenCode, Python and R add-ons);
 #            creates %USERPROFILE%\MetaScience;
+#            optionally the website tools (GitHub CLI, Vercel, Neon, Railway), Codex and Claude Code;
 #            runs a real end-to-end check that uses every installed tool.
 #  Safe to run again: it skips what is already installed and repairs the rest.
 #
 #  Start it by double-clicking install-windows.cmd (recommended), or:
 #    powershell -ExecutionPolicy Bypass -File setup-windows.ps1 [-Check] [-Keys] [-Fix] [-DryRun] [-SkipAI]
-#                [-Choose] [-Components r,rstudio,quarto,python,node,vscode|all|none] [-Uninstall [-RemoveCourse]]
+#                [-Choose] [-Components r,rstudio,quarto,python,node,vscode,web,codex,claude|all|none] [-Uninstall [-RemoveCourse]]
 #  Written for Windows PowerShell 5.1 (the Windows default).
 # =============================================================================
 param(
@@ -24,7 +25,7 @@ param(
   [switch]$NoAutoUpdate, # do not set up (or remove) the automatic daily update check
   [switch]$FromUpdate, # internal: run by the updater after new files arrived (quiet, no AI check)
   [switch]$Choose,    # ask again which parts to install
-  [Alias('Parts')][string]$Components = '', # the parts to install (or with -Uninstall: to remove), without asking: r,rstudio,quarto,python,node,vscode (or all / none)
+  [Alias('Parts')][string]$Components = '', # the parts to install (or with -Uninstall: to remove), without asking: r,rstudio,quarto,python,node,vscode,web,codex,claude (or all / none)
   [switch]$Uninstall, # remove some or all of what this setup installed (lib\uninstall-windows.ps1)
   [switch]$RemoveCourse # with -Uninstall -Yes: also delete the course folder (otherwise the student is asked)
 )
@@ -47,6 +48,7 @@ $StateDir  = if ($env:MS_STATE_DIR) { $env:MS_STATE_DIR } else { Join-Path $env:
 $CourseDir = if ($env:METASCIENCE_DIR) { $env:METASCIENCE_DIR } else { Join-Path $env:USERPROFILE 'MetaScience' }
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $KitDir    = Join-Path $ScriptDir 'course-kit'
+$script:RunStart = (Get-Date).AddSeconds(-2)   # a folder created after this was made by this run (PATH folders, d-c97c73)
 $LogFile   = Join-Path $env:TEMP ("metascience-setup-{0}.log" -f (Get-Date -Format 'yyyyMMdd-HHmmss'))
 $RPackages = 'rmarkdown knitr readr dplyr tidyr ggplot2 metafor statcheck irr here mcptools'
 $script:Failed = 0
@@ -121,7 +123,7 @@ function Repair-UserPath {
     Set-UserPathRaw $fixed; Say '  Repaired the PATH list of this account (some entries were glued together or repeated).'
   }
 }
-function Add-UserPath($dir) {
+function Add-UserPath($dir, $part = 'core') {   # $part: which part of the setup the PATH entry belongs to (uninstall)
   if (-not (Test-Path -LiteralPath $dir)) { return }
   $pathParts = @(Split-PathList (Get-UserPathRaw))      # @() matters: one entry must stay a list, not become a string
   $have = @($pathParts | ForEach-Object { [Environment]::ExpandEnvironmentVariables($_).TrimEnd('\').ToLowerInvariant() })
@@ -129,7 +131,9 @@ function Add-UserPath($dir) {
     if ($DryRun) { Say "  [dry-run] add $dir to your PATH"; return }
     Set-UserPathRaw ((@($pathParts) + @($dir)) -join ';')
     Log "added to user PATH: $dir"
-    Record-Install 'core' 'path' $dir
+    Record-Install $part 'path' $dir
+    # made by this run: the uninstall may remove it once empty (a folder the student already had is never removed)
+    if ((Get-Item -LiteralPath $dir).CreationTime -ge $script:RunStart) { Record-Install $part 'pathdir' $dir }
   }
   if (($env:Path.Split(';')) -notcontains $dir) { $env:Path = "$dir;$env:Path" }
 }
@@ -143,6 +147,26 @@ function Download($url, $dest) {
     Warn 'GitHub' 'downloads from GitHub are failing right now; using other download sites where they exist'
   }
   return $false
+}
+# Who signs each program this setup downloads straight from its maker (read from the real downloads, 2026-11-16).
+# Windows checks that the signature is intact and comes from a certificate it trusts; the setup also checks the name,
+# so a program that is signed, but by someone else, is not run or kept (d-4e90ed). The R installer is signed by a
+# member of the R Core Team in person: if CRAN changes the signer, the R step fails and names the new signer.
+$Signers = @{
+  'VS Code' = @('Microsoft Corporation'); 'R' = @('Martyn Plummer'); 'RStudio' = @('Posit Software, PBC')
+  'Quarto' = @('Posit Software, PBC'); 'Git' = @('Johannes Schindelin'); 'uv' = @('OpenAI OpCo, LLC')
+  'OpenCode' = @('Anomaly Innovations, Inc https://anoma.ly/')
+}
+function Signed-By($file, $name) {   # $true when $file carries an intact, trusted signature by $name's maker
+  if ($DryRun) { return $true }
+  try { $s = Get-AuthenticodeSignature -LiteralPath $file } catch { Log "signature check failed: $file $_"; return $false }
+  $who = if ($s.SignerCertificate) { $s.SignerCertificate.GetNameInfo([Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) } else { '' }
+  Log "signature of ${file}: $($s.Status), signed by '$who'"
+  return ("$($s.Status)" -eq 'Valid' -and $Signers[$name] -contains $who)
+}
+function Not-Signed($name, $file, $label = $name) {   # the message when a download fails the check; the file is deleted
+  Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue
+  Warn $label "the download is not signed by $($Signers[$name] -join ' or '), so it was not used (see $LogFile)"
 }
 function Run-Native($exe, [string[]]$argList, $timeoutSec = 1800) {
   # run a program, log its output, return its exit code (or 124 on timeout)
@@ -218,7 +242,9 @@ function Install-QuartoDirect {
       try { Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force } catch { Log "Quarto unpack failed: $_" }
     }
     Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath (Join-Path $dest 'bin\quarto.exe')) { return (Join-Path $dest 'bin') }
+    $q = Join-Path $dest 'bin\quarto.exe'
+    if ((Test-Path -LiteralPath $q) -and -not (Signed-By $q 'Quarto')) { Not-Signed 'Quarto' $q; Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue; continue }
+    if (Test-Path -LiteralPath $q) { return (Join-Path $dest 'bin') }
   }
   return (Install-QuartoFromRStudio)
 }
@@ -241,7 +267,9 @@ function Install-QuartoFromRStudio {
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
     $code = Run-Native $tar @('-xf', "`"$zip`"", '-C', "`"$dest`"", '--strip-components', '4', 'resources/app/bin/quarto/*') 1800
     Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath (Join-Path $dest 'bin\quarto.exe')) { Log "Quarto unpacked from $u"; return (Join-Path $dest 'bin') }
+    $q = Join-Path $dest 'bin\quarto.exe'
+    if ((Test-Path -LiteralPath $q) -and -not (Signed-By $q 'Quarto')) { Not-Signed 'Quarto' $q; Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue; continue }
+    if (Test-Path -LiteralPath $q) { Log "Quarto unpacked from $u"; return (Join-Path $dest 'bin') }
     Log "Quarto from RStudio's zip: not unpacked (tar exit $code)"
   }
   return $null
@@ -275,6 +303,9 @@ function Install-RStudioDirect {
     }
     Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
     $exe = Join-Path $dest 'rstudio.exe'
+    if ((Test-Path -LiteralPath $exe) -and -not (Signed-By $exe 'RStudio')) {
+      Not-Signed 'RStudio' $exe; Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue; continue
+    }
     if (Test-Path -LiteralPath $exe) {
       try {   # Start-menu entry for this account, so students find RStudio as usual
         $lnk = Join-Path ([Environment]::GetFolderPath('Programs')) 'RStudio.lnk'
@@ -316,14 +347,16 @@ function Older-Than($have, $need) {   # $true only when both read as versions an
 }
 function Code-Cli($dir) {
   # VS Code's own code.cmd. A "code" on PATH can be something else (another editor's copy, a script), so each
-  # candidate must answer --version with a version number; then VS Code's standard folders are tried.
+  # candidate's --help must start with VS Code's own name: VS Code prints its product name there ("Visual Studio Code
+  # 1.139.1", from its product.json nameLong), an editor built from VS Code prints its own (d-a09ebb). Then VS Code's
+  # standard folders are tried.
   $c = @((Join-Path $dir 'code.cmd'), (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'),
          (Join-Path $env:ProgramFiles 'Microsoft VS Code\bin\code.cmd'))
   foreach ($p in $c) {
     if (-not (Test-Path -LiteralPath $p)) { continue }
-    $v = @((& $p --version) 2>$null | Select-Object -First 1)
-    if ("$v" -match '^\d+\.\d+') { return $p }
-    Log "not VS Code's code command (no version from --version): $p"
+    $v = @((& $p --help) 2>$null | Select-Object -First 1)
+    if ("$v" -match '^Visual Studio Code( - Insiders)? \d+\.\d+') { return $p }
+    Log "not VS Code's code command (its --help starts '$v', not 'Visual Studio Code'): $p"
   }
   $null
 }
@@ -338,6 +371,7 @@ function Install-VSCodeDirect {
   $exe = Join-Path $env:TEMP 'VSCodeUserSetup.exe'
   Say '  Downloading VS Code for this account only (about 290 MB, from Microsoft; on slow Wi-Fi 10 minutes or more)...'
   if (-not (Download "https://update.code.visualstudio.com/latest/$arch/stable" $exe)) { return $null }
+  if (-not (Signed-By $exe 'VS Code')) { Not-Signed 'VS Code' $exe; return $null }
   $dir = Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code'
   $code = Run-Native $exe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MERGETASKS=!runcode') 1800
   Remove-Item -LiteralPath $exe -Force -ErrorAction SilentlyContinue
@@ -416,7 +450,9 @@ function Install-GitDirect {
     if (-not (Download $u $zip)) { continue }
     try { Expand-Archive -LiteralPath $zip -DestinationPath $dest -Force } catch { Log "MinGit unpack failed: $_" }
     Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
-    if (Test-Path -LiteralPath (Join-Path $dest 'cmd\git.exe')) { return $true }
+    $g = Join-Path $dest 'cmd\git.exe'
+    if ((Test-Path -LiteralPath $g) -and -not (Signed-By $g 'Git')) { Not-Signed 'Git' $g; Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue; continue }
+    if (Test-Path -LiteralPath $g) { return $true }
   }
   return $false
 }
@@ -453,7 +489,9 @@ function Install-UvDirect {
     try {
       Expand-Archive -LiteralPath $zip -DestinationPath $tmp -Force
       $exes = @(Get-ChildItem -LiteralPath $tmp -Recurse -File | Where-Object { $_.Name -in 'uv.exe', 'uvx.exe', 'uvw.exe' })
-      foreach ($e in $exes) { Copy-Item -LiteralPath $e.FullName -Destination $bin -Force }
+      $bad = @($exes | Where-Object { -not (Signed-By $_.FullName 'uv') })
+      if ($bad.Count -or -not $exes.Count) { if ($bad.Count) { Not-Signed 'uv' $bad[0].FullName } }
+      else { foreach ($e in $exes) { Copy-Item -LiteralPath $e.FullName -Destination $bin -Force } }
     } catch { Log "uv unpack failed: $_" }
   }
   Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue
@@ -692,6 +730,7 @@ function Install-RDirect {   # the current R from CRAN, for this account only; r
   $exe = Join-Path $env:TEMP $name
   Say "  Downloading $($name -replace '-win\.exe$','') for this account only (about 90 MB)..."
   if (-not (Download "$($script:Cran)/bin/windows/base/$name" $exe)) { return $null }
+  if (-not (Signed-By $exe 'R')) { Not-Signed 'R' $exe; return $null }
   $dir = Join-Path $env:LOCALAPPDATA ("Programs\R\" + ($name -replace '-win\.exe$', ''))
   $code = Run-Native $exe @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/NOICONS', "/DIR=`"$dir`"") 1800
   Remove-Item -LiteralPath $exe -Force -ErrorAction SilentlyContinue
@@ -701,12 +740,18 @@ function Install-RDirect {   # the current R from CRAN, for this account only; r
 
 # ---------- parts the student chooses (owner request 2026-11-12) ---------------------
 # The AI assistant (OpenCode), Git and uv (which runs the setup's own Python helper) are always installed.
-$AllParts = @('r', 'rstudio', 'quarto', 'python', 'node', 'vscode')
+$AllParts = @('r', 'rstudio', 'quarto', 'python', 'node', 'vscode', 'web', 'codex', 'claude')
+$MenuParts = @('r', 'rstudio', 'quarto', 'python', 'node', 'vscode')   # the numbered list; Enter = all of these
+# Owner request 2026-11-16: these three are each explained and asked on their own, and only a typed yes or no counts
+# (Enter alone does not). Recommended answers: web yes; codex and claude no (they need a ChatGPT or Claude plan).
+$AskParts = @('web', 'codex', 'claude')
+$DefaultParts = @('r', 'rstudio', 'quarto', 'python', 'node', 'vscode', 'web')   # unattended runs (-Yes)
 # The parts of a setup from before the student could choose (no parts.txt). An update never adds a part the student
-# did not choose: VS Code (added 2026-11-16) comes only when they run the setup themselves.
+# did not choose: VS Code and the three extras (added 2026-11-16) come only when they run the setup themselves.
 $LegacyParts = @('r', 'rstudio', 'quarto', 'python', 'node')
 $GuiParts = @('rstudio', 'vscode')   # desktop programs: left out with -NoGui
-# gb: installed size, measured on one Windows 11 computer on 2026-11-12 (not yet on a fresh computer)
+# gb: installed size, measured on one Windows 11 computer on 2026-11-12 (not yet on a fresh computer);
+# web, codex and claude measured 2026-11-16 (npm installs into an empty folder: 462, 492 and 356 MB; GitHub CLI ~50 MB)
 $PartInfo = @{
   r       = @{ name = 'R and the course R packages';              gb = 0.4 }
   rstudio = @{ name = 'RStudio (an editor for R; needs R)';       gb = 1.9 }
@@ -715,8 +760,21 @@ $PartInfo = @{
   node    = @{ name = 'Node.js (a few optional AI tools need it)'; gb = 0.2 }
   # VS Code 0.8 GB (one version) + its OpenCode, Python and R add-ons 0.2 GB (measured on Windows 11, 2026-11-16)
   vscode  = @{ name = 'VS Code (code editor; OpenCode, Python and R add-ons)'; gb = 1.0 }
+  web     = @{ name = 'Website tools (GitHub CLI, Vercel, Neon, Railway)'; gb = 0.5 }
+  codex   = @{ name = 'Codex (OpenAI; for a ChatGPT plan)';       gb = 0.5 }
+  claude  = @{ name = 'Claude Code (Anthropic; for a paid Claude plan)'; gb = 0.4 }
 }
-$script:Parts = $AllParts
+# Pinned versions (checked 2026-11-16), installed with npm into a folder of their own per part; the GitHub CLI comes
+# as its official zip. A tool already on this computer is used as it is (never upgraded).
+$WebTools = @(
+  @{ pkg = 'vercel@65.16.0';       cmd = 'vercel';  name = 'Vercel CLI (websites)' },
+  @{ pkg = 'neonctl@9.5.1';        cmd = 'neonctl'; name = 'Neon CLI (databases)' },
+  @{ pkg = '@railway/cli@5.74.1';  cmd = 'railway'; name = 'Railway CLI (small servers)'; github = $true }   # its installer downloads from GitHub
+)
+$GhVersion = '2.104.0'
+$CodexPkg  = '@openai/codex@0.169.0'
+$ClaudePkg = '@anthropic-ai/claude-code@2.1.325'
+$script:Parts = $DefaultParts
 function Has-Part($p) { $script:Parts -contains $p }
 function Tool-Defs {
   @(
@@ -739,6 +797,9 @@ function Part-Gb($p) {   # what a part still needs on this computer: 0 when it i
     'node'    { if (Find-Tool (Tool-Def 'Node.js')) { return 0 } }
     'python'  { if (Test-Path -LiteralPath (Join-Path $CourseDir '.venv')) { return 0 } }
     'vscode'  { if (Find-Tool (Tool-Def 'VS Code')) { return 0.2 } }   # VS Code is here; its add-ons may still be missing
+    'web'     { if ((Have 'gh') -and -not @($WebTools | Where-Object { -not (Have $_.cmd) }).Count) { return 0 } }
+    'codex'   { if (Have 'codex') { return 0 } }
+    'claude'  { if (Have 'claude') { return 0 } }
   }
   return $PartInfo[$p].gb
 }
@@ -757,7 +818,49 @@ function Parse-Parts([string]$text) {
     if ($w -eq 'all') { $want += $AllParts } elseif ($w -eq 'none') { } elseif ($AllParts -contains $w) { $want += $w } else { $bad += $w }
   }
   if ($want -contains 'rstudio' -and $want -notcontains 'r') { $want += 'r' }   # RStudio does not work without R
+  # the website tools, Codex and Claude Code are installed with npm, which comes with Node.js
+  if (@($want | Where-Object { $_ -in 'web', 'codex', 'claude' }).Count -and $want -notcontains 'node') { $want += 'node' }
   return @{ want = @($AllParts | Where-Object { $want -contains $_ }); bad = $bad }
+}
+function Ask-YesNo($prompt) {   # only a typed yes or no counts; Enter alone asks again (owner request 2026-11-16)
+  for ($try = 0; $try -lt 3; $try++) {
+    $a = "$(Read-Host "$prompt Type yes or no")".Trim().ToLowerInvariant()
+    if ($a -in 'y', 'yes') { return $true }
+    if ($a -in 'n', 'no') { return $false }
+    Say '  Please type yes or no (pressing Enter alone does not choose).'
+  }
+  Say '  No answer, so it is not installed. To choose again later: install-windows.cmd -Choose'
+  return $false
+}
+function Ask-Extras {   # the three optional extras, each explained and answered with a typed yes or no
+  $want = @()
+  Say ''
+  Say '--- Optional: publishing your tools as websites  (recommended: yes; about 0.5 GB) ---'
+  Say '  Installs four free command-line tools that the AI assistant can use for you:'
+  Say '    GitHub CLI (gh) - keeps your code on GitHub     Vercel - puts your tool online as a website'
+  Say '    Neon - a database for it                        Railway - a small server, if your tool needs one'
+  Say '  Each needs its own free account, which you create only when you want to publish something.'
+  Say '  Their free plans need no payment card: never enter a card on any of these sites.'
+  if (Ask-YesNo '  Install the website tools?') { $want += 'web' }
+  Say ''
+  Say '--- Optional: Codex, the AI assistant from OpenAI  (recommended: no, unless you have ChatGPT; about 0.5 GB) ---'
+  Say '  Codex signs in with your ChatGPT account and uses that plan''s AI, which is stronger than the free models.'
+  Say '  It is meant for a paid ChatGPT plan (Plus or higher). If you have one, you can ALSO use it inside OpenCode'
+  Say '  without Codex: in OpenCode type /connect, choose OpenAI, then "ChatGPT Plus/Pro".'
+  Say '  The course itself needs only the free AI. Without a ChatGPT plan, answer no.'
+  if (Ask-YesNo '  Install Codex?') { $want += 'codex' }
+  Say ''
+  Say '--- Optional: Claude Code, the AI assistant from Anthropic  (recommended: no, unless you pay for Claude; about 0.4 GB) ---'
+  Say '  Claude Code signs in with a paid Claude plan (Pro, Max or Ultra); it does not work with the free Claude plan.'
+  Say '  It is the way Anthropic allows a Claude plan to be used for this kind of work: a Claude plan cannot be'
+  Say '  connected to OpenCode. The course itself needs only the free AI. Without a paid Claude plan, answer no.'
+  if (Ask-YesNo '  Install Claude Code?') { $want += 'claude' }
+  return , $want
+}
+function Save-Asked {   # remembers that the student answered the three extras questions (an update never asks)
+  if ($DryRun) { return }
+  try { New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
+        Set-Content -LiteralPath (Join-Path $StateDir 'asked.txt') -Value ($AskParts -join ' ') -Encoding ASCII } catch { Log "could not save the answers: $_" }
 }
 function Save-Parts {
   if ($DryRun) { return }
@@ -765,9 +868,13 @@ function Save-Parts {
   try { New-Item -ItemType Directory -Force -Path $StateDir | Out-Null
         Set-Content -LiteralPath (Join-Path $StateDir 'parts.txt') -Value $txt -Encoding ASCII } catch { Log "could not save the parts: $_" }
 }
-function Load-Parts {   # the parts chosen last time; everything when nothing was chosen (older setups installed all)
+function Load-Parts {   # the parts chosen last time; when nothing was chosen, what older setups installed (the numbered list)
   $f = Join-Path $StateDir 'parts.txt'
   $script:Parts = if (Test-Path -LiteralPath $f) { (Parse-Parts (Get-Content -LiteralPath $f -Raw)).want } else { $LegacyParts }
+  # Until the student has answered the extras questions, a saved list never brings Codex or Claude Code (their answer
+  # must be a typed yes): "all" saved by an older setup meant the parts of that time. The website tools (default yes)
+  # stay when an unattended run saved them.
+  if (-not (Test-Path -LiteralPath (Join-Path $StateDir 'asked.txt'))) { $script:Parts = @($script:Parts | Where-Object { $_ -notin 'codex', 'claude' }) }
   if ($NoGui) { $script:Parts = @($script:Parts | Where-Object { $GuiParts -notcontains $_ }) }
 }
 function Choose-Parts {
@@ -775,28 +882,40 @@ function Choose-Parts {
   if ($Components) {
     $x = Parse-Parts $Components
     if ($x.bad.Count) { Say "Unknown part: $($x.bad -join ', '). Use any of: $($AllParts -join ', '), or all, or none."; exit 2 }
-    $script:Parts = $x.want; Save-Parts
-  } elseif ((Test-Path -LiteralPath $f) -and -not $Choose) { Load-Parts }
+    $script:Parts = $x.want; Save-Parts; Save-Asked
+  } elseif ((Test-Path -LiteralPath $f) -and -not $Choose) {
+    Load-Parts
+    # chosen with a setup from before 2026-11-16: the three newer extras are asked once (never by an update)
+    if (-not (Test-Path -LiteralPath (Join-Path $StateDir 'asked.txt')) -and -not ($Yes -or $FromUpdate -or $DryRun)) {
+      Say ''; Say 'This version of the setup offers three more optional parts.'
+      $extra = Ask-Extras
+      $base = @($script:Parts | Where-Object { $AskParts -notcontains $_ })   # the answers decide these three
+      $script:Parts = (Parse-Parts ((@($base) + @($extra)) -join ' ')).want; Save-Parts; Save-Asked
+    }
+  }
   elseif ($FromUpdate) { $script:Parts = $LegacyParts }   # an update never adds a part (see $LegacyParts)
-  elseif ($Yes) { $script:Parts = $AllParts }
+  elseif ($Yes) { $script:Parts = @($DefaultParts | Where-Object { -not ($NoGui -and $GuiParts -contains $_) }); Save-Parts }   # saved, so a later check and update know them
   else {
     Say ''
     Say 'What should the setup install? The AI assistant (OpenCode), Git and uv (for Python) are always installed.'
-    for ($i = 0; $i -lt $AllParts.Count; $i++) {
-      $p = $AllParts[$i]; $g = Part-Gb $p
+    for ($i = 0; $i -lt $MenuParts.Count; $i++) {
+      $p = $MenuParts[$i]; $g = Part-Gb $p
       Say ('  {0}. {1,-44} {2}' -f ($i + 1), $PartInfo[$p].name, $(if ($g -eq 0) { 'already on this computer' } else { "about $g GB" }))
     }
+    $picked = $MenuParts
     for ($try = 0; $try -lt 3; $try++) {
       $a = "$(Read-Host 'Press Enter to install all of them (recommended), or type the numbers you want, for example 1 3 (0 = none)')".Trim()
-      if (-not $a) { $script:Parts = $AllParts; break }
+      if (-not $a) { $picked = $MenuParts; break }
       $nums = @($a -split '[,;\s]+' | Where-Object { $_ })
-      if (@($nums | Where-Object { $_ -notmatch "^[0-$($AllParts.Count)]$" }).Count) { Say "  Please type only numbers from the list (0 to $($AllParts.Count))."; continue }
-      $picked = @($nums | Where-Object { $_ -ne '0' } | ForEach-Object { $AllParts[[int]$_ - 1] })
-      $script:Parts = (Parse-Parts ($picked -join ' ')).want
+      if (@($nums | Where-Object { $_ -notmatch "^[0-$($MenuParts.Count)]$" }).Count) { Say "  Please type only numbers from the list (0 to $($MenuParts.Count))."; continue }
+      $picked = @($nums | Where-Object { $_ -ne '0' } | ForEach-Object { $MenuParts[[int]$_ - 1] })
       if ($picked -contains 'rstudio' -and $picked -notcontains 'r') { Say '  RStudio needs R, so R is installed too.' }
       break
     }
-    Save-Parts
+    $extra = Ask-Extras
+    if ($extra.Count -and $picked -notcontains 'node') { Say '  Node.js is installed too: the tools you chose need it.' }
+    $script:Parts = (Parse-Parts ((@($picked) + @($extra)) -join ' ')).want
+    Save-Parts; Save-Asked
   }
   if ($NoGui) { $script:Parts = @($script:Parts | Where-Object { $GuiParts -notcontains $_ }) }
   $names = @($script:Parts | ForEach-Object { $PartInfo[$_].name })
@@ -915,6 +1034,7 @@ function Install-OpenCode {
     if ($got) {
       New-Item -ItemType Directory -Force -Path $binDir | Out-Null
       $exe = Get-ChildItem -LiteralPath $x -Recurse -Filter 'opencode.exe' | Select-Object -First 1
+      if ($exe -and -not (Signed-By $exe.FullName 'OpenCode')) { Not-Signed 'OpenCode' $exe.FullName 'OpenCode command line'; $script:Failed++; return }
       if ($exe) { Copy-Item -LiteralPath $exe.FullName -Destination (Join-Path $binDir 'opencode.exe') -Force }
       Add-UserPath $binDir
       $v = ''; try { $v = ((& (Join-Path $binDir 'opencode.exe') --version) 2>$null | Select-Object -First 1) } catch {}
@@ -929,10 +1049,104 @@ function Install-OpenCode {
   $setup = Join-Path $env:TEMP $app
   if ($DryRun) { Say "  [dry-run] install $app"; return }
   if ($script:Blocked -contains 'github.com') { Warn 'OpenCode desktop app' 'GitHub is blocked here, so only the command-line OpenCode is installed (type opencode in a terminal). Run this again on another network to add the app.'; return }
-  if (Download "$base/$app" $setup) {
+  $got = Download "$base/$app" $setup
+  if ($got -and -not (Signed-By $setup 'OpenCode')) { Not-Signed 'OpenCode' $setup 'OpenCode desktop app'; $script:Failed++ }
+  elseif ($got) {
     $code = Run-Native $setup @('/S') 600     # per-user silent install, no administrator needed
     if ($code -eq 0) { Record-Install 'core' 'app' 'OpenCode*'; Ok 'OpenCode desktop app' 'installed (Start menu: OpenCode)' } else { Fail 'OpenCode desktop app' "installer exit code $code" }
   } else { Fail 'OpenCode desktop app' 'download failed' }
+}
+
+# ---------- 4b. optional: website tools, Codex, Claude Code (owner request 2026-11-16) -----------------
+# Everything goes into folders of this account (no admin): the GitHub CLI from its official zip (SHA-256 checked), the
+# rest with npm into %LOCALAPPDATA%\Programs\metascience-<part>, so the uninstall can remove exactly that folder.
+$GhSha256 = @{ amd64 = '08c06d10482f12c478018cd259f64acbd5f625712cadf331aad19ba973c879e5'; arm64 = 'd56fbf5b9ad32e5985e3e7e1d8f4d28ae2994618986cd2cba9b50ac710dffe01' }
+function Node-Version {   # the Node.js version here as [version], or $null
+  if (-not (Have 'node')) { return $null }
+  $v = "$((& node --version) 2>$null)".Trim()
+  if ($v -match '^v?(\d+\.\d+\.\d+)') { return [version]$Matches[1] }
+  return $null
+}
+function Install-GhCli {
+  if (Have 'gh') { Ok 'GitHub CLI' 'already installed'; return }
+  $dir = Join-Path $env:LOCALAPPDATA 'Programs\GitHubCLI'
+  if ($DryRun) { Say "  [dry-run] download GitHub CLI $GhVersion into $dir"; return }
+  if ($script:Blocked -contains 'github.com') { Warn 'GitHub CLI' 'GitHub is blocked on this network; run the setup again on another network to add it'; return }
+  $arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
+  $zip = Join-Path $env:TEMP "gh_$GhVersion.zip"
+  if (-not (Download "https://github.com/cli/cli/releases/download/v$GhVersion/gh_${GhVersion}_windows_$arch.zip" $zip)) { Fail 'GitHub CLI' "download failed; see $LogFile"; return }
+  $sha = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+  if ($sha -ne $GhSha256[$arch]) { Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue; Fail 'GitHub CLI' 'the download does not match its published checksum, so it was not installed'; return }
+  $new = -not (Test-Path -LiteralPath $dir)
+  try { Expand-Archive -LiteralPath $zip -DestinationPath $dir -Force } catch { Log "GitHub CLI unpack failed: $_" }
+  Remove-Item -LiteralPath $zip -Force -ErrorAction SilentlyContinue
+  if ($new -and (Test-Path -LiteralPath $dir)) { Record-Install 'web' 'dir' $dir }
+  if (-not (Test-Path -LiteralPath (Join-Path $env:APPDATA 'GitHub CLI'))) { Record-Install 'web' 'dir' (Join-Path $env:APPDATA 'GitHub CLI') }   # its sign-in
+  $bin = Join-Path $dir 'bin'
+  if (Test-Path -LiteralPath (Join-Path $bin 'gh.exe')) { Add-UserPath $bin 'web'; Ok 'GitHub CLI' "installed $GhVersion" }
+  else { Fail 'GitHub CLI' "could not unpack it; see $LogFile" }
+}
+function Npm-Install($part, [string[]]$pkgs) {   # $true when npm installed them into this part's own folder
+  $prefix = Join-Path $env:LOCALAPPDATA "Programs\metascience-$part"
+  if ($DryRun) { Say "  [dry-run] npm install --global --prefix $prefix $($pkgs -join ' ')"; return $true }
+  $npm = Get-Command 'npm.cmd' -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $npm) { Log 'npm.cmd not found'; return $false }
+  $new = -not (Test-Path -LiteralPath $prefix)
+  $cache = Join-Path $env:TEMP 'metascience-npm-cache'   # a throw-away download cache: no copy is left behind
+  $code = 1
+  # the mirror is for networks that block npm's site; it can lag behind (a missing version), so npm's site gets a second try
+  foreach ($reg in 'https://registry.npmjs.org', 'https://registry.npmmirror.com', 'https://registry.npmjs.org') {
+    $code = Run-Native $npm.Source (@('install', '--global', '--prefix', "`"$prefix`"", '--cache', "`"$cache`"", '--registry', $reg,
+                                      '--no-fund', '--no-audit', '--loglevel=error') + $pkgs) 1800
+    if ($code -eq 0) { Log "npm: $($pkgs -join ' ') from $reg"; break }
+    Log "npm install from $reg exit $code"
+  }
+  Remove-Item -LiteralPath $cache -Recurse -Force -ErrorAction SilentlyContinue
+  if ($new -and (Test-Path -LiteralPath $prefix)) { Record-Install $part 'dir' $prefix }
+  if ($code -eq 0) { Add-UserPath $prefix $part }
+  return ($code -eq 0)
+}
+function Install-NpmTools($part, $tools, $minNode) {   # $tools: @{ pkg; cmd; name } each; a tool already here is kept as it is
+  $todo = @(); foreach ($t in $tools) { if (Have $t.cmd) { Ok $t.name 'already installed' } else { $todo += $t } }
+  if (-not $todo.Count) { return }
+  $nv = Node-Version
+  if (-not $DryRun -and -not ($nv -and $nv -ge [version]$minNode)) {
+    $have = if ($nv) { "Node.js $nv is too old" } else { 'Node.js is missing' }
+    foreach ($t in $todo) { Fail $t.name "$have; it needs Node.js $minNode or newer (this setup never upgrades software that is already here)" }
+    return
+  }
+  foreach ($t in $todo) {   # one at a time: one tool that cannot be installed never takes the others with it
+    if ($t.github -and $script:Blocked -contains 'github.com') { Warn $t.name 'its installer needs GitHub, which is blocked on this network; run the setup again on another network to add it'; continue }
+    if (Npm-Install $part @($t.pkg)) {
+      if ($DryRun -or (Have $t.cmd)) { Ok $t.name 'installed' } else { Fail $t.name "npm finished but '$($t.cmd)' was not found; see $LogFile" }
+    } else { Fail $t.name "npm could not install it; see $LogFile" }
+  }
+}
+function Install-Extras {
+  Step '4b/9  Optional: website tools, Codex, Claude Code'
+  foreach ($p in $AskParts) { if (-not (Has-Part $p)) { Skip $PartInfo[$p].name } }
+  if (Has-Part 'web') {
+    # their sign-ins (paths read from each tool's own code, 2026-11-16), recorded only for a tool this setup installs
+    # and only when the folder is not there yet, so a student's existing sign-in is never removed
+    $signins = @{ vercel = @((Join-Path $env:APPDATA 'com.vercel.cli'), (Join-Path $env:LOCALAPPDATA 'com.vercel.cli'))
+                  neonctl = @(Join-Path $env:USERPROFILE '.config\neon'); railway = @(Join-Path $env:USERPROFILE '.railway') }
+    foreach ($c in $signins.Keys) { if (-not (Have $c)) { foreach ($d in $signins[$c]) { if (-not (Test-Path -LiteralPath $d)) { Record-Install 'web' 'dir' $d } } } }
+    Install-GhCli; Install-NpmTools 'web' $WebTools '20.19.0'
+  }
+  if (Has-Part 'codex') {
+    if (-not (Have 'codex') -and -not (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.codex'))) { Record-Install 'codex' 'dir' (Join-Path $env:USERPROFILE '.codex') }   # its sign-in and settings
+    Install-NpmTools 'codex' @(@{ pkg = $CodexPkg; cmd = 'codex'; name = 'Codex' }) '20.19.0'
+  }
+  if (Has-Part 'claude') {
+    if (-not (Have 'claude')) {   # its sign-in and settings, when this is the first Claude Code on this account
+      if (-not (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.claude'))) { Record-Install 'claude' 'dir' (Join-Path $env:USERPROFILE '.claude') }
+      if (-not (Test-Path -LiteralPath (Join-Path $env:USERPROFILE '.claude.json'))) { Record-Install 'claude' 'file' (Join-Path $env:USERPROFILE '.claude.json') }
+    }
+    Install-NpmTools 'claude' @(@{ pkg = $ClaudePkg; cmd = 'claude'; name = 'Claude Code' }) '22.0.0'
+  }
+  if (Has-Part 'web')    { Say '  Website tools: nothing to sign in to now. When you want to publish, follow Part 6 of the student guide.' }
+  if (Has-Part 'codex')  { Say '  Codex: type codex in a terminal, choose "Sign in with ChatGPT", and sign in in the browser.' }
+  if (Has-Part 'claude') { Say '  Claude Code: type claude in a terminal and sign in with your Claude account in the browser.' }
 }
 
 # ---------- 5. R packages ------------------------------------------------------
@@ -1230,7 +1444,7 @@ try {
     # summary and the offer to send the report (it used to exit here, so the teacher never heard of it).
     Choose-Parts
     if (Precheck) {
-      Install-Tools; Install-OpenCode; Install-RPackages; Fix-Pandoc; Setup-CourseFolder
+      Install-Tools; Install-OpenCode; Install-Extras; Install-RPackages; Fix-Pandoc; Setup-CourseFolder
       if (-not $FromUpdate) { Install-Pack }
       if (-not $DryRun -and -not $FromUpdate) {
         if (-not $Yes) {

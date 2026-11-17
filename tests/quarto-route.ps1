@@ -9,8 +9,10 @@ function Check($name, [bool]$ok, $detail = '') { if ($ok) { "PASS $name"; $scrip
 
 $tokens = $null; $errs = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)
-$want = 'Install-QuartoDirect', 'Install-QuartoFromRStudio', 'RStudio-ZipUrls', 'Find-Tool', 'Tool-Defs', 'Tool-Def', 'Run-Native', 'Log', 'Say'
+$want = 'Install-QuartoDirect', 'Install-QuartoFromRStudio', 'RStudio-ZipUrls', 'Find-Tool', 'Tool-Defs', 'Tool-Def', 'Run-Native', 'Log', 'Say', 'Warn', 'Signed-By', 'Not-Signed'
 $def = ($ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -in $want }, $true) | ForEach-Object { $_.Extent.Text }) -join "`n"
+# the list of who signs each download (d-4e90ed)
+$def += "`n" + (@($ast.FindAll({ param($a) $a -is [Management.Automation.Language.AssignmentStatementAst] -and $a.Left.Extent.Text -eq '$Signers' }, $true))[0].Extent.Text)
 $saveLa = $env:LOCALAPPDATA; $savePf = $env:ProgramFiles; $savePf86 = ${env:ProgramFiles(x86)}; $saveTemp = $env:TEMP
 try {
   # a stand-in RStudio zip: rstudio.exe, other RStudio files, and the Quarto inside it
@@ -31,10 +33,21 @@ function Download(`$u, `$d) { Add-Content -LiteralPath '$work\urls.txt' -Value `
 function Invoke-RestMethod { throw 'offline' }
 "@
   $common = "$def`n$stubs`n"
+  # the stand-in quarto.exe is not a real program, so it carries no signature: cases 1-2 take it as signed by Posit,
+  # case 1b uses the real check, which must refuse it
+  $signedOk = "$common function Signed-By(`$f, `$n) { Add-Content -LiteralPath '$work\signed.txt' -Value `"`$n `$f`"; `$true }`n"
+
+  # 1b. the Quarto in the download is not signed by Posit: not kept, the folder removed, a warning, nothing returned
+  $r = & ([scriptblock]::Create("$common Install-QuartoDirect")) 6>$null
+  $q = Join-Path $la 'Programs\Quarto'
+  $log1b = Get-Content -LiteralPath "$work\t.log" -Raw -ErrorAction SilentlyContinue
+  Check 'unsigned Quarto: refused, its folder removed, the zip deleted (d-4e90ed)' (-not $r -and -not (Test-Path $q) -and -not (Test-Path (Join-Path $tmp 'rstudio-win.zip'))) "got $r"
+  Check 'unsigned Quarto: the log names the check' ($log1b -match "signature of .*quarto\.exe: (?!Valid)\w+, signed by ''" -and $log1b -match "WARN Quarto the download is not signed by Posit Software, PBC") $log1b
+  Remove-Item -LiteralPath "$work\urls.txt" -Force -ErrorAction SilentlyContinue
 
   # 1. no RStudio on the computer: the Quarto is unpacked from RStudio's zip, and only the Quarto
-  $r = & ([scriptblock]::Create("$common Install-QuartoDirect"))
-  $q = Join-Path $la 'Programs\Quarto'
+  $r = & ([scriptblock]::Create("$signedOk Install-QuartoDirect"))
+  Check 'no RStudio: the Quarto from the zip had its signature checked' ((Get-Content -LiteralPath "$work\signed.txt" -ErrorAction SilentlyContinue) -match '^Quarto .*quarto\.exe$')
   Check 'no RStudio: Quarto unpacked from RStudio''s zip into this account''s Programs\Quarto' ($r -eq "$q\bin" -and (Test-Path "$q\bin\quarto.exe") -and (Test-Path "$q\share\version")) "got $r"
   Check 'no RStudio: nothing else of RStudio is kept' (-not (Test-Path "$q\rstudio.exe") -and -not (Test-Path "$q\resources") -and -not (Test-Path "$q\other.txt")) ((Get-ChildItem -Recurse $q | ForEach-Object FullName) -join ', ')
   $urls = @(Get-Content -LiteralPath "$work\urls.txt")
@@ -47,7 +60,7 @@ function Invoke-RestMethod { throw 'offline' }
   $rs = Join-Path $pf 'RStudio'
   New-Item -ItemType Directory -Force -Path "$rs\resources\app\bin\quarto\bin" | Out-Null
   Set-Content "$rs\rstudio.exe" 'x'; Set-Content "$rs\resources\app\bin\quarto\bin\quarto.exe" 'x'
-  $r = & ([scriptblock]::Create("$common Install-QuartoDirect"))
+  $r = & ([scriptblock]::Create("$signedOk Install-QuartoDirect"))
   Check 'RStudio installed: the Quarto inside it is used' ($r -eq "$rs\resources\app\bin\quarto\bin") "got $r"
   Check 'RStudio installed: nothing downloaded from Posit' (-not ((Get-Content -LiteralPath "$work\urls.txt" -ErrorAction SilentlyContinue) -match 'rstudio'))
 

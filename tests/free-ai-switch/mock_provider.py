@@ -38,13 +38,15 @@ class H(BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) or b"{}"
         try:
-            body = json.loads(self.rfile.read(n) or b"{}")
+            body = json.loads(raw)
         except Exception:
             body = {}
-        if LOG:
+        if LOG:  # "second": the request carries the test's second message (case 2 counts only those)
             with open(LOG, "a", encoding="utf-8") as f:
-                f.write(json.dumps({"path": self.path, "model": body.get("model")}) + "\n")
+                f.write(json.dumps({"path": self.path, "model": body.get("model"),
+                                    "second": b"SECOND-MSG-7Q" in raw}) + "\n")
         if self.path.startswith("/zen/"):
             return self._send(429, json.dumps({"type": "error", "error": {"type": "FreeUsageLimitError",
                               "message": "Free usage limit reached."}}), extra={"retry-after": "22583"})
