@@ -100,6 +100,23 @@ printf '#!/bin/bash\necho "other editor $*" >> /tmp/calls.log\ncase " $* " in *"
 : > /tmp/codelist; rm -rf "$HOME"; mkdir -p "$HOME"; : > "$CALLS"; bash setup-mac.sh --yes --skip-ai --components=vscode > /tmp/run6b.log 2>&1
 if grep -q "OK.*VS Code add-ons.*OpenCode, Python ready" /tmp/run6b.log && grep -q "^code --install-extension sst-dev.opencode$" "$CALLS" && ! grep -q "^other editor --install-extension" "$CALLS"; then echo "PASS another editor's code command: the one inside the VS Code app is used"; pass=$((pass+1)); else echo "MISS another editor's code command: the one inside the VS Code app is used"; failn=$((failn+1)); fi
 rm -rf "/Applications/Visual Studio Code.app"
+# Another editor's code command and NO VS Code (production 2026-11-19, report XK938T: Cursor's /usr/local/bin/code):
+# VS Code is not "already installed", the cask brings it (its app; the other editor's code stays first on PATH), its
+# add-ons go into VS Code, and the check reads VS Code's own list, never the other editor's.
+: > /tmp/codelist; rm -rf "$HOME"; mkdir -p "$HOME"; : > "$CALLS"; mv "$STUB/brew" "$STUB/brew.real"
+printf '#!/bin/bash\nif [ "$*" = "install --cask visual-studio-code" ]; then echo "brew $*" >> %s; mkdir -p "%s"; cp /tmp/code-fake "%s/code"; exit 0; fi\nexec %s "$@"\n' "$CALLS" "$A" "$A" "$STUB/brew.real" > "$STUB/brew"; chmod +x "$STUB/brew"
+bash setup-mac.sh --yes --skip-ai --components=vscode > /tmp/run6c.log 2>&1
+mv "$STUB/brew.real" "$STUB/brew"
+if grep -q "^brew install --cask visual-studio-code$" "$CALLS" && ! grep -q "VS Code.*already installed" /tmp/run6c.log; then echo "PASS only another editor's code command: VS Code is installed, not taken as already there"; pass=$((pass+1)); else echo "MISS only another editor's code command: VS Code is installed, not taken as already there"; failn=$((failn+1)); fi
+if grep -q "OK.*VS Code add-ons.*OpenCode, Python ready" /tmp/run6c.log && ! grep -q "^other editor --install-extension" "$CALLS"; then echo "PASS only another editor's code command: the add-ons go into the new VS Code"; pass=$((pass+1)); else echo "MISS only another editor's code command: the add-ons go into the new VS Code"; failn=$((failn+1)); fi
+# the check itself (uv is a stand-in here, so the setup's own check did not run): python3 runs it as uv would
+python3 lib/course_setup.py check --course "$HOME/MetaScience" --skip-ai --parts vscode --log /tmp/check6c.log > /tmp/run6c-check.log 2>&1
+if grep -Eq "^ *OK +VS Code +1\.139\.1" /tmp/run6c-check.log && grep -Eq "^ *OK +VS Code add-ons" /tmp/run6c-check.log && ! grep -Eq "^ *(OK|WARN) +VS Code +1\.2\.3" /tmp/run6c-check.log; then echo "PASS only another editor's code command: the check reads VS Code, not the other editor"; pass=$((pass+1)); else echo "MISS only another editor's code command: the check reads VS Code, not the other editor"; failn=$((failn+1)); fi
+# Another editor's code command and no VS Code at all, check only: VS Code is reported missing, never as that editor
+rm -rf "/Applications/Visual Studio Code.app"
+python3 lib/course_setup.py check --course "$HOME/MetaScience" --skip-ai --parts vscode --log /tmp/check6d.log > /tmp/run6d.log 2>&1
+if grep -Eq "^ *FAIL +VS Code +.*another editor" /tmp/run6d.log && ! grep -Eq "^ *OK +VS Code" /tmp/run6d.log; then echo "PASS check, no VS Code, another editor's code: VS Code reported missing, not that editor"; pass=$((pass+1)); else echo "MISS check, no VS Code, another editor's code: VS Code reported missing, not that editor"; failn=$((failn+1)); fi
+rm -rf "/Applications/Visual Studio Code.app"
 rm -f "$STUB/code"
 # An old R (from Homebrew, then from elsewhere): the current R comes from CRAN next to it. The R installer deletes
 # every R it has an install receipt for, so the old R's receipt must be forgotten BEFORE the installer runs, and

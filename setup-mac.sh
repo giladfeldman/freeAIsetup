@@ -294,7 +294,7 @@ part_gb() {
     python) if [ -d "$COURSE_DIR/.venv" ]; then echo 0; else echo 0.5; fi ;;
     node) if have node; then echo 0; else echo 0.2; fi ;;
     # VS Code 0.8 GB + its add-ons 0.17 GB (measured on Windows 11, 2026-11-16); with VS Code here, its add-ons may be missing
-    vscode) if code_app >/dev/null || have code; then echo 0.2; else echo 1.0; fi ;;
+    vscode) if vscode_here; then echo 0.2; else echo 1.0; fi ;;
     # npm installs measured on Windows 2026-11-16 (462, 492, 356 MB); not yet measured on a Mac
     web) if have gh && have vercel && have neonctl && have railway; then echo 0; else echo 0.5; fi ;;
     codex) if have codex; then echo 0; else echo 0.5; fi ;;
@@ -618,6 +618,9 @@ code_cli() { # VS Code's code command: on PATH, or inside the app. A "code" on P
     case "$v" in "Visual Studio Code "[0-9]*.[0-9]*|"Visual Studio Code - Insiders "[0-9]*.[0-9]*) echo "$c"; return 0 ;; esac
     echo "not VS Code's code command (its --help starts '$v', not 'Visual Studio Code'): $c" >> "$LOG_FILE"
   done; return 1; }
+vscode_here() { # VS Code itself is on this Mac: its app, or a code command that is VS Code's. Another editor built from
+  # VS Code (Cursor and others) can own the "code" command on PATH; it is not VS Code (production 2026-11-19).
+  code_app >/dev/null || code_cli >/dev/null; }
 code_exts() { # the add-ons VS Code has, one "id@version" per line, lower case; fails when VS Code did not answer
   local out; out="$("$1" ${CODE_ISO[@]+"${CODE_ISO[@]}"} --list-extensions --show-versions 2>/dev/null)" || { echo "code --list-extensions failed" >> "$LOG_FILE"; return 1; }
   printf '%s\n' "$out" | tr 'A-Z' 'a-z' | tr -d '\r' | grep -E '^[a-z0-9-]+\.[a-z0-9-]+@[^ ]+$'; return 0; }
@@ -633,7 +636,7 @@ install_vscode() {
   # VS Code keeps its add-ons and settings in these folders; when the setup brings the first VS Code, they are its too
   local data="" d fresh=0 t
   for d in "$HOME/.vscode" "$HOME/Library/Application Support/Code"; do [ -e "$d" ] || data="$data$d"$'\n'; done
-  if code_app >/dev/null || have code; then ok "VS Code" "already installed"
+  if vscode_here; then ok "VS Code" "already installed"
   elif [ "$DRY_RUN" = 1 ]; then say "  [dry-run] install VS Code"
   elif [ "$NO_BREW" = 0 ]; then
     local vhad=0; brew_had --cask visual-studio-code && vhad=1
@@ -650,7 +653,9 @@ install_vscode() {
     rm -rf "$t"
   fi
   [ "$fresh" = 1 ] && printf '%s' "$data" | while IFS= read -r d; do [ -n "$d" ] && record_install vscode dir "$d"; done
-  # the code command: Homebrew links it; the direct download keeps it inside the app
+  # the code command: Homebrew links it; the direct download keeps it inside the app. Another editor's "code" already on
+  # PATH (Cursor and others) is left first on purpose: the student's terminal keeps opening the editor they chose, and the
+  # setup and check reach VS Code through the app itself (code_cli, course_setup.py vscode_cli)
   local app; have code || { app="$(code_app)" && [ -x "$app/Contents/Resources/app/bin/code" ] && add_path "$app/Contents/Resources/app/bin"; }
   install_code_extensions
 }

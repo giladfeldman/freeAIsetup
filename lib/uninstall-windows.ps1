@@ -190,7 +190,9 @@ if ($ext.Count) {
   $nameOnly = $Fake -and -not $env:MS_TEST_CODE_DIR
   $cli = @(Get-Command code -ErrorAction SilentlyContinue | ForEach-Object Source) +
          @((Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'), (Join-Path $env:ProgramFiles 'Microsoft VS Code\bin\code.cmd'))
-  $codeCli = $cli | Where-Object { $_ -and (Test-Path -LiteralPath $_) } | Select-Object -First 1
+  # VS Code's own code command only: a "code" on PATH can be another editor built from VS Code (Cursor and others), and
+  # running that one would remove the add-ons of the same name from that editor
+  $codeCli = $cli | Where-Object { $_ -and (Test-Path -LiteralPath $_) -and ("$(@((& $_ --help) 2>$null | Select-Object -First 1))" -match '^Visual Studio Code( - Insiders)? [0-9]+[.][0-9]+') } | Select-Object -First 1
   if ($env:MS_TEST_NO_CODE) { $codeCli = $null }   # tests: VS Code already gone
   elseif ($nameOnly) { $codeCli = 'code' }
   if ($DryRun) { Say "  [dry-run] remove the VS Code add-ons $(($ext | ForEach-Object target) -join ', ')" }

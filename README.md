@@ -95,7 +95,7 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 - **VS Code** (on Windows and Mac, chosen by default): the code editor, with OpenCode's own add-on (a button at the
   top right of an open file starts OpenCode in a terminal next to the code, with the same free models), Microsoft's
   Python add-on and, when R is chosen, the R add-on (with the R package `languageserver` it needs). A VS Code that is
-  already there is kept as it is and never upgraded. Its add-ons are checked: a missing one is added, one older than
+  already there is kept as it is and never upgraded. A `code` command counts as VS Code only if it says so (another editor, such as Cursor, also installs a `code` command; it is not taken for VS Code, and VS Code is installed next to it). Its add-ons are checked: a missing one is added, one older than
   the version the release was tested with is updated (the one exception to "never upgrades"), the rest are left alone.
   The uninstall removes only the add-ons the setup added, never one the student had, even one it updated. If VS Code
   is too old for the tested add-ons, the setup warns and says how to update VS Code. An update of the pack never adds

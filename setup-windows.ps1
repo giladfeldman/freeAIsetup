@@ -352,13 +352,15 @@ function Code-Cli($dir) {
   # standard folders are tried.
   $c = @((Join-Path $dir 'code.cmd'), (Join-Path $env:LOCALAPPDATA 'Programs\Microsoft VS Code\bin\code.cmd'),
          (Join-Path $env:ProgramFiles 'Microsoft VS Code\bin\code.cmd'))
-  foreach ($p in $c) {
-    if (-not (Test-Path -LiteralPath $p)) { continue }
-    $v = @((& $p --help) 2>$null | Select-Object -First 1)
-    if ("$v" -match '^Visual Studio Code( - Insiders)? \d+\.\d+') { return $p }
-    Log "not VS Code's code command (its --help starts '$v', not 'Visual Studio Code'): $p"
-  }
+  foreach ($p in $c) { if (Is-VSCodeCli $p) { return $p } }
   $null
+}
+function Is-VSCodeCli($p) {   # true when $p is VS Code's own code command (its --help starts with VS Code's name)
+  if (-not $p -or -not (Test-Path -LiteralPath $p)) { return $false }
+  $v = @((& $p --help) 2>$null | Select-Object -First 1)
+  if ("$v" -match '^Visual Studio Code( - Insiders)? \d+\.\d+') { return $true }
+  Log "not VS Code's code command (its --help starts '$v', not 'Visual Studio Code'): $p"
+  $false
 }
 function Recorded-Exts {   # the add-ons an earlier run of this setup added (installed.tsv)
   $f = Join-Path $StateDir 'installed.tsv'
@@ -647,7 +649,12 @@ function Precheck {
 function Find-Tool($t) {
   # Looks for a tool on PATH and in the standard install folders, for ANY account on this computer
   # (machine-wide in Program Files, or per-user in this account). Returns the folder to put on PATH, or $null.
-  if ($t.cmd -and (Have $t.cmd)) { return (Split-Path -Parent (Get-Command $t.cmd).Source) }
+  # VS Code: a "code" on PATH can be another editor built from VS Code (Cursor and others; production 2026-11-19, a Mac):
+  # it counts only when it is VS Code's own, else VS Code's standard folders are looked in
+  if ($t.cmd -and (Have $t.cmd)) {
+    $pd = Split-Path -Parent (Get-Command $t.cmd).Source
+    if ($t.name -ne 'VS Code' -or (Is-VSCodeCli (Join-Path $pd 'code.cmd'))) { return $pd }
+  }
   $roots = @($env:ProgramFiles, ${env:ProgramFiles(x86)}, (Join-Path $env:LOCALAPPDATA 'Programs')) | Where-Object { $_ }
   foreach ($root in $roots) {
     foreach ($rel in $t.dirs) {

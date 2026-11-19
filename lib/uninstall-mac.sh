@@ -150,10 +150,14 @@ if [ -n "$ext" ]; then
   iso=(); [ -n "${MS_TEST_CODE_DIR:-}" ] && iso=(--extensions-dir "$MS_TEST_CODE_DIR/ext" --user-data-dir "$MS_TEST_CODE_DIR/data")
   extdir="$HOME/.vscode/extensions"; [ -n "${MS_TEST_CODE_DIR:-}" ] && extdir="$MS_TEST_CODE_DIR/ext"
   name_only=0; [ -n "$FAKE" ] && [ -z "${MS_TEST_CODE_DIR:-}" ] && name_only=1
+  # VS Code's own code command only: a "code" on PATH can be another editor built from VS Code (Cursor and others), and
+  # running that one would remove the add-ons of the same name from that editor
   codecli=""
-  if have code; then codecli="$(command -v code)"
-  else for a in "/Applications/Visual Studio Code.app" "$HOME/Applications/Visual Studio Code.app"; do
-    [ -x "$a/Contents/Resources/app/bin/code" ] && { codecli="$a/Contents/Resources/app/bin/code"; break; }; done; fi
+  for c in "$(command -v code 2>/dev/null)" "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"            "$HOME/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code"; do
+    [ -n "$c" ] && [ -x "$c" ] || continue
+    case "$("$c" --help 2>/dev/null | head -1)" in "Visual Studio Code "[0-9]*.[0-9]*|"Visual Studio Code - Insiders "[0-9]*.[0-9]*) codecli="$c"; break ;; esac
+    echo "not VS Code's code command, not used: $c" >> "$LOG_FILE"
+  done
   [ "$name_only" = 1 ] && codecli=code
   [ -n "${MS_TEST_NO_CODE:-}" ] && codecli=""   # tests: VS Code already gone
   if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] remove the VS Code add-ons $(echo $ext)"

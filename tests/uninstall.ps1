@@ -221,6 +221,21 @@ try {
   Check 'vscode gone: an add-on the student added stays' (Test-Path (Join-Path $vsc 'ext\someone.mine-1.0.0'))
   Check 'vscode gone: VS Code itself was not the setup''s, so winget is not asked' ($log -notmatch 'VisualStudioCode') $log
 
+  # 10c. VS Code is gone and another editor built from VS Code (Cursor and others) owns "code" on PATH: that editor's
+  # command is never run (it would remove ITS add-ons of the same name); the recorded VS Code folders are deleted instead
+  Make-State
+  $vsc = D 'vsc'; foreach ($d in 'sst-dev.opencode-1.0.0', 'ms-python.python-2026.10.0') { New-Item -ItemType Directory -Force -Path (Join-Path $vsc "ext\$d") | Out-Null }
+  Add-Content -LiteralPath (Join-Path $state 'installed.tsv') -Encoding UTF8 -Value @("vscode`tvsext`tsst-dev.opencode", "vscode`tvsext`tms-python.python")
+  $fork = D 'fork'; New-Item -ItemType Directory -Force -Path $fork, (D 'nolocal'), (D 'nopf') | Out-Null
+  Set-Content -LiteralPath (Join-Path $fork 'code.cmd') -Encoding ASCII -Value @('@echo off', "echo %* >> `"$(D 'fork-calls.txt')`"", 'if "%1"=="--help" (echo Cursor 1.2.3& exit /b 0)', 'echo other editor')
+  $keep = @{ Path = $env:Path; LOCALAPPDATA = $env:LOCALAPPDATA; ProgramFiles = $env:ProgramFiles }
+  $env:MS_TEST_CODE_DIR = $vsc; $env:Path = "$fork;$env:Path"; $env:LOCALAPPDATA = D 'nolocal'; $env:ProgramFiles = D 'nopf'
+  try { $code = Run-Un @('-Parts', 'vscode', '-Yes') } finally {
+    Remove-Item Env:\MS_TEST_CODE_DIR -ErrorAction SilentlyContinue; $env:Path = $keep.Path; $env:LOCALAPPDATA = $keep.LOCALAPPDATA; $env:ProgramFiles = $keep.ProgramFiles }
+  $forkCalls = @(if (Test-Path (D 'fork-calls.txt')) { Get-Content (D 'fork-calls.txt') })
+  Check "another editor's code, no VS Code: that editor's command not used for the add-ons" (@($forkCalls -match 'uninstall-extension|list-extensions').Count -eq 0) ($forkCalls -join '; ')
+  Check "another editor's code, no VS Code: the recorded VS Code add-on folders deleted" ($code -eq 0 -and -not (Test-Path (Join-Path $vsc 'ext\sst-dev.opencode-1.0.0')) -and -not (Test-Path (Join-Path $vsc 'ext\ms-python.python-2026.10.0'))) "exit $code $(Out)"
+
   # 7. the setup's own Record-Install: one line per thing, no duplicates, nothing in a dry run
   $tokens = $null; $errs = $null
   $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)

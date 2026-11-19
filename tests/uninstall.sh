@@ -204,5 +204,13 @@ printf '%s\n' "vscode${T}vsext${T}sst-dev.opencode" "vscode${T}vsext${T}ms-pytho
 export MS_TEST_CODE_DIR="$V" MS_TEST_NO_CODE=1; rc="$(un '' --parts=vscode --yes)"; unset MS_TEST_CODE_DIR MS_TEST_NO_CODE
 check "vscode gone: the recorded add-on folders deleted ($rc)" '[ "$rc" = 0 ] && [ ! -e "$V/ext/sst-dev.opencode-1.0.0" ] && [ ! -e "$V/ext/ms-python.python-2026.10.0" ]'
 check "vscode gone: an add-on the student added stays, VS Code itself not touched" '[ -d "$V/ext/someone.mine-1.0.0" ] && ! logof | grep -q visual-studio-code'
+# VS Code gone, another editor built from VS Code (Cursor and others) owns "code" on PATH: its command is never run (it
+# would remove ITS add-ons of the same name); the recorded VS Code add-on folders are deleted instead
+make_state; V="$W/vsc"; mkdir -p "$V/ext/sst-dev.opencode-1.0.0" "$V/ext/ms-python.python-2026.10.0" "$W/fork"
+printf '%s\n' "vscode${T}vsext${T}sst-dev.opencode" "vscode${T}vsext${T}ms-python.python" >> "$MS_STATE_DIR/installed.tsv"
+printf '#!/bin/bash\necho "$*" >> %s/fork-calls.txt\ncase " $* " in *" --help "*) echo "Cursor 1.2.3";; *) echo other;; esac\n' "$W" > "$W/fork/code"; chmod +x "$W/fork/code"
+export MS_TEST_CODE_DIR="$V"; rc="$(PATH="$W/fork:$PATH" un '' --parts=vscode --yes)"; unset MS_TEST_CODE_DIR
+check "another editor's code, no VS Code: that editor's command not used for the add-ons ($rc)" '! grep -q "uninstall-extension\|list-extensions" "$W/fork-calls.txt" 2>/dev/null'
+check "another editor's code, no VS Code: the recorded VS Code add-on folders deleted" '[ "$rc" = 0 ] && [ ! -e "$V/ext/sst-dev.opencode-1.0.0" ] && [ ! -e "$V/ext/ms-python.python-2026.10.0" ]'
 
 echo "RESULT pass=$pass fail=$failn"; [ "$failn" = 0 ]

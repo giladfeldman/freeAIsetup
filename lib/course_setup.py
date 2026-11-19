@@ -449,6 +449,34 @@ def course_addon_log(listing: str) -> str:
     return "\n".join(ours + [f"(+ {len(lines) - len(ours)} other add-ons, not listed)"])
 
 
+VSCODE_NAME = re.compile(r"^Visual Studio Code( - Insiders)? \d+\.\d+")
+
+
+def vscode_cli() -> tuple[str | None, list[str]]:
+    """VS Code's own code command, and what each rejected candidate said. A "code" on PATH can belong to another editor
+    built from VS Code (Cursor's /usr/local/bin/code, production 2026-11-19): its --version and add-on list are that
+    editor's. So, as in the setups (setup-mac.sh code_cli, setup-windows.ps1 Code-Cli), a candidate counts only when its
+    --help starts with VS Code's own name; then VS Code's standard places are tried."""
+    if IS_WIN:
+        local = os.environ.get("LOCALAPPDATA", "")
+        extra = [os.path.join(local, "Programs", "Microsoft VS Code", "bin", "code.cmd"),
+                 os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "Microsoft VS Code", "bin", "code.cmd")]
+    else:
+        extra = [os.path.join(d, "Visual Studio Code.app", "Contents", "Resources", "app", "bin", "code")
+                 for d in ("/Applications", os.path.expanduser("~/Applications"))]
+    seen, rejected = set(), []
+    for c in [shutil.which("code"), *extra]:
+        if not c or c in seen or not os.path.isfile(c):
+            continue
+        seen.add(c)
+        code, out = sh([c, "--help"], timeout=60)
+        first = out.strip().splitlines()[0].strip() if out.strip() else ""
+        if code == 0 and VSCODE_NAME.match(first):
+            return c, rejected
+        rejected.append(f"{c} (its --help starts '{first[:40]}')")
+    return None, rejected
+
+
 def code_addon_rows(listing: str, parts: tuple[str, ...]) -> tuple[list[str], list[str]]:
     """From "code --list-extensions --show-versions": the wanted add-ons missing, and those older than tested."""
     have = {}
@@ -591,17 +619,21 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
     if "vscode" not in parts:
         skip("VS Code", "vscode", "" if IS_WIN or sys.platform == "darwin" else " (offered on Windows and Mac)")
     else:
-        code, out = sh(["code", "--version"], timeout=60)
-        record("code", code, out)
+        cli, rejected = vscode_cli()
+        code, out = sh([cli, "--version"], timeout=60) if cli else (127, "VS Code's code command not found")
+        record(f"code ({cli or 'none'})", code, out + "".join(f"\nnot VS Code's: {r}" for r in rejected))
         first = out.strip().splitlines()[0] if out.strip() else ""
-        if code != 0:
+        if code != 0 and rejected:
+            t.add("FAIL", "VS Code", "not found: the code command here belongs to another editor, not VS Code; "
+                                     f"run {'install-windows.cmd' if IS_WIN else 'bash setup-mac.sh'} again")
+        elif code != 0:
             t.add("FAIL", "VS Code", "not found or does not start (its code command)")
         else:
             t.add("WARN" if too_old("code", first) else "OK", "VS Code", too_old("code", first) or first[:60])
             # tests: MS_TEST_CODE_DIR = the scratch add-on folder the setup used
             iso = (["--extensions-dir", os.path.join(os.environ["MS_TEST_CODE_DIR"], "ext"), "--user-data-dir",
                     os.path.join(os.environ["MS_TEST_CODE_DIR"], "data")] if os.environ.get("MS_TEST_CODE_DIR") else [])
-            code, out = sh(["code", *iso, "--list-extensions", "--show-versions"], timeout=120)
+            code, out = sh([cli, *iso, "--list-extensions", "--show-versions"], timeout=120)
             record("code --list-extensions (course add-ons only)", code, course_addon_log(out))
             again = "install-windows.cmd" if IS_WIN else "bash setup-mac.sh"
             missing, old = code_addon_rows(out if code == 0 else "", parts)

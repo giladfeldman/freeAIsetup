@@ -19,7 +19,7 @@ function Check($name, [bool]$ok, $detail = '') { if ($ok) { "PASS $name"; $scrip
 $tokens = $null; $errs = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)
 $names = 'Log', 'Say', 'Ok', 'Warn', 'Fail', 'Record-Install', 'Run-Native', 'Has-Part', 'Code-Iso', 'Code-Extensions',
-         'Older-Than', 'Code-Cli', 'Recorded-Exts', 'Code-Wanted', 'Install-CodeExtensions'
+         'Older-Than', 'Code-Cli', 'Is-VSCodeCli', 'Recorded-Exts', 'Code-Wanted', 'Install-CodeExtensions'
 $vars = '$CodeExtensions', '$CodeMinVersions', '$CodeNames'
 $defs = @($ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $names -contains $a.Name }, $true))
 $assign = @($ast.FindAll({ param($a) $a -is [Management.Automation.Language.AssignmentStatementAst] -and $vars -contains $a.Left.Extent.Text -and $a.Parent.Parent -is [Management.Automation.Language.ScriptBlockAst] }, $true))
@@ -149,7 +149,24 @@ exit 0
   $r = Run-Step $fork (Join-Path $work 'sA9b')
   $forkCalls = @(if (Test-Path "$work\fork-calls.txt") { Get-Content "$work\fork-calls.txt" })
   Check "A9b another editor's code command: not used, VS Code's own folder used" ($r.log -match "its --help starts 'Cursor 1\.2\.3'" -and @($forkCalls -match 'install-extension').Count -eq 0 -and @(Calls | Where-Object { $_ -match '--install-extension sst-dev\.opencode' }).Count -ge 1) "$($r.log) | fork: $($forkCalls -join '; ')"
+  # Find-Tool (the setup's own): another editor's code command on PATH is not VS Code (production 2026-11-19, a Mac with
+  # Cursor and no VS Code: "VS Code already installed", then no add-ons); with VS Code in its own folder, that folder
+  $ft = @($ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -in 'Have', 'Find-Tool', 'Is-VSCodeCli', 'Log' }, $true))
+  function Find-VSCode($pathFirst) {
+    $s = Join-Path $work 'ft.ps1'
+    Set-Content -LiteralPath $s -Encoding UTF8 -Value @"
+`$LogFile = '$(Join-Path $work 'ft.log')'; `$env:PATH = '$pathFirst;' + `$env:PATH
+`$env:LOCALAPPDATA = '$fakeLocal'; `$env:ProgramFiles = '$fakePF'; `${env:ProgramFiles(x86)} = '$fakePF'
+$(($ft | ForEach-Object { $_.Extent.Text }) -join "`n")
+"[`$(Find-Tool @{ id = 'Microsoft.VisualStudioCode'; name = 'VS Code'; cmd = 'code'; exe = 'code.cmd'; dirs = @('Microsoft VS Code\bin') })]"
+"@
+    "$(& powershell.exe -NoProfile -ExecutionPolicy Bypass -File $s 2>&1)"
+  }
+  $got = Find-VSCode $fork
+  Check "A9c Find-Tool: VS Code in its own folder, another editor's code first on PATH: VS Code's folder" ($ft.Count -eq 4 -and $got -eq "[$(Join-Path $fakeLocal 'Programs\Microsoft VS Code\bin')]") $got
   Remove-Item -LiteralPath $fakeLocal -Recurse -Force
+  $got = Find-VSCode $fork
+  Check "A9d Find-Tool: only another editor's code command, no VS Code: not found (so the setup installs VS Code)" ($got -eq '[]') $got
   Reset-Fake $cur
   $r = Run-Step $bad (Join-Path $work 'sA10')
   Check 'A10 no working VS Code command anywhere: FAIL, nothing recorded' ($r.log -match "FAIL\s+VS Code add-ons\s+VS Code's code command was not found" -and $r.rec.Count -eq 0) $r.log
