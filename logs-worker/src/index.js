@@ -2,7 +2,8 @@
 // Write-only: there is no way to read logs through this address. The teacher reads them with
 // `wrangler kv key list/get` using his own Cloudflare login (see README.md).
 // A failed report also triggers an admin alert email (src/alerts.js).
-import { onFailedReport, environmentOf, runDigest, countKey, COUNT_TTL, COUNT_DAY_CAP, sendEmail, makeQueue, consistentKv } from "./alerts.js";
+import { onFailedReport, environmentOf, runDigest, countKey, COUNT_TTL, COUNT_DAY_CAP, sendEmail, makeQueue, consistentKv,
+  normalizeResult, storeResult, RESULT_MAX_BYTES } from "./alerts.js";
 
 const MAX_BYTES = 1_500_000;         // a full setup log is ~100-400 KB
 const KEEP_SECONDS = 180 * 24 * 3600; // deleted automatically after 180 days
@@ -16,7 +17,11 @@ export class AlertGate {
     const job = await req.json();
     const env = { ...this.env, LOGS: consistentKv(this.env.LOGS, this.state.storage) };
     const now = new Date(job.now);
-    const out = await this.queue(() => (job.kind === "digest" ? runDigest(env, now, this.send) : onFailedReport(env, job.args, now, this.send)));
+    // a run's result goes to the raw store (its key is new every time, nothing reads it back at once); its daily cap
+    // counter lives in this object's own storage, so two runs at once cannot both pass the cap
+    const out = await this.queue(() => (job.kind === "digest" ? runDigest(env, now, this.send)
+      : job.kind === "result" ? storeResult(this.env.LOGS, this.state.storage, job.args, now)
+      : onFailedReport(env, job.args, now, this.send)));
     return new Response(typeof out === "string" ? out : JSON.stringify(out));
   }
 }
@@ -71,6 +76,29 @@ export default {
       }
       return new Response("counted\n", { headers: { "content-type": "text/plain" } });
     }
+    if (req.method === "POST" && url.pathname === "/result") {
+      // The anonymous result of one setup run (setup-windows.ps1 Send-Result, setup-mac.sh send_result, the installers):
+      // platform, version, coarse OS, parts chosen, and the FAIL/WARN step lines with names and home folders removed.
+      // No name, no log, no install ID, no country. Past the daily cap the answer is "capped" and nothing is written.
+      if (req.headers.get("x-freeaisetup") !== "1") return new Response("missing header\n", { status: 400 });
+      const len = Number(req.headers.get("content-length") || "0");
+      if (len > RESULT_MAX_BYTES) return new Response("too large\n", { status: 413 });
+      const raw = await req.text();
+      if (!raw || raw.length > RESULT_MAX_BYTES) return new Response("empty or too large\n", { status: 413 });
+      let platform = "";
+      try { platform = String(JSON.parse(raw).platform || "").toLowerCase(); } catch { /* normalizeResult says why */ }
+      if (!PLATFORMS.has(platform)) return new Response("bad platform\n", { status: 400 });
+      const { error, rec } = normalizeResult(raw, platform);
+      if (error) return new Response(error + "\n", { status: 400 });
+      try {
+        const r = await toGate(env, { kind: "result", now: new Date().toISOString(), args: { environment: environmentOf(req), platform, rec } });
+        const out = (await r.text()).trim();
+        return new Response((out === "capped" ? "capped" : "stored") + "\n", { headers: { "content-type": "text/plain" } });
+      } catch (e) {
+        await gateFailed(env, "result gate", e);
+        return new Response("not stored\n", { status: 503 });
+      }
+    }
     if (req.method !== "POST" || url.pathname !== "/upload") {
       return new Response("freeAIsetup log upload. Nothing to see here.\n", { status: 404 });
     }
@@ -99,7 +127,7 @@ export default {
     return new Response(id + "\n", { headers: { "content-type": "text/plain" } });
   },
 
-  // Cron on the 1st and 15th of each month (wrangler.toml): the fortnight digest.
+  // Cron every Monday 06:00 UTC (wrangler.toml): the weekly digest (owner request 2026-11-24; the standard is fortnightly).
   async scheduled(event, env, ctx) {
     const now = new Date(event.scheduledTime);
     ctx.waitUntil(toGate(env, { kind: "digest", now: now.toISOString() })

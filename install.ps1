@@ -51,7 +51,24 @@
   # nobody; student 2026-11-12). Same log box, header and redaction as setup-windows.ps1.
   $notes = New-Object Collections.ArrayList
   function Note($t) { [void]$notes.Add([string]$t) }
+  function Send-InstallerResult($step, $why) {
+    # The anonymous result message of the setup (setup-windows.ps1 Send-Result), for a stop in this installer: no
+    # name, no log, no ID; MS_NO_COUNT=1 switches it off. It never matters to the student whether it arrives.
+    if ($env:MS_NO_COUNT) { return }
+    try {
+      $box = if ($env:MS_LOG_URL) { $env:MS_LOG_URL.TrimEnd('/') } else { 'https://freeaisetup-logs.giladfel.workers.dev' }
+      $h = @{ 'x-freeaisetup' = '1' }; if ($env:MS_LOG_ENV) { $h['x-freeaisetup-env'] = $env:MS_LOG_ENV }
+      $build = [Environment]::OSVersion.Version.Build
+      $w = "$why" -replace [regex]::Escape($env:USERPROFILE), '~'
+      foreach ($n in @($env:USERNAME, $env:COMPUTERNAME)) { if ($n -and $n.Length -ge 4) { $w = $w -replace [regex]::Escape($n), '<name>' } }
+      $body = @{ v = 1; platform = 'windows'; version = $(if ($manifest) { "$($manifest.version)" } else { 'installer' }); os = "Windows $(if ($build -ge 22000) { '11' } else { '10' }) $build"
+                 arch = "$env:PROCESSOR_ARCHITECTURE"; outcome = 'failed'; stage = 'installer'; mode = 'installer'; parts = ''; minutes = 0
+                 issues = @(, @('FAIL', "$step", $w, 'installer')) } | ConvertTo-Json -Depth 4 -Compress
+      $null = Invoke-WebRequest -Uri "$box/result" -Method Post -UseBasicParsing -TimeoutSec 20 -Headers $h -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+    } catch {}
+  }
   function Stop-WithReport($step, $why) {
+    Send-InstallerResult $step $why
     $a = ''
     try { $a = Read-Host '  Send a short report to your teacher, so they can see what went wrong? It contains no passwords; your user name is removed. [Y/n]' } catch { $a = 'n' }   # no keyboard to ask on: send nothing
     if ($a -match '^(n|no)$') { return }

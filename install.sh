@@ -49,6 +49,15 @@ fYLUKs+KlwabPzetzAsEq4vOZazV0eyeYWRWuNSATmUNAgMBAAE=
   stop_report() { # $1 = step, $2 = why. Asks on the keyboard (this script itself arrives through a pipe).
     local a="" plat body id box="${MS_LOG_URL:-https://freeaisetup-logs.giladfel.workers.dev}" w
     box="${box%/}"; plat=mac; [ "$(uname -s)" = Darwin ] || plat=linux; [ -n "${CODESPACES:-}" ] && plat=codespace
+    # the anonymous result message of the setup (setup-mac.sh send_result) for a stop here: no name, no log, no ID;
+    # MS_NO_COUNT=1 switches it off. Sent whatever the answer below.
+    if [ -z "${MS_NO_COUNT:-}" ]; then
+      local js os r; js() { printf '%s' "$1" | sed -e "s#$HOME#~#g" -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'; }
+      os="$(uname -s) $(sw_vers -productVersion 2>/dev/null || uname -r)"
+      r="{\"v\":1,\"platform\":\"$plat\",\"version\":\"$VER\",\"os\":\"$(js "$os")\",\"arch\":\"$(uname -m)\",\"outcome\":\"failed\",\"stage\":\"installer\",\"mode\":\"installer\",\"parts\":\"\",\"minutes\":0,\"issues\":[[\"FAIL\",\"$(js "$1")\",\"$(js "$2")\",\"installer\"]]}"
+      if [ -n "${MS_LOG_ENV:-}" ]; then printf '%s' "$r" | curl -fsS --max-time 20 -X POST -H 'x-freeaisetup: 1' -H "x-freeaisetup-env: $MS_LOG_ENV" --data-binary @- "$box/result" >/dev/null 2>&1
+      else printf '%s' "$r" | curl -fsS --max-time 20 -X POST -H 'x-freeaisetup: 1' --data-binary @- "$box/result" >/dev/null 2>&1; fi
+    fi
     if (exec < /dev/tty) 2>/dev/null; then
       printf '  Send a short report to your teacher, so they can see what went wrong?\n  It contains no passwords; your user name is removed. [Y/n] '
       read -r a < /dev/tty || a="n"

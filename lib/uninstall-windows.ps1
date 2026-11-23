@@ -8,7 +8,7 @@
 #  (setup-windows.ps1 runs a copy of this file from the temp folder, because Windows cannot delete the pack folder
 #  while a program runs from it). Options: [-Components rstudio,quarto|all] [-Yes] [-DryRun] [-RemoveCourse]
 #  (-Parts is the same as -Components, in both places: before 2026-11-13 the setup ignored -Parts)
-#  Parts: rstudio, r, quarto, node, vscode, web, codex, claude, ai (the AI assistant, Git, uv, this pack and its daily update), all.
+#  Parts: rstudio, r, quarto, node, vscode, web, codex, claude, ai (the AI assistant, Git, uv, this pack and the daily update check of older setups), all.
 # =============================================================================
 param(
   [Alias('Components')][string]$Parts = '',   # what to remove without asking for the list (all = everything except the course folder)
@@ -33,7 +33,7 @@ $Groups = [ordered]@{
   web     = 'Website tools (GitHub CLI, Vercel, Neon, Railway) and their sign-ins'
   codex   = 'Codex and its sign-in'
   claude  = 'Claude Code and its sign-in'
-  core    = 'The AI assistant and the setup''s own tools (OpenCode, Git, uv, this course pack and its daily update)'
+  core    = 'The AI assistant and the setup''s own tools (OpenCode, Git, uv, this course pack, and the daily update check of older setups)'
 }
 
 function Log($t) { try { Add-Content -LiteralPath $LogFile -Value $t -Encoding UTF8 } catch {} }
@@ -104,7 +104,7 @@ Say "MetaScience course setup: remove what the setup installed   (log: $LogFile)
 if ($DryRun) { Write-Host 'DRY RUN: nothing will be changed.' -ForegroundColor Yellow }
 if (-not (Test-Path -LiteralPath $Record)) {
   Say 'This computer has no record of the programs the setup installed (setups before November 2026 kept none).'
-  Say 'So only the course pack and its daily update can be removed here. To remove a program yourself:'
+  Say 'So only the course pack and the daily update check of older setups can be removed here. To remove a program yourself:'
   Say 'Start menu > Settings > Apps > Installed apps.'
 }
 
@@ -165,7 +165,9 @@ if (-not $Yes -and -not $DryRun) {
 # pack itself, and last the PATH entries whose folders are now gone
 # (VS Code's add-ons before VS Code: its own command removes them)
 $order = @{ rpkg = 0; uvdata = 1; app = 2; vsext = 2; task = 3; winget = 4; inno = 4; dir = 5; file = 5; pack = 6; path = 7; pathdir = 7 }
-$todo = @($items | Where-Object { $chosen -contains $_.part -and -not ($keepPack -and $_.kind -in 'pack', 'task') } | Sort-Object { $order[$_.kind] })
+# The daily update task of setups before 2026-11-24 goes in every uninstall, even one of a single part (owner
+# directive 2026-11-24: nothing of the setup runs on its own); the pack stays while other parts stay.
+$todo = @($items | Where-Object { $_.kind -eq 'task' -or ($chosen -contains $_.part -and -not ($keepPack -and $_.kind -eq 'pack')) } | Sort-Object { $order[$_.kind] })
 if ($delCourse) { $todo += $course[0] }
 $done = @()
 Say ''

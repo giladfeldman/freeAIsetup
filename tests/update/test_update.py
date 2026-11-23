@@ -58,16 +58,21 @@ def publish(tree: pathlib.Path, srv: pathlib.Path, version: str, key: pathlib.Pa
         shutil.copy2(f, d)
 
 
+REQUESTS: list = []
+
+
 def serve(root: pathlib.Path) -> tuple[socketserver.TCPServer, int]:
     h = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(root))
-    h.log_message = lambda *a, **k: None
+    h.log_message = lambda *a, **k: REQUESTS.append(a[1] if len(a) > 1 else "")   # every request the updater made
     httpd = socketserver.TCPServer(("127.0.0.1", 0), h)
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     return httpd, httpd.server_address[1]
 
 
 def run_updater(pack: pathlib.Path, home: pathlib.Path, sources: str, shell: bool, *args: str) -> subprocess.CompletedProcess:
-    env = dict(os.environ, MS_UPDATE_SOURCES=sources, MS_UPDATE_NO_SETUP="1", METASCIENCE_DIR=str(home / "MetaScience"))
+    env = dict(os.environ, MS_UPDATE_SOURCES=sources, MS_UPDATE_NO_SETUP="1", METASCIENCE_DIR=str(home / "MetaScience"),
+               MS_TEST_NO_JOBS="1")                       # never this computer's scheduled tasks
+    env.pop("CODESPACES", None)
     if shell:
         cmd = [os.environ.get("FAS_BASH", "bash"), (pack / "update" / "update.sh").as_posix(), *args]
     else:
@@ -101,6 +106,27 @@ def main() -> int:
     r = run_updater(pack, home, sources, shell)
     check("same version = up to date", "up to date" in (r.stdout + r.stderr), r.stdout + r.stderr)
 
+    # 2026-11-24: an updater from before then copied a new version in from its background run, and that version's
+    # setup did nothing (it only removed the old daily task). The next update by hand must bring the tools up to date,
+    # even though the pack's version is already the newest.
+    state = home / "MetaScience"
+    (state / "installed.tsv").write_text("core\tpack\tx\n")      # a computer the setup installed on
+    r = run_updater(pack, home, sources, shell)
+    out = r.stdout + r.stderr
+    check("same version, tools not yet updated (no applied-version.txt): runs the setup", "running the setup now" in out and "setup re-run skipped" in out, out)
+    (state / "applied-version.txt").write_text("2026.1.0.1\n")
+    r = run_updater(pack, home, sources, shell)
+    check("same version, applied version older: runs the setup", "running the setup now" in (r.stdout + r.stderr), r.stdout + r.stderr)
+    (state / "applied-version.txt").write_text("2026.1.1.1\n")
+    r = run_updater(pack, home, sources, shell)
+    check("same version, applied version current: up to date, no setup", "up to date" in (r.stdout + r.stderr) and "running the setup" not in (r.stdout + r.stderr), r.stdout + r.stderr)
+    (state / "installed.tsv").unlink(); (state / "applied-version.txt").unlink()
+    (state / "applied-version.txt").write_text("2026.1.0.1\n")
+    r = run_updater(pack, home, sources, shell)
+    check("no installed.tsv (never installed here): up to date, no setup run",   # "up to date": the updater did run
+          "up to date" in (r.stdout + r.stderr) and "running the setup" not in (r.stdout + r.stderr), r.stdout + r.stderr)
+    (state / "applied-version.txt").unlink()
+
     # v2: one file changed, one added, one removed
     v2 = tmp / "v2"; shutil.copytree(v1, v2)
     (v2 / "course-kit" / "prompts").mkdir(parents=True, exist_ok=True)
@@ -109,6 +135,19 @@ def main() -> int:
     victim = sorted((v2 / "guide").glob("*"))[0]
     victim.unlink()
     publish(v2, srv, "2026.1.2.1", key)
+    # the old daily task's own call (-Auto / --auto, not in a Codespace): an update is waiting, yet nothing is
+    # downloaded or installed in the background any more
+    # (Not only "nothing installed": the old updater also installed nothing while OpenCode was open, which made this
+    # check pass on the old code on a machine running OpenCode. It must not even contact the release server.)
+    REQUESTS.clear()
+    r = run_updater(pack, home, sources, shell, "--auto" if shell else "-Auto")
+    check("old background call (-Auto): contacts nothing, installs nothing although an update waits",
+          r.returncode == 0 and not REQUESTS and (pack / "VERSION").read_text().strip() == "2026.1.1.1"
+          and not (home / "MetaScience" / "pack-previous").exists(), f"requests: {REQUESTS} " + r.stdout + r.stderr)
+    log = (home / "MetaScience" / "update-log.txt").read_text(encoding="utf-8-sig", errors="replace").replace("﻿", "")
+    # the old updater, with OpenCode open, also contacted nothing: it wrote "waits: OpenCode or RStudio is open"
+    check("old background call (-Auto): goes to the removal of the old daily check (test mode)",
+          "old daily update" in log.splitlines()[-1] and "not touched" in log.splitlines()[-1], log[-400:].encode("ascii", "replace").decode())
     r = run_updater(pack, home, sources, shell)
     out = r.stdout + r.stderr
     check("update v1 -> v2 applied", (pack / "VERSION").read_text().strip() == "2026.1.2.1", out)

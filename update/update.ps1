@@ -1,12 +1,13 @@
 ﻿# =============================================================================
 #  freeAIsetup pack updater (Windows PowerShell 5.1)
 #  Checks the published release, verifies its signature, downloads only the files that changed,
-#  keeps the previous version for rollback, then re-runs the setup quietly so new tools get installed.
+#  keeps the previous version for rollback, then re-runs the setup so new tools get installed.
+#  It runs only when the student starts it (install-windows.cmd -Update): nothing is scheduled.
 #  The setup never upgrades or removes software that is already installed, and never touches the
 #  student's own files (changed course files are kept; the new version is saved as name.new).
 #
 #    update.ps1            check and update now (shows what happens)
-#    update.ps1 -Auto      quiet run from the scheduled task (skips while OpenCode or RStudio is open)
+#    update.ps1 -Auto      (from the daily task of setups before 2026-11-24) removes that task and stops
 #    update.ps1 -Rollback  go back to the previous version
 #    update.ps1 -CheckOnly say whether an update is available, change nothing
 # =============================================================================
@@ -45,6 +46,23 @@ function Test-Signature([byte[]]$data, [byte[]]$sig) {
   return $rsa.VerifyData($data, [Security.Cryptography.CryptoConfig]::MapNameToOID('SHA256'), $sig)
 }
 function Version-Of($s) { try { return [version]($s.Trim()) } catch { return [version]'0.0' } }
+$TaskName = 'MetaScience pack update'   # the daily task of setups before 2026-11-24
+if ($Auto) {
+  # Started by that old task: remove it and stop. Nothing is downloaded or installed in the background (owner
+  # directive 2026-11-24). A running task may delete itself (measured 2026-11-23).
+  if ($env:MS_TEST_NO_JOBS) { Note 'test mode: the old daily update task was not touched'; exit 0 }   # tests: never this computer's tasks
+  $null = & schtasks.exe /delete /tn $TaskName /f 2>&1
+  Note "the old daily update task was removed (exit $LASTEXITCODE); updates now run only by hand: install-windows.cmd -Update"
+  exit 0
+}
+function Applied-Version { $f = Join-Path (Split-Path -Parent $Pack) 'applied-version.txt'; if (Test-Path -LiteralPath $f) { return Version-Of (Get-Content -Raw -LiteralPath $f) }; return [version]'0.0' }
+function Run-Setup {
+  $ps = Join-Path $Pack 'setup-windows.ps1'
+  if ($env:MS_UPDATE_NO_SETUP) { Note 'test mode: setup re-run skipped'; return 0 }
+  $env:MS_UPDATE_BY_HAND = '1'   # tells the setup that the student started this update (setup-windows.ps1)
+  $p = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$ps`"", '-Yes', '-FromUpdate') -PassThru -Wait -NoNewWindow
+  Note "setup after update finished (exit $($p.ExitCode))"; return $p.ExitCode
+}
 
 # Files are copied in place (never renaming the pack folder, which this script runs from).
 function Sync-Folder($from, $to) {
@@ -80,11 +98,15 @@ foreach ($src in $Sources) {
 }
 if (-not $manifest) { Note 'no update source reachable; nothing changed'; exit 0 }
 $latest = Version-Of $manifest.version
-if ($latest -le $current) { Note "up to date ($current)"; exit 0 }
-if ($CheckOnly) { Note "update available: $current -> $latest"; exit 0 }
-if ($Auto -and (Get-Process -Name 'opencode*', 'rstudio', 'OpenCode*' -ErrorAction SilentlyContinue)) {
-  Note "update $latest waits: OpenCode or RStudio is open"; exit 0
+if ($latest -le $current) {
+  # an update copied in by an older updater's background run, whose setup did nothing (setup-windows.ps1): finish it
+  if (-not $CheckOnly -and (Applied-Version) -lt $current -and (Test-Path -LiteralPath (Join-Path (Split-Path -Parent $Pack) 'installed.tsv'))) {
+    Note "pack $current is here but its tools were not brought up to date yet; running the setup now"
+    $null = Run-Setup; exit 0
+  }
+  Note "up to date ($current)"; exit 0
 }
+if ($CheckOnly) { Note "update available: $current -> $latest"; exit 0 }
 
 # 2. download every changed file into a staging copy, checking each SHA-256 against the signed manifest
 $stage = "$Pack.staging"
@@ -118,11 +140,8 @@ Sync-Folder $Pack $Prev
 Sync-Folder $stage $Pack
 Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue
 Note "updated $current -> $latest ($changed files)"
-# 4. re-run the setup quietly so new tools and course files arrive
-$ps = Join-Path $Pack 'setup-windows.ps1'
-if ($env:MS_UPDATE_NO_SETUP) { Note 'test mode: setup re-run skipped'; exit 0 }
-$p = Start-Process powershell.exe -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', "`"$ps`"", '-Yes', '-FromUpdate') -PassThru -Wait -WindowStyle $(if ($Auto) { 'Hidden' } else { 'Normal' })
-Note "setup after update finished (exit $($p.ExitCode))"
+# 4. re-run the setup, in this window, so new tools and course files arrive
+$null = Run-Setup
 try {
   New-Item -ItemType Directory -Force -Path $CourseDir | Out-Null
   Add-Content -LiteralPath (Join-Path $CourseDir 'UPDATES.txt') -Encoding UTF8 -Value ("{0}  updated the course pack to {1}. Notes: {2}" -f (Get-Date -Format 'yyyy-MM-dd'), $latest, $manifest.notes)

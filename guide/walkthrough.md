@@ -66,8 +66,7 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
      - *Claude Code*: only if you pay for Claude (Part 7). Otherwise: **no**.
    - ✋ **If it says *"Smart App Control is ON"*:** this Windows protection blocks parts of R and Python that the course needs. Windows Security opens by itself. Click **Smart App Control settings**, choose **Off**, confirm (Windows asks for the computer's administrator password; on a laptop owned by your employer or school, ask its IT), then go back to the PowerShell window and press **Enter**. Your normal virus protection stays on. Windows may not let you switch it back on later without a reset; if you do not want that, type **Q** and ask your teacher about the browser-only option.
    - ✋ Windows may ask *"Do you want to allow this app to make changes to your device?"* If you know your computer's admin password, click **Yes**. If you do not, click **No**: the setup then installs that tool just for your account.
-5. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
-6. ✋ Near the end it asks *"Connect a free OpenRouter account as a backup for the AI?"* Type **y** and press Enter (or **n** to do it later, Part 3). Press Enter again at *"connect now?"*. A browser page opens: sign in with Google or GitHub and press **Allow**. The setup receives the key by itself; nothing to copy. At *"other free services too?"* press Enter (no).
+5. ✋ Near the end it asks *"Connect a free OpenRouter account as a backup for the AI?"* Type **y** and press Enter (or **n** to do it later, Part 3). Press Enter again at *"connect now?"*. A browser page opens: sign in with Google or GitHub and press **Allow**. The setup receives the key by itself; nothing to copy. At *"other free services too?"* press Enter (no).
 
 ## Mac
 
@@ -88,9 +87,7 @@ You copy **one line** into a window and press Enter. Nothing to download or unzi
    - ✋ When asked for a **Password**, type your Mac login password and press Enter. **Nothing appears while you type**, which is normal.
 5. ✋ If a window asks to install *"command line developer tools"*, click **Install**, then **Agree**. This alone can take 10–40 minutes; the setup continues by itself afterwards. If the screen goes dark or locks meanwhile, log in again: the setup keeps running underneath.
    - ✋ If macOS asks whether *"Terminal"* may access your **Downloads** folder, click **Allow**.
-   - A notice *"Background Items Added: bash"* may appear. That is the daily update check; you can ignore it.
-6. ✋ It asks *"Keep this course pack up to date automatically?"* Press **Enter** (yes).
-7. ✋ Near the end it asks *"Connect a free OpenRouter account as a backup for the AI?"* Type **y** and press Enter (or **n** to do it later, Part 3). Press Enter again at *"connect now?"*. A browser page opens: sign in with Google or GitHub and press **Allow**. The setup receives the key by itself; nothing to copy. At *"other free services too?"* press Enter (no).
+6. ✋ Near the end it asks *"Connect a free OpenRouter account as a backup for the AI?"* Type **y** and press Enter (or **n** to do it later, Part 3). Press Enter again at *"connect now?"*. A browser page opens: sign in with Google or GitHub and press **Allow**. The setup receives the key by itself; nothing to copy. At *"other free services too?"* press Enter (no).
 
 ## If GitHub is blocked (for example in mainland China)
 
@@ -273,8 +270,8 @@ and its add-ons, the website tools, Codex, Claude Code, and the AI assistant wit
 - Your course folder (**MetaScience**) is kept, unless you type **DELETE** when asked. Copy your work somewhere safe
   first.
 - For programs installed for the whole computer, Windows may ask for permission and the Mac for your password.
-- Setups from before November 2026 kept no list of what they installed. Then only the course pack and its daily
-  update can be removed this way. Remove other programs yourself (Windows: **Settings > Apps > Installed apps**;
+- Setups from before November 2026 kept no list of what they installed. Then only the course pack and the daily
+  update check they added can be removed this way. Remove other programs yourself (Windows: **Settings > Apps > Installed apps**;
   Mac: drag them from **Applications** to the **Bin**).
 - On a Mac, Homebrew stays in place, because other programs may use it.
 

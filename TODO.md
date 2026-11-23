@@ -107,6 +107,7 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Tests
 
 - [x] [MED · soon · val:med · S · sonnet-medium] tests/run-tests.ps1 must exit non-zero when a docker test container fails (src: tests/run-tests.ps1:7-11 (docker run result never checked; uninstall.sh fail=1 returned exit 0 on 2026-11-12)) ^d-0a2aff (fixed 2026-11-12: 2026-11-12: tests/run-tests.ps1 exits 1 when docker build or any test container fails; control: mac-stub.sh with 'exit 7' appended -> runner exit 1; real test -> exit 0)
+- [ ] [MED · soon · val:med · M · sonnet-medium] Rewrite the VM update test for by-hand updates: tests/vm/runner.ps1 and run-case.ps1 -UpdateTest still fire the daily task 'MetaScience pack update', which setups no longer create (2026-11-24); test instead that a fresh setup leaves no task and that install-windows.cmd -Update updates and rolls back (src: tests/vm/runner.ps1:26-41, tests/vm/run-case.ps1:17) ^d-3fc385
 
 ## Windows install
 
@@ -147,3 +148,16 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Startpage
 
 - [x] [LOW · later · val:low · S · sonnet-medium] Set request_queue_size (e.g. 128) on the ThreadingHTTPServer that serves the browser page: Python's default queue of 5 makes Windows refuse requests while busy (a page served the same way stuck on load in another tool, 2026-11-17) (src: .devcontainer/startpage/server.py:282 (Linux container: refusal less likely, check)) ^d-3dd775 (fixed 2026-11-17: 2026-11-17: start page server is Server(ThreadingHTTPServer) with request_queue_size=128; tests/startpage/test_startpage.py asserts it (ALL PASS; AttributeError on the old code))
+
+## Setup videos
+
+- [ ] [MED · soon · val:high · L · sonnet-medium] Re-film the Windows, Mac and Codespace setup videos (parts menu, yes/no extras, port-4000 start page) and replace them on OSF yq9h5 (src: setup videos tracking note, checked 2026-11-19) ^d-64afeb
+
+## Admin email
+
+- [ ] [MED · soon · val:med · S · sonnet-medium] Sync logs-worker/src/admin-email.ts from the shared admin-email renderer (its version of 2026-11-20): an emoji across char 300 of an error message makes encodeURIComponent throw and the alert email fail; digest dates print ICU 'Sept' (src: the shared admin-email renderer, functions headChars and dayMonth; review 2026-11-20) ^d-22f652
+- [ ] [LOW · soon · val:med · S · sonnet-medium] Keep the local weekly-digest changes when syncing admin-email.ts from the shared renderer (d-22f652): DigestInput.period/tables/promptLines and the 'next digest' footer are local (2026-11-24); upstream them or re-apply, and re-run test/results.test.js (src: logs-worker/src/admin-email.ts header note) ^d-5bfc7a
+
+## Privacy
+
+- [ ] [MED · soon · val:med · S · sonnet-medium] Remove user and computer names with any letters (also ü, é, Chinese) from the report upload on Mac/Linux: upload_log and install.sh stop_report skip a name with non-English letters, so such a name stays in an uploaded log (the result message's scrub was fixed 2026-11-24 with a quoted bash substitution) (src: setup-mac.sh upload_log; install.sh stop_report (Docker test account jürgen, 2026-11-24)) ^d-0a67b9

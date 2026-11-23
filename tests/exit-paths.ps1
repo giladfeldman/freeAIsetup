@@ -1,5 +1,5 @@
-# Every way a Windows setup can stop must offer the report to the teacher's log box, and a success must send the
-# anonymous count once. Runs on this computer and installs NOTHING: each case stops before any install (test hooks
+# Every way a Windows setup can stop must offer the report to the teacher's log box, and every run must send one
+# anonymous result (POST /result) with nothing personal in it. Runs on this computer and installs NOTHING: each case stops before any install (test hooks
 # MS_TEST_FAIL_AT / MS_TEST_CRASH), the installer cases stop at their download checks, and the log box is a local
 # fake (tests\fake_logbox.py). Needs Python on PATH.
 #   powershell -ExecutionPolicy Bypass -File tests\exit-paths.ps1
@@ -14,6 +14,7 @@ Start-Sleep -Seconds 2
 $env:MS_LOG_URL = "http://127.0.0.1:$port"; $env:MS_LOG_ENV = 'local'
 $env:METASCIENCE_DIR = Join-Path $work 'MetaScience'      # never the real course folder
 $env:MS_STATE_DIR = Join-Path $work 'state'               # never the real record of parts and installs
+$env:MS_TEST_NO_JOBS = '1'                                 # never this computer's real scheduled tasks
 New-Item -ItemType Directory -Force -Path $env:MS_STATE_DIR | Out-Null
 Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Value 'all' -Encoding ASCII   # no parts question
 Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'asked.txt') -Value 'web codex claude' -Encoding ASCII   # nor the extras questions
@@ -28,13 +29,15 @@ function Run-Setup($answers, [string[]]$extra = @()) {
   $null = $p.Handle   # without this PowerShell 5.1 loses the exit code
   $p.WaitForExit(); return $p.ExitCode
 }
+function Results { @(Records | Where-Object { $_.path -eq '/result' } | ForEach-Object { $_.body | ConvertFrom-Json }) }
+function Private-Free($text) { -not ($text -match [regex]::Escape($env:USERPROFILE)) -and ($env:USERNAME.Length -lt 4 -or -not ($text -match [regex]::Escape($env:USERNAME))) -and ($env:COMPUTERNAME.Length -lt 4 -or -not ($text -match [regex]::Escape($env:COMPUTERNAME))) }
 function Reset-Env { foreach ($v in 'MS_TEST_FAIL_AT', 'MS_TEST_CRASH') { Remove-Item "Env:\$v" -ErrorAction SilentlyContinue } }
 
 try {
   # ---- setup-windows.ps1: three ways to stop, each must offer the upload (answer: yes to send, no to the helper)
   foreach ($case in @(@{ n = 'stop in step 1 (precheck)'; v = 'MS_TEST_FAIL_AT'; x = 'precheck'; step = 'Test stop' },
-                      @{ n = 'crash before any step';     v = 'MS_TEST_CRASH';   x = 'main';     step = 'Setup stopped' },
-                      @{ n = 'crash in step 3';           v = 'MS_TEST_CRASH';   x = 'tools';    step = 'Setup stopped' })) {
+                      @{ n = 'crash before any step';     v = 'MS_TEST_CRASH';   x = 'main';     step = 'Setup stopped'; st = 'crash' },
+                      @{ n = 'crash in step 3';           v = 'MS_TEST_CRASH';   x = 'tools';    step = 'Setup stopped'; st = 'crash' })) {
     Reset-Env; Set-Item "Env:\$($case.v)" $case.x; Clear-Content -LiteralPath $rec
     $code = Run-Setup @('y', 'n')
     $r = @(Records | Where-Object { $_.path -like '/upload*' })
@@ -49,16 +52,30 @@ try {
     }
     # the file the summary tells the student to show the teacher must exist (it named setup-report.txt, which only
     # the check in step 8 writes, also when the setup stopped earlier)
+    # the anonymous result: one per run, failed, the stopping step named, nothing personal
+    $res = @(Results)
+    Check "$($case.n): one anonymous result sent" ($res.Count -eq 1) "results: $($res.Count)"
+    if ($res.Count) {
+      $want = if ($case.st) { $case.st } else { 'precheck' }
+      Check "$($case.n): result says failed, windows, stage $want" ($res[0].outcome -eq 'failed' -and $res[0].platform -eq 'windows' -and $res[0].stage -eq $want -and $res[0].v -eq 1) "$($res[0] | ConvertTo-Json -Compress)"
+      Check "$($case.n): result names the failed step" (@($res[0].issues | Where-Object { $_[0] -eq 'FAIL' -and $_[1] -eq $case.step }).Count -ge 1) "$($res[0].issues | ConvertTo-Json -Compress)"
+      Check "$($case.n): result has no home folder, user or computer name" (Private-Free ((Records | Where-Object { $_.path -eq '/result' })[0].body))
+    }
     $named = [regex]::Match((Get-Content (Join-Path $work 'out.txt') -Raw), 'show the teacher: (.+?)\r?\n').Groups[1].Value.Trim()
     Check "$($case.n): the file named in the summary exists" ($named -and (Test-Path -LiteralPath $named)) "named: '$named'"
   }
-  # the student says no: nothing is sent
+  # the student says no: no report; only the anonymous result (owner decision 2026-11-24: automatic, anonymous)
   Reset-Env; $env:MS_TEST_FAIL_AT = 'precheck'; Clear-Content -LiteralPath $rec
   $null = Run-Setup @('n', 'n')
-  Check 'student says no: nothing sent' ((Records).Count -eq 0)
-  # -Yes (the AI helper's own re-runs, tests): no question, nothing sent
+  Check 'student says no: no report sent, one anonymous result' (@(Records | Where-Object { $_.path -like '/upload*' }).Count -eq 0 -and @(Results).Count -eq 1) "posts: $((Records | ForEach-Object { $_.path }) -join ', ')"
+  # -Yes (the AI helper's own re-runs, tests): no question, no report, one result
   Clear-Content -LiteralPath $rec; $code = Run-Setup @() @('-Yes')
-  Check '-Yes: no question, nothing sent, exit 1' ((Records).Count -eq 0 -and $code -eq 1)
+  Check '-Yes: no question, no report, one result, exit 1' (@(Records | Where-Object { $_.path -like '/upload*' }).Count -eq 0 -and @(Results).Count -eq 1 -and $code -eq 1) "exit $code; posts: $((Records | ForEach-Object { $_.path }) -join ', ')"
+  # MS_NO_COUNT=1 switches the result off
+  Clear-Content -LiteralPath $rec; $env:MS_NO_COUNT = '1'; $null = Run-Setup @() @('-Yes'); Remove-Item Env:\MS_NO_COUNT
+  Check 'MS_NO_COUNT=1: no result sent' (@(Results).Count -eq 0)
+  # the older count message is gone: no setup sends /count any more
+  Check 'no run sent the old /count' (@(Records | Where-Object { $_.path -like '/count*' }).Count -eq 0)
   Reset-Env
 
   # ---- a parts list saved by an older setup ("all", no answers to the three extras yet): asked once, and only a yes
@@ -91,17 +108,31 @@ try {
   Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'parts.txt') -Value 'all' -Encoding ASCII
   Set-Content -LiteralPath (Join-Path $env:MS_STATE_DIR 'asked.txt') -Value 'web codex claude' -Encoding ASCII
   Reset-Env
-  # ---- success count: the function itself, with its state folder pointed at a scratch folder
+  # ---- the result message itself (Send-Result), as at the end of a run: one FAIL row with the home folder in it,
+  #      and one WARN row from the check's file. ONE issue of each kind on purpose: PowerShell 5.1 flattens a
+  #      one-element list of lists, which would send ["FAIL","R step",...] instead of [["FAIL","R step",...]].
   $tokens = $null; $errs = $null
   $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)
-  $defs = $ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -in 'Send-SuccessCount', 'LogBox-Headers', 'Log' }, $true) | ForEach-Object { $_.Extent.Text }
-  Clear-Content -LiteralPath $rec
-  & ([scriptblock]::Create(($defs -join "`n") + "`n`$StateDir = '$work\countstate'; `$LogBox = '$($env:MS_LOG_URL)'; `$SetupVersion = '9.9.9'; `$LogFile = '$work\count.log'; Send-SuccessCount; Send-SuccessCount"))
-  $c = @(Records | Where-Object { $_.path -like '/count*' })
-  Check 'success count: sent once for two successful runs' ($c.Count -eq 1) "got $($c.Count)"
-  if ($c.Count) {
-    Check 'success count: only platform and version in the address' ($c[0].path -eq '/count?platform=windows&version=9.9.9') $c[0].path
-    Check 'success count: empty body' ([string]::IsNullOrEmpty($c[0].body))
+  $defs = $ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -in 'Send-Result', 'Scrub', 'LogBox-Headers', 'Log' }, $true) | ForEach-Object { $_.Extent.Text }
+  foreach ($k in @(@{ n = 'one FAIL'; check = $false }, @{ n = 'one FAIL and one check WARN'; check = $true })) {
+    Clear-Content -LiteralPath $rec
+    $lf = Join-Path $work 'res.log'
+    if ($k.check) { Set-Content -LiteralPath (Join-Path $work 'res.check.tsv') -Value "WARN`tVS Code`tnot on PATH in $env:USERPROFILE" -Encoding UTF8 }
+    $setup = "`$script:ResultSent = `$false; `$LogBox = '$($env:MS_LOG_URL)'; `$SetupVersion = '9.9.9'; `$LogFile = '$lf'; `$DryRun = `$false; `$script:Failed = 1; " +
+             "`$script:RunStart = (Get-Date).AddMinutes(-12); `$script:RunMode = 'first'; `$script:Parts = @('r', 'python'); " +
+             "`$script:Rows = New-Object System.Collections.ArrayList; [void]`$script:Rows.Add(@('OK', 'Git', 'fine')); " +
+             "[void]`$script:Rows.Add(@('FAIL', 'R step', 'not found in ' + `$env:USERPROFILE + ' on ' + `$env:COMPUTERNAME)); Send-Result 'done'; Send-Result 'done'"
+    & ([scriptblock]::Create(($defs -join "`n") + "`n" + $setup))
+    $res = @(Results)
+    Check "result ($($k.n)): sent once" ($res.Count -eq 1) "got $($res.Count)"
+    if ($res.Count) {
+      $x = $res[0]
+      Check "result ($($k.n)): fields" ($x.v -eq 1 -and $x.platform -eq 'windows' -and $x.version -eq '9.9.9' -and $x.outcome -eq 'failed' -and $x.stage -eq 'done' -and $x.mode -eq 'first' -and $x.parts -eq 'r,python' -and $x.minutes -eq 12 -and $x.os -match '^Windows 1[01] ') "$($x | ConvertTo-Json -Compress)"
+      $want = if ($k.check) { 2 } else { 1 }
+      Check "result ($($k.n)): issues is a list of $want [status, step, reason, source]" (@($x.issues).Count -eq $want -and $x.issues[0][0] -eq 'FAIL' -and $x.issues[0][1] -eq 'R step' -and $x.issues[0][3] -eq 'setup') "$($x.issues | ConvertTo-Json -Compress)"
+      if ($k.check) { Check "result ($($k.n)): the check's WARN row, marked as from the check" ($x.issues[1][0] -eq 'WARN' -and $x.issues[1][1] -eq 'VS Code' -and $x.issues[1][3] -eq 'check'); Check "result ($($k.n)): the check's file is removed after reading" (-not (Test-Path (Join-Path $work 'res.check.tsv'))) }
+      Check "result ($($k.n)): no home folder, user or computer name" (Private-Free ((Records | Where-Object { $_.path -eq '/result' })[0].body))
+    }
   }
 
   # ---- install.ps1: a stop at the download checks offers the report too
@@ -120,11 +151,13 @@ try {
       Check "$($case.n): FAIL line names the step" ($r[0].body -match "(?m)^FAIL  $([regex]::Escape($case.step))  ")
       Check "$($case.n): version in the address" ($r[0].path -match "version=$([regex]::Escape($case.ver))")
     }
+    $res = @(Results)
+    Check "$($case.n): one anonymous result, stage installer, the step named" ($res.Count -eq 1 -and $res[0].stage -eq 'installer' -and $res[0].outcome -eq 'failed' -and @($res[0].issues | Where-Object { $_[1] -eq $case.step }).Count -eq 1) "$(($res | ConvertTo-Json -Compress -Depth 4))"
   }
   Remove-Item Env:\MS_UPDATE_SOURCES, Env:\MS_SETUP_ARGS -ErrorAction SilentlyContinue
 } finally {
   Reset-Env
-  foreach ($v in 'MS_LOG_URL', 'MS_LOG_ENV', 'METASCIENCE_DIR', 'MS_STATE_DIR', 'MS_UPDATE_SOURCES', 'MS_SETUP_ARGS') { Remove-Item "Env:\$v" -ErrorAction SilentlyContinue }
+  foreach ($v in 'MS_LOG_URL', 'MS_LOG_ENV', 'METASCIENCE_DIR', 'MS_STATE_DIR', 'MS_UPDATE_SOURCES', 'MS_SETUP_ARGS', 'MS_TEST_NO_JOBS', 'MS_NO_COUNT') { Remove-Item "Env:\$v" -ErrorAction SilentlyContinue }
   try { $box.Kill() } catch {}
   Remove-Item -LiteralPath $work -Recurse -Force -ErrorAction SilentlyContinue
 }

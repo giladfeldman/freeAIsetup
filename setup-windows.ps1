@@ -1,4 +1,4 @@
-﻿# =============================================================================
+# =============================================================================
 #  Meta-science course: one-step setup for Windows 10/11
 #  Installs: OpenCode (desktop + command line), Git, Node.js, uv + Python,
 #            R + course packages, RStudio, Quarto, VS Code (with its OpenCode, Python and R add-ons);
@@ -22,7 +22,7 @@ param(
   [switch]$Fix,       # start the AI setup helper on the last setup log
   [switch]$Update,    # check for a newer version of this pack now and install it
   [switch]$Rollback,  # go back to the previous version of this pack
-  [switch]$NoAutoUpdate, # do not set up (or remove) the automatic daily update check
+  [switch]$NoAutoUpdate, # accepted and ignored: there is no automatic update check any more (2026-11-24)
   [switch]$FromUpdate, # internal: run by the updater after new files arrived (quiet, no AI check)
   [switch]$Choose,    # ask again which parts to install
   [Alias('Parts')][string]$Components = '', # the parts to install (or with -Uninstall: to remove), without asking: r,rstudio,quarto,python,node,vscode,web,codex,claude (or all / none)
@@ -40,9 +40,9 @@ try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch {}
 $OpenCodeVersion = '1.19.5'
 $ScriptDir0 = Split-Path -Parent $MyInvocation.MyCommand.Path
 $SetupVersion = if (Test-Path -LiteralPath (Join-Path $ScriptDir0 'VERSION')) { (Get-Content -LiteralPath (Join-Path $ScriptDir0 'VERSION') -TotalCount 1).Trim() } else { 'dev' }
-$PackDir   = Join-Path $env:LOCALAPPDATA 'MetaScience\pack'      # installed copy of this pack (updated automatically)
+$PackDir   = Join-Path $env:LOCALAPPDATA 'MetaScience\pack'      # installed copy of this pack (updated by hand: -Update)
 $PackItems = @('install-windows.cmd', 'setup-windows.ps1', 'setup-mac.sh', 'VERSION', 'lib', 'course-kit', 'doctor', 'guide', 'update')
-$UpdateTask = 'MetaScience pack update'
+$UpdateTask = 'MetaScience pack update'   # the daily task of setups before 2026-11-24; every run now removes it
 # What this setup remembers for this account: the chosen parts and a record of what it installed (tests: MS_STATE_DIR)
 $StateDir  = if ($env:MS_STATE_DIR) { $env:MS_STATE_DIR } else { Join-Path $env:LOCALAPPDATA 'MetaScience' }
 $CourseDir = if ($env:METASCIENCE_DIR) { $env:METASCIENCE_DIR } else { Join-Path $env:USERPROFILE 'MetaScience' }
@@ -59,10 +59,13 @@ if ($FromUpdate) { $Yes = $true }
 function Log($t)  { for ($i = 0; $i -lt 5; $i++) { try { Add-Content -LiteralPath $LogFile -Value $t -Encoding UTF8 -ErrorAction Stop; return } catch { Start-Sleep -Milliseconds 200 } } }
 function Say($t)  { Write-Host $t; Log $t }
 function Step($t) { Say ''; Write-Host "== $t ==" -ForegroundColor Cyan; Log "== $t ==" }
-function Ok($i, $d = '')   { Write-Host '  OK    ' -ForegroundColor Green -NoNewline; Write-Host "$i  $d"; Log "OK $i $d" }
-function Warn($i, $d = '') { Write-Host '  WARN  ' -ForegroundColor Yellow -NoNewline; Write-Host "$i  $d"; Log "WARN $i $d" }
-function Fail($i, $d = '') { Write-Host '  FAIL  ' -ForegroundColor Red -NoNewline; Write-Host "$i  $d"; Log "FAIL  $i  $d"; $script:Failed++ }
-function Skip($i, $d = 'not chosen') { Write-Host '  SKIP  ' -ForegroundColor DarkGray -NoNewline; Write-Host "$i  $d"; Log "SKIP $i $d" }
+# Every step's result is also kept in $script:Rows (status, item, detail) for the anonymous result message (Send-Result).
+$script:Rows = New-Object System.Collections.ArrayList
+function Row($s, $i, $d) { [void]$script:Rows.Add(@($s, "$i", "$d")) }
+function Ok($i, $d = '')   { Write-Host '  OK    ' -ForegroundColor Green -NoNewline; Write-Host "$i  $d"; Log "OK $i $d"; Row 'OK' $i $d }
+function Warn($i, $d = '') { Write-Host '  WARN  ' -ForegroundColor Yellow -NoNewline; Write-Host "$i  $d"; Log "WARN $i $d"; Row 'WARN' $i $d }
+function Fail($i, $d = '') { Write-Host '  FAIL  ' -ForegroundColor Red -NoNewline; Write-Host "$i  $d"; Log "FAIL  $i  $d"; $script:Failed++; Row 'FAIL' $i $d }
+function Skip($i, $d = 'not chosen') { Write-Host '  SKIP  ' -ForegroundColor DarkGray -NoNewline; Write-Host "$i  $d"; Log "SKIP $i $d"; Row 'SKIP' $i $d }
 function Have($n) { [bool](Get-Command $n -ErrorAction SilentlyContinue) }
 
 # What this setup itself installed, one line each: part <TAB> kind <TAB> target. The uninstall (lib\uninstall-windows.ps1)
@@ -607,7 +610,7 @@ function Check-SmartAppControl {
   Start-Process 'windowsdefender://appbrowser' -ErrorAction SilentlyContinue
   while ((Get-SacState) -eq 'On') {
     $a = Read-Host '  When it shows Off, press Enter. To stop the setup, type Q. To continue anyway, type C'
-    if ($a -match '^[Qq]') { Say '  Setup stopped. Nothing was installed.'; exit 2 }
+    if ($a -match '^[Qq]') { Say '  Setup stopped. Nothing was installed.'; Send-Result 'stopped'; exit 2 }
     if ($a -match '^[Cc]') { Warn 'Smart App Control' 'still ON: expect the Python and R checks to fail'; return }
   }
   Ok 'Smart App Control' 'now off'
@@ -1311,11 +1314,35 @@ function Start-Doctor {
   Say "Helper notes (if any) are in $help"
 }
 
+function Remove-BackgroundJobs {
+  # Owner directive 2026-11-24: nothing of this setup runs on its own. Setups before 2026-11-24 added a daily task
+  # ($UpdateTask) that started powershell.exe; Windows 11 shows that as a terminal window (measured 2026-11-23: a
+  # task with -WindowStyle Hidden still opened a Windows Terminal window), open for the whole update run. Every run of
+  # this setup (any mode) and every uninstall removes it, with the leftovers of an update that was cut off.
+  # A running task may delete itself (measured 2026-11-23); the run that is going on finishes normally.
+  if ($env:MS_TEST_NO_JOBS) { Log 'background jobs: not touched (MS_TEST_NO_JOBS)'; return }
+  function Task-There { $null = & schtasks.exe /query /tn $UpdateTask 2>&1; return ($LASTEXITCODE -eq 0) }   # also in a dry run
+  $q = Task-There
+  if ($q) {
+    if ($DryRun) { Say "  [dry-run] remove the old daily update task '$UpdateTask'"; return }
+    $code = Run-Native 'schtasks.exe' @('/delete', '/tn', "`"$UpdateTask`"", '/f') 120
+    if ($code -eq 0 -and -not (Task-There)) { Ok 'Old daily update task' 'removed (nothing of this setup runs on its own any more)' }
+    else { Warn 'Old daily update task' "could not remove it (schtasks exit $code). Remove it by hand: Start > Task Scheduler > '$UpdateTask' > Delete" }
+  } else { Log 'no daily update task' }
+  if ($DryRun) { return }
+  foreach ($f in @((Join-Path $env:TEMP 'metascience-update-task.xml'))) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
+  # a staging copy left by an update that was cut off (never while an updater is working on it)
+  $stage = "$($PackDir.TrimEnd('\')).staging"
+  if ((Test-Path -LiteralPath $stage) -and -not $FromUpdate -and ((Get-Item -LiteralPath $stage).LastWriteTime -lt (Get-Date).AddHours(-3))) {
+    Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue; Log "removed a leftover $stage"
+  }
+}
+
 function Install-Pack {
-  # Keep an installed copy of this pack in the account's own folder, so the updater can refresh it later.
-  # Then (unless the student says no) add a daily update check for this account only (no admin needed).
+  # Keep an installed copy of this pack in the account's own folder, so the student can update it by hand later
+  # (install-windows.cmd -Update). Nothing is scheduled: updates never start on their own.
   Step '7/9  Updates for this pack'
-  if ($DryRun) { Say "  [dry-run] copy the pack to $PackDir and add the daily update check"; return }
+  if ($DryRun) { Say "  [dry-run] copy the pack to $PackDir"; return }
   $src = (Resolve-Path -LiteralPath $ScriptDir).Path.TrimEnd('\')
   if ($src -ne $PackDir.TrimEnd('\')) {
     try {
@@ -1328,35 +1355,8 @@ function Install-Pack {
       Ok 'Pack copy' $PackDir
     } catch { Warn 'Pack copy' "could not copy the pack to $PackDir ($($_.Exception.Message)); updates will not work"; return }
   }
-  $updater = Join-Path $PackDir 'update\update.ps1'
-  if (-not (Test-Path -LiteralPath $updater)) { Warn 'Automatic updates' 'this copy of the pack has no updater'; return }
-  if ($NoAutoUpdate) {
-    $null = Run-Native 'schtasks.exe' @('/delete', '/tn', "`"$UpdateTask`"", '/f') 120
-    Ok 'Automatic updates' 'off (you can update by hand: install-windows.cmd -Update)'; return
-  }
-  if (-not $Yes -and (Run-Native 'schtasks.exe' @('/query', '/tn', "`"$UpdateTask`"") 120) -ne 0) {
-    $a = Read-Host 'Keep this course pack up to date automatically (a short daily check)? Recommended. [Y/n]'
-    if ($a -match '^(n|no)$') { Ok 'Automatic updates' 'off (you can update by hand: install-windows.cmd -Update)'; return }
-  }
-  # Register with schtasks.exe and a time limit: the PowerShell task cmdlets (Register-ScheduledTask) hung for
-  # 10+ minutes in the Hong Kong VM test, and this optional step must never hold up the setup.
-  $esc = [Security.SecurityElement]::Escape($updater); $tmpDir = [Security.SecurityElement]::Escape($env:TEMP)
-  $xml = @"
-<?xml version="1.0" encoding="UTF-16"?>
-<Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Checks for a newer version of the MetaScience course pack (freeAIsetup) and installs it.</Description></RegistrationInfo>
-  <Triggers><CalendarTrigger><StartBoundary>2026-01-01T12:30:00</StartBoundary><Enabled>true</Enabled><ScheduleByDay><DaysInterval>1</DaysInterval></ScheduleByDay></CalendarTrigger></Triggers>
-  <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
-  <Settings><StartWhenAvailable>true</StartWhenAvailable><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT2H</ExecutionTimeLimit><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><Enabled>true</Enabled></Settings>
-  <Actions Context="Author"><Exec><Command>powershell.exe</Command><Arguments>-NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "$esc" -Auto</Arguments><WorkingDirectory>$tmpDir</WorkingDirectory></Exec></Actions>
-</Task>
-"@
-  $xf = Join-Path $env:TEMP 'metascience-update-task.xml'
-  try { [IO.File]::WriteAllText($xf, $xml, [Text.Encoding]::Unicode) } catch { Warn 'Automatic updates' "could not prepare the daily check ($_); update by hand: install-windows.cmd -Update"; return }
-  $code = Run-Native 'schtasks.exe' @('/create', '/tn', "`"$UpdateTask`"", '/xml', "`"$xf`"", '/f') 300
-  Remove-Item -LiteralPath $xf -Force -ErrorAction SilentlyContinue
-  if ($code -eq 0) { Record-Install 'core' 'task' $UpdateTask; Ok 'Automatic updates' 'on: a short check once a day (turn off: install-windows.cmd -NoAutoUpdate)' }
-  else { Warn 'Automatic updates' "could not add the daily check (schtasks exit $code); update by hand: install-windows.cmd -Update" }
+  if (-not (Test-Path -LiteralPath (Join-Path $PackDir 'update\update.ps1'))) { Warn 'Updates' 'this copy of the pack has no updater'; return }
+  Ok 'Updates' 'by hand only, nothing runs in the background: install-windows.cmd -Update'
 }
 
 # The file to show the teacher: the report of the check (step 8), or the log when setup stopped before the check
@@ -1395,18 +1395,42 @@ function Send-Log {
   } catch { Log "upload failed: $($_.Exception.Message)" }
   Say "  Could not send it (no internet?). Show your teacher this file instead: $(Report-File)"
 }
-function Send-SuccessCount {
-  # Owner request 2026-11-12: count successful installs, nothing else. The message carries only the platform and the
-  # pack version: no name, no computer details, no log. Sent once per account (a marker file remembers it).
-  $mark = Join-Path $StateDir 'install-counted'
-  if ($env:MS_NO_COUNT -or (Test-Path -LiteralPath $mark)) { return }   # MS_NO_COUNT=1 switches it off (README, Privacy)
+function Scrub($t) {   # the same removal of names as the report upload (Send-Log)
+  $t = "$t" -replace [regex]::Escape($env:USERPROFILE), '~'
+  foreach ($w in @($env:USERNAME, $env:COMPUTERNAME)) { if ($w -and $w.Length -ge 4) { $t = $t -replace [regex]::Escape($w), '<name>' } }
+  if ($t.Length -gt 200) { $t = $t.Substring(0, 200) }
+  return $t
+}
+function Send-Result($stage) {
+  # Owner request 2026-11-23/24: one anonymous message at the end of every full setup run, success or not, for the
+  # weekly digest: platform, Windows version and edition, processor type, pack version, the parts chosen, how long
+  # it took, and the name and short reason of each step that failed or warned (user name, computer name and home
+  # folder removed). No name, no e-mail, no files, no log, no ID that links two runs. MS_NO_COUNT=1 switches it off.
+  if ($env:MS_NO_COUNT -or $DryRun -or $script:ResultSent) { return }
+  $script:ResultSent = $true
   try {
-    $null = Invoke-WebRequest -Uri "$LogBox/count?platform=windows&version=$SetupVersion" -Method Post -UseBasicParsing -TimeoutSec 20 `
-            -Headers (LogBox-Headers) -Body ''
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $mark) | Out-Null
-    Set-Content -LiteralPath $mark -Value (Get-Date -Format 'yyyy-MM-dd') -Encoding ASCII
-    Log 'success count sent (platform and version only)'
-  } catch { Log "success count not sent: $($_.Exception.Message)" }   # never matters to the student
+    $nt = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    $build = [Environment]::OSVersion.Version.Build
+    $ed = try { (Get-ItemProperty -LiteralPath $nt -Name EditionID -ErrorAction Stop).EditionID } catch { '' }
+    $os = "Windows $(if ($build -ge 22000) { '11' } else { '10' }) $ed $build" -replace '\s+', ' '
+    $issues = New-Object System.Collections.ArrayList
+    foreach ($r in $script:Rows) { if ($r[0] -in 'FAIL', 'WARN' -and $issues.Count -lt 40) { [void]$issues.Add(@($r[0], $r[1], (Scrub $r[2]), 'setup')) } }
+    $ct = [IO.Path]::ChangeExtension($LogFile, '.check.tsv')   # the check's rows (lib/course_setup.py)
+    if (Test-Path -LiteralPath $ct) {
+      foreach ($line in @(Get-Content -LiteralPath $ct -Encoding UTF8)) {
+        $r = "$line" -split "`t", 3
+        if ($r.Count -ge 2 -and $r[0] -in 'FAIL', 'WARN' -and $issues.Count -lt 60) { [void]$issues.Add(@($r[0], $r[1], (Scrub $(if ($r.Count -ge 3) { $r[2] } else { '' })), 'check')) }
+      }
+      Remove-Item -LiteralPath $ct -Force -ErrorAction SilentlyContinue
+    }
+    $outcome = if ($stage -eq 'stopped') { 'stopped' } elseif ($script:Failed -eq 0) { 'ok' } else { 'failed' }
+    $body = @{ v = 1; platform = 'windows'; version = $SetupVersion; os = $os; arch = "$env:PROCESSOR_ARCHITECTURE"
+               outcome = $outcome; stage = $stage; mode = $script:RunMode; parts = ($script:Parts -join ',')
+               minutes = [int][Math]::Round(((Get-Date) - $script:RunStart).TotalMinutes); issues = @($issues) } | ConvertTo-Json -Depth 4 -Compress
+    $null = Invoke-WebRequest -Uri "$LogBox/result" -Method Post -UseBasicParsing -TimeoutSec 20 -Headers (LogBox-Headers) `
+            -ContentType 'application/json; charset=utf-8' -Body ([Text.Encoding]::UTF8.GetBytes($body))
+    Log "result sent (anonymous): $body"
+  } catch { Log "result not sent: $($_.Exception.Message)" }   # never matters to the student
 }
 function Offer-Help {
   # Every failing run ends here, however it stopped: a check that failed, a stop in step 1, or an unexpected error.
@@ -1421,12 +1445,25 @@ function Offer-Help {
 # ---------- main ---------------------------------------------------------------
 Say "MetaScience course setup $SetupVersion  (Windows, $env:PROCESSOR_ARCHITECTURE)  log: $LogFile"
 if ($DryRun) { Write-Host 'DRY RUN: nothing will be changed.' -ForegroundColor Yellow }
+# first: the daily task of older setups goes, whatever this run was started for (before any other change)
+Remove-BackgroundJobs
+# An updater from before 2026-11-24, started by that daily task, has just copied this version in and runs it hidden
+# (-FromUpdate without MS_UPDATE_BY_HAND, which the new updater sets). That last background run only removes the
+# task: installing tools in an invisible window is what students saw as a terminal "running something". The tools
+# come up to date the next time the student runs the setup or -Update themselves (the pack remembers that this
+# version is not applied yet: applied-version.txt).
+if ($FromUpdate -and -not $env:MS_UPDATE_BY_HAND) {
+  Say "Pack $SetupVersion copied in by an older updater. Nothing more runs now; to finish the update, start install-windows.cmd -Update (or run the setup again)."
+  exit 0
+}
+$script:RunMode = if ($FromUpdate) { 'update' } elseif (Test-Path -LiteralPath (Join-Path $StateDir 'installed.tsv')) { 'rerun' } else { 'first' }
 Repair-UserPath
 Refresh-Path
 Add-UserPath (Join-Path $env:LOCALAPPDATA 'Programs\opencode-cli')
 if ($Fix) { Start-Doctor; exit 0 }
 $updaterHere = Join-Path $PackDir 'update\update.ps1'
 if (-not (Test-Path -LiteralPath $updaterHere)) { $updaterHere = Join-Path $ScriptDir 'update\update.ps1' }
+if ($Update -or $Rollback) { $env:MS_UPDATE_BY_HAND = '1' }   # the setup an updater (even one from before 2026-11-24) starts now is the student's own run
 if ($Update)   { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $updaterHere; exit $LASTEXITCODE }
 if ($Rollback) { & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $updaterHere -Rollback; exit $LASTEXITCODE }
 if ($Uninstall) {
@@ -1459,16 +1496,20 @@ try {
           if ($a -match '^(y|yes)$') { Py @('keys') | Out-Null }
         }
         Run-Check
-        if ($script:Failed -eq 0) { Send-SuccessCount }
       }
-    }
+      if (-not $DryRun -and $script:Failed -eq 0) {   # the pack's tools match this version (the updater reads it)
+        try { New-Item -ItemType Directory -Force -Path $StateDir | Out-Null; Set-Content -LiteralPath (Join-Path $StateDir 'applied-version.txt') -Value $SetupVersion -Encoding ASCII } catch { Log "applied-version not saved: $_" }
+      }
+      $script:Stage = 'done'
+    } else { $script:Stage = 'precheck' }
     Summary
   }
 } catch {
   # an unexpected error: record it like a failed step, so the student is offered the report and the helper
-  Fail 'Setup stopped' "an unexpected error: $($_.Exception.Message)"
+  Fail 'Setup stopped' "an unexpected error: $($_.Exception.Message)"; $script:Stage = 'crash'
   Log ($_ | Out-String); Log $_.ScriptStackTrace
   try { Summary } catch {}
 }
+if (-not ($Check -or $Keys)) { Send-Result $(if ($script:Stage) { $script:Stage } else { 'install' }) }
 Offer-Help
 if ($script:Failed -eq 0) { exit 0 } else { exit 1 }

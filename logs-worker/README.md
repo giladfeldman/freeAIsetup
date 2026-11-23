@@ -29,30 +29,36 @@ npx wrangler kv key delete "2026-11-09/mac/failed/AB3XYZ" --binding LOGS --remot
 
 Deploy after a change: `npx wrangler deploy`.
 
-## Count of successful installs
+## Result of every setup run (anonymous)
 
-`POST /count?platform=<windows|mac|linux|codespace>&version=<pack version>` with header `x-freeaisetup: 1`
-and no body. The setup sends it once per user account when a full setup ends with everything working (a
-marker file, `install-counted` next to the installed pack, remembers it; `MS_NO_COUNT=1` switches it off).
-It carries no name, computer details or log, and the worker stores neither the address nor the country:
-one empty key per install, `stats/<environment>/<day>/<platform>/<random 8 letters>`, version in its
-metadata, deleted after 400 days. One key per install (not a counter that is read and rewritten) means two
-installs at the same moment cannot overwrite each other. At most 500 installs are counted per day for each
-environment and platform (a small counter key, `countcap/<environment>/<day>/<platform>`, deleted after 3 days),
-so a broken or hostile caller cannot fill the store; past the cap the answer is still `counted`, but nothing is
-written. The fortnight digest shows the period's count by
-platform. Count by hand:
+`POST /result` with header `x-freeaisetup: 1` and a small JSON body (at most 16 KB). Every full setup run sends
+one at its end, whatever the outcome, and so does a stop in the one-line installers; `MS_NO_COUNT=1` switches it
+off. It carries: platform, pack version, a coarse OS ("Windows 11 Home 26100", "Darwin 15.1"), processor type,
+outcome (`ok`, `failed`, `stopped`), how far the run got, first install / re-run / update, the optional parts
+chosen, minutes taken, and the FAIL and WARN step lines of the setup and of its final check, with the home folder,
+user name and computer name removed. No log, no install ID, no country, no address is stored.
+
+Each run is one key, `results/<environment>/<day>/<platform>/<outcome>/<random 8 letters>`, its numbers also in
+the key's metadata (so the digest needs one listing, not one read per run), deleted after 400 days. At most 400
+runs are stored per day for each environment and platform; the counter lives in the `AlertGate` Durable Object,
+so two runs at once cannot both pass it. Past the cap the answer is `capped` and nothing is written.
+The weekly digest shows the runs of the week: successful and failed by platform and OS, the parts chosen,
+each part's result (ok, warned, failed, not reached), and the failures as cards with a Claude Code session button.
+Read them by hand:
 
 ```powershell
-npx wrangler kv key list --binding LOGS --remote --prefix stats/production/2026-11-
+npx wrangler kv key list --binding LOGS --remote --prefix results/production/2026-11-
 ```
+
+`POST /count` (one empty `stats/` key per successful install, from setups before 2026-11-24) is still accepted;
+the digest shows them as "successful installs counted by older setups".
 
 ## Testing without the real log box
 
 The setups and installers read `MS_LOG_URL` (another log box address) and `MS_LOG_ENV` (sent as
 `x-freeaisetup-env`; tests send `local`). `tests/fake_logbox.py` is a local stand-in; `tests/exit-paths.ps1`
 (Windows) and `tests/run-tests.ps1 -Only exits` (Mac/Linux, Docker) check that every stop offers the report
-and that a success is counted once. Test hooks in the setups: `MS_TEST_FAIL_AT=precheck`,
+and that each run sends one result. Test hooks in the setups: `MS_TEST_FAIL_AT=precheck`,
 `MS_TEST_CRASH=main|tools` (and `unbound` on Mac).
 
 ## Admin alerts (email)
@@ -60,7 +66,7 @@ and that a success is counted once. Test hooks in the setups: `MS_TEST_FAIL_AT=p
 Each failed report also sends the teacher an alert email (admin email standard): priority, what failed,
 the report key, and a button that opens a Claude Code session on it. The same failure is emailed at most
 once per 24 hours (later ones are counted), at most 10 alert emails a day. A digest of everything arrives
-on the 1st and 15th of each month, even when quiet (it proves the alerts still work). Code: `src/alerts.js`;
+every Monday (owner request 2026-11-24; the standard is fortnightly), even when quiet (it proves the alerts still work). Code: `src/alerts.js`;
 tests: `npm test` (no network). All alert work (each failed report and the digest) runs in one Durable Object,
 `AlertGate`, one job at a time, so two reports arriving together cannot both send an email, pass the daily cap or
 lose a count (`test/race.test.js`). It is created in the EU jurisdiction, sleeps when idle, and is part of the

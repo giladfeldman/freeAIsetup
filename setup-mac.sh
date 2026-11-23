@@ -57,7 +57,7 @@ KIT_DIR="$SCRIPT_DIR/course-kit"
 export UV_HTTP_TIMEOUT=300 UV_CONCURRENT_DOWNLOADS=4 UV_HTTP_RETRIES=5   # slow or crowded Wi-Fi: wait longer, fewer at once
 SETUP_VERSION="$(head -1 "$SCRIPT_DIR/VERSION" 2>/dev/null | tr -d '\r ')"; SETUP_VERSION="${SETUP_VERSION:-dev}"
 if [ "$(uname -s)" = Darwin ]; then PACK_DIR="$HOME/Library/Application Support/MetaScience/pack"
-else PACK_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/metascience/pack"; fi   # installed copy of this pack (kept up to date)
+else PACK_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/metascience/pack"; fi   # installed copy of this pack (updated by hand: --update)
 PACK_ITEMS="install-windows.cmd setup-windows.ps1 setup-mac.sh VERSION lib course-kit doctor guide update"
 # What this setup remembers for this account: the chosen parts and a record of what it installed (tests: MS_STATE_DIR)
 STATE_DIR="${MS_STATE_DIR:-$(dirname "$PACK_DIR")}"
@@ -77,7 +77,7 @@ for arg in "$@"; do
     --no-gui)  SKIP_GUI=1 ;;
     --update)  MODE="update" ;;
     --rollback) MODE="rollback" ;;
-    --no-auto-update) NO_AUTO_UPDATE=1 ;;
+    --no-auto-update) NO_AUTO_UPDATE=1 ;;   # accepted and ignored: there is no automatic update check any more (2026-11-24)
     --from-update) FROM_UPDATE=1; ASSUME_YES=1 ;;   # internal: run by the updater after new files arrived
     --choose)  CHOOSE=1 ;;
     --components=*|--parts=*) COMPONENTS="${arg#*=}" ;;   # --parts= is the uninstaller's word for the same
@@ -1060,50 +1060,44 @@ summary() {
   return 0
 }
 
-install_pack() { # installed copy of the pack + a daily update check for this account (no admin)
+remove_background_jobs() { # owner directive 2026-11-24: nothing of this setup runs on its own
+  # Setups before 2026-11-24 added a daily update check: a LaunchAgent on a Mac (macOS lists it under Login Items /
+  # "Background Items Added"), a crontab line on Linux. Every run of this setup (any mode) and every uninstall removes it.
+  [ -n "${MS_TEST_NO_JOBS:-}" ] && { echo "background jobs: not touched (MS_TEST_NO_JOBS)" >> "$LOG_FILE"; return 0; }
+  if [ "$PLATFORM" = mac ]; then
+    local label=org.freeaisetup.update plist="$HOME/Library/LaunchAgents/org.freeaisetup.update.plist" loaded=0
+    launchctl list "$label" >/dev/null 2>&1 && loaded=1
+    [ -f "$plist" ] || [ "$loaded" = 1 ] || return 0
+    if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] remove the old daily update check ($label)"; return 0; fi
+    rm -f "$plist"
+    # Started by that job (an old updater running this setup hidden): unloading it now would stop this very run. With
+    # its file gone it does not come back after the next login, and the new update.sh removes it if it fires before.
+    if [ "$loaded" = 1 ] && [ "$IN_OLD_JOB" = 0 ]; then launchctl remove "$label" >/dev/null 2>&1; fi
+    if [ ! -f "$plist" ]; then ok "Old daily update check" "removed (nothing of this setup runs on its own any more)"
+    else warn "Old daily update check" "could not remove $plist; delete that file by hand"; fi
+  elif have crontab; then
+    local cur
+    cur="$(crontab -l 2>/dev/null)" || return 0          # no crontab (or it cannot be read): nothing to change
+    printf '%s\n' "$cur" | grep -q 'freeaisetup-update' || return 0
+    if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] remove the old daily update check (crontab line freeaisetup-update)"; return 0; fi
+    printf '%s\n' "$cur" | grep -v 'freeaisetup-update' | crontab - 2>/dev/null
+    if crontab -l 2>/dev/null | grep -q 'freeaisetup-update'; then warn "Old daily update check" "could not remove it; run crontab -e and delete the freeaisetup-update line"
+    else ok "Old daily update check" "removed (nothing of this setup runs on its own any more)"; fi
+  fi
+  return 0
+}
+
+install_pack() { # installed copy of the pack, so the student can update it by hand later (nothing is scheduled)
   step "7/9  Updates for this pack"
-  if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] copy the pack to $PACK_DIR and add the daily update check"; return 0; fi
+  if [ "$DRY_RUN" = 1 ]; then say "  [dry-run] copy the pack to $PACK_DIR"; return 0; fi
   if [ "$(cd "$SCRIPT_DIR" && pwd -P)" != "$(cd "$PACK_DIR" 2>/dev/null && pwd -P)" ]; then
     mkdir -p "$PACK_DIR" || { warn "Pack copy" "could not create $PACK_DIR; updates will not work"; return 0; }
     local i; for i in $PACK_ITEMS; do [ -e "$SCRIPT_DIR/$i" ] && cp -R "$SCRIPT_DIR/$i" "$PACK_DIR/"; done
     chmod +x "$PACK_DIR/setup-mac.sh" "$PACK_DIR/update/update.sh" 2>/dev/null
     record_install core pack "$PACK_DIR"; ok "Pack copy" "$PACK_DIR"
   fi
-  local upd="$PACK_DIR/update/update.sh"
-  [ -f "$upd" ] || { warn "Automatic updates" "this copy of the pack has no updater"; return 0; }
-  local plist="$HOME/Library/LaunchAgents/org.freeaisetup.update.plist"
-  if [ "$NO_AUTO_UPDATE" = 1 ]; then
-    if [ "$PLATFORM" = mac ]; then launchctl unload "$plist" >/dev/null 2>&1; rm -f "$plist"
-    else crontab -l 2>/dev/null | grep -v 'freeaisetup-update' | crontab - 2>/dev/null; fi
-    ok "Automatic updates" "off (update by hand: bash setup-mac.sh --update)"; return 0
-  fi
-  if [ "$ASSUME_YES" = 0 ] && [ -t 0 ] && [ ! -f "$plist" ]; then
-    printf '\n  Keep this course pack up to date automatically (a short daily check)? Recommended. [Y/n] '; read -r a || a=""
-    case "$a" in n|N|no) ok "Automatic updates" "off (update by hand: bash setup-mac.sh --update)"; return 0 ;; esac
-  fi
-  if [ "$PLATFORM" = mac ]; then
-    mkdir -p "$HOME/Library/LaunchAgents"
-    cat > "$plist" <<PLIST
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0"><dict>
-  <key>Label</key><string>org.freeaisetup.update</string>
-  <key>ProgramArguments</key><array><string>/bin/bash</string><string>$upd</string><string>--auto</string></array>
-  <key>StartCalendarInterval</key><dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>30</integer></dict>
-  <key>StandardOutPath</key><string>/dev/null</string><key>StandardErrorPath</key><string>/dev/null</string>
-</dict></plist>
-PLIST
-    record_install core launchd "$plist"
-    launchctl unload "$plist" >/dev/null 2>&1; launchctl load "$plist" >/dev/null 2>&1 \
-      && ok "Automatic updates" "on: a short check once a day (turn off: bash setup-mac.sh --no-auto-update)" \
-      || warn "Automatic updates" "could not add the daily check; update by hand: bash setup-mac.sh --update"
-  elif have crontab; then
-    ( crontab -l 2>/dev/null | grep -v 'freeaisetup-update'; echo "30 12 * * * bash '$upd' --auto # freeaisetup-update" ) | crontab - \
-      && record_install core cron freeaisetup-update && ok "Automatic updates" "on: a short check once a day (turn off: bash setup-mac.sh --no-auto-update)" \
-      || warn "Automatic updates" "could not add the daily check; update by hand: bash setup-mac.sh --update"
-  else
-    warn "Automatic updates" "no scheduler found; update by hand: bash setup-mac.sh --update"
-  fi
+  [ -f "$PACK_DIR/update/update.sh" ] || { warn "Updates" "this copy of the pack has no updater"; return 0; }
+  ok "Updates" "by hand only, nothing runs in the background: bash \"$PACK_DIR/setup-mac.sh\" --update"
 }
 
 # ---------- reporting to the teacher's log box ------------------------------------
@@ -1125,14 +1119,38 @@ upload_log() { # with the student's yes: send the log to the teacher's private l
   if [ -n "$id" ]; then say "  ${G}Sent.${N} Your code is ${B}$id${N}. Tell your teacher this code."
   else say "  Could not send it (no internet?). Show your teacher this file instead: $(report_file)"; fi
 }
-count_success() { # owner request 2026-11-12: count successful installs. Sends only the platform and the pack version
-  # (no name, no computer details, no log), once per account: a marker file remembers that it was sent.
-  local mark; mark="$STATE_DIR/install-counted"
-  { [ -n "${MS_NO_COUNT:-}" ] || [ -f "$mark" ]; } && return 0   # MS_NO_COUNT=1 switches it off (README, Privacy)
-  have curl || return 0
-  if printf '' | log_box_post "count?platform=$(log_platform)&version=$SETUP_VERSION" >/dev/null 2>&1; then
-    mkdir -p "$(dirname "$mark")" && date +%Y-%m-%d > "$mark"; echo "success count sent (platform and version only)" >> "$LOG_FILE"
-  else echo "success count not sent" >> "$LOG_FILE"; fi
+json_s() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'; }   # a JSON string's inside
+scrub() { # the same removal of names as the report upload (upload_log)
+  local t="$1" w tl='~'; t="${t//"$HOME"/$tl}"
+  for w in "$(id -un)" "$(hostname -s 2>/dev/null)"; do
+    # quoted: the name is matched as plain text, so any name works, also one with letters like ü (upload_log's sed
+    # skips those: d-0a67b9)
+    [ "${#w}" -ge 4 ] && t="${t//"$w"/<name>}"
+  done; printf '%s' "$t"
+}
+send_result() { # $1 = stage (done | precheck | install | crash | stopped)
+  # Owner request 2026-11-23/24: one anonymous message at the end of every full setup run, success or not, for the
+  # weekly digest: platform, OS version, processor type, pack version, the parts chosen, how long it took, and the
+  # name and short reason of each step that failed or warned (user name, computer name and home folder removed). No
+  # name, no e-mail, no files, no log, no ID that links two runs. MS_NO_COUNT=1 switches it off (README, Privacy).
+  [ -n "${MS_NO_COUNT:-}" ] || [ "$DRY_RUN" = 1 ] || [ "${RESULT_SENT:-0}" = 1 ] && return 0
+  RESULT_SENT=1; have curl || return 0
+  local os outcome issues="" n=0 st it de where line ct
+  if [ "$PLATFORM" = mac ]; then os="macOS $(sw_vers -productVersion 2>/dev/null)"
+  else os="$(. /etc/os-release 2>/dev/null; printf '%s' "${PRETTY_NAME:-Linux}")"; fi
+  add_issue() { [ "$n" -lt 60 ] || return 0; issues="${issues:+$issues,}[\"$1\",\"$(json_s "$2")\",\"$(json_s "$(scrub "$3" | cut -c1-200)")\",\"$4\"]"; n=$((n+1)); }
+  while IFS='|' read -r st it de; do case "$st" in FAIL|WARN) add_issue "$st" "$it" "$de" setup ;; esac; done <<EOF
+$RESULTS
+EOF
+  ct="${LOG_FILE%.log}.check.tsv"   # the check's rows (lib/course_setup.py)
+  if [ -f "$ct" ]; then
+    while IFS=$'\t' read -r st it de; do case "$st" in FAIL|WARN) add_issue "$st" "$it" "$de" check ;; esac; done < "$ct"
+    rm -f "$ct"
+  fi
+  if [ "$1" = stopped ]; then outcome=stopped; elif [ "$FAILED" = 0 ]; then outcome=ok; else outcome=failed; fi
+  line="{\"v\":1,\"platform\":\"$(log_platform)\",\"version\":\"$(json_s "$SETUP_VERSION")\",\"os\":\"$(json_s "$os")\",\"arch\":\"$ARCH_ID\",\"outcome\":\"$outcome\",\"stage\":\"$1\",\"mode\":\"${RUN_MODE:-first}\",\"parts\":\"$(printf '%s' "${PARTS:-}" | tr ' ' ',')\",\"minutes\":$(( ($(date +%s) - RUN_START) / 60 )),\"issues\":[${issues}]}"
+  if printf '%s' "$line" | log_box_post "result" >/dev/null 2>&1; then echo "result sent (anonymous): $line" >> "$LOG_FILE"
+  else echo "result not sent" >> "$LOG_FILE"; fi
 }
 offer_help() { # every failing run ends here, however it stopped: a failed check, a stop in steps 1-2, or an unexpected error
   [ "$FAILED" != 0 ] && [ "$DRY_RUN" = 0 ] && [ "$ASSUME_YES" = 0 ] && [ -t 0 ] || return 0
@@ -1149,7 +1167,8 @@ on_exit() {
   trap - EXIT
   [ "$FINISHED" = 1 ] && exit "$rc"
   if [ "$INTERRUPTED" = 1 ]; then exit "$rc"; fi
-  if [ "$rc" != 0 ]; then fail "Setup stopped" "an unexpected error (exit code $rc); the log has the details"; summary; offer_help; fi
+  if [ "$rc" != 0 ]; then fail "Setup stopped" "an unexpected error (exit code $rc); the log has the details"; summary
+    [ "$MODE" = full ] && send_result crash; offer_help; fi
   exit "$rc"
 }
 trap on_exit EXIT
@@ -1158,11 +1177,21 @@ trap 'INTERRUPTED=1; echo; echo "  Setup stopped (Ctrl+C). Run it again any time
 # ---------- main ---------------------------------------------------------------
 say "${B}MetaScience course setup $SETUP_VERSION${N}  ($PLATFORM, $ARCH)  log: $LOG_FILE"
 [ "$DRY_RUN" = 1 ] && say "${Y}DRY RUN: nothing will be changed.${N}"
+# An updater from before 2026-11-24, started by the old daily check, has just copied this version in and runs it
+# unseen (--from-update without MS_UPDATE_BY_HAND, which the new updater and --update set). That last background run
+# only removes the daily check; the tools come up to date the next time the student runs the setup or --update
+# (applied-version.txt says this version is not applied yet). A Codespace's own start-up update is not such a run.
+IN_OLD_JOB=0; [ "$FROM_UPDATE" = 1 ] && [ -z "${MS_UPDATE_BY_HAND:-}" ] && [ -z "${CODESPACES:-}" ] && IN_OLD_JOB=1
+remove_background_jobs   # first, whatever this run was started for
+if [ "$IN_OLD_JOB" = 1 ]; then
+  FINISHED=1; say "Pack $SETUP_VERSION copied in by an older updater. Nothing more runs now; to finish the update, run: bash setup-mac.sh --update"; exit 0
+fi
+RUN_MODE=first; [ -f "$STATE_DIR/installed.tsv" ] && RUN_MODE=rerun; [ "$FROM_UPDATE" = 1 ] && RUN_MODE=update
 updater="$PACK_DIR/update/update.sh"; [ -f "$updater" ] || updater="$SCRIPT_DIR/update/update.sh"
 [ "${MS_TEST_CRASH:-}" = main ] && { echo "test crash (MS_TEST_CRASH)" >> "$LOG_FILE"; exit 3; }   # test hook: a crash still reaches the offer
 case "$MODE" in
-  update)   FINISHED=1; bash "$updater"; exit $? ;;
-  rollback) FINISHED=1; bash "$updater" --rollback; exit $? ;;
+  update)   FINISHED=1; MS_UPDATE_BY_HAND=1 bash "$updater"; exit $? ;;   # the setup it starts is the student's own run
+  rollback) FINISHED=1; MS_UPDATE_BY_HAND=1 bash "$updater" --rollback; exit $? ;;
   uninstall) FINISHED=1; un=(); [ -n "$COMPONENTS" ] && un+=("--parts=$COMPONENTS"); [ "$ASSUME_YES" = 1 ] && un+=(--yes)
              [ "$DRY_RUN" = 1 ] && un+=(--dry-run); [ "${REMOVE_COURSE:-0}" = 1 ] && un+=(--remove-course); bash "$SCRIPT_DIR/lib/uninstall-mac.sh" ${un[@]+"${un[@]}"}; exit $? ;;
   fix)   FINISHED=1; add_path "$HOME/.local/bin"; recorded_paths; start_doctor; exit 0 ;;
@@ -1186,10 +1215,12 @@ case "$MODE" in
                case "$a" in y|Y|yes) key_wizard ;; esac
              fi
              run_check
-             [ "$FAILED" = 0 ] && count_success
            fi
-         fi
-         summary ;;
+           # the pack's tools match this version (update.sh reads it)
+           [ "$DRY_RUN" = 0 ] && [ "$FAILED" = 0 ] && { mkdir -p "$STATE_DIR" && printf '%s\n' "$SETUP_VERSION" > "$STATE_DIR/applied-version.txt"; } 2>/dev/null
+           RUN_STAGE=done
+         else RUN_STAGE=precheck; fi
+         summary; send_result "$RUN_STAGE" ;;
 esac
 offer_help
 FINISHED=1

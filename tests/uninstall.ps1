@@ -43,7 +43,8 @@ try {
   Check 'rstudio only: its folder and shortcut removed' (-not (Test-Path (D 'rstudio')) -and -not (Test-Path (D 'rstudio.lnk')))
   Check 'rstudio only: other parts untouched' ((Test-Path (D 'quarto')) -and (Test-Path (D 'mingit')) -and (Test-Path (Join-Path $state 'pack')))
   Check 'rstudio only: record no longer lists it' (-not ((Rec) -match '^rstudio')) ((Rec) -join ' | ')
-  Check 'rstudio only: record still lists the rest' (@(Rec | Where-Object { $_ -match '^(quarto|r|node|core|course)\t' }).Count -eq 14) "$(@(Rec).Count) lines"
+  Check 'rstudio only: record still lists the rest, without the old update task' (@(Rec | Where-Object { $_ -match '^(quarto|r|node|core|course)\t' }).Count -eq 13 -and -not ((Rec) -match '^core\ttask\t')) "$(@(Rec).Count) lines"
+  Check 'rstudio only: the old daily update task is removed too' ((LogOf) -match 'would run: schtasks\.exe /delete /tn "MetaScience pack update" /f')
   Check 'rstudio only: not reinstalled by the next update (parts.txt)' ((Get-Content (Join-Path $state 'parts.txt') -Raw).Trim() -eq 'r quarto python node')
 
   # 1b. a list saved as "all" (by hand; the setup saves each part): removing R takes R and RStudio out of it
@@ -132,16 +133,18 @@ try {
   $code = Run-Un @() @('', '')
   Check 'no record: says so and offers only the AI part (pack, update)' ((Out) -match 'no record' -and (Out) -match '1\. The AI assistant' -and (Out) -notmatch '(?m)^\s*2\. ') (Out)
 
-  # 9. only the AI part while RStudio stays: the pack (which holds the uninstall) and its update task stay too,
-  #    so the student can remove RStudio later; a later run with all removes everything
+  # 9. only the AI part while RStudio stays: the pack (which holds the uninstall) stays, so the student can remove
+  #    RStudio later; the daily update task of older setups goes in EVERY uninstall (owner directive 2026-11-24:
+  #    nothing of ours runs in the background); a later run with all removes everything
   Make-State
   Set-Content -LiteralPath (Join-Path $state 'installed.tsv') -Encoding UTF8 -Value @("rstudio`tdir`t$(D 'rstudio')", "rstudio`tfile`t$(D 'rstudio.lnk')",
     "core`tdir`t$(D 'mingit')", "core`tfile`t$(D 'uv.exe')", "core`tpack`t$(Join-Path $state 'pack')", "core`ttask`tMetaScience pack update", "course`tdir`t$(D 'course')")
   $code = Run-Un @('-Parts', 'ai', '-Yes')
   Check 'ai only, RStudio stays: exit 0' ($code -eq 0) "exit $code $(Out)"
   Check 'ai only, RStudio stays: the rest of the AI part removed' (-not (Test-Path (D 'mingit')) -and -not (Test-Path (D 'uv.exe')))
-  Check 'ai only, RStudio stays: RStudio, the pack and the update task stay' ((Test-Path (D 'rstudio')) -and (Test-Path (Join-Path $state 'pack')) -and (LogOf) -notmatch 'schtasks\.exe /delete')
-  Check 'ai only, RStudio stays: record still lists RStudio and the pack' (((Rec) -match '^rstudio\t').Count -eq 2 -and ((Rec) -match '^core\tpack\t').Count -eq 1 -and ((Rec) -match '^core\ttask\t').Count -eq 1 -and -not ((Rec) -match 'mingit')) ((Rec) -join ' | ')
+  Check 'ai only, RStudio stays: RStudio and the pack stay' ((Test-Path (D 'rstudio')) -and (Test-Path (Join-Path $state 'pack')))
+  Check 'ai only, RStudio stays: the old daily update task is removed anyway' ((LogOf) -match 'would run: schtasks\.exe /delete /tn "MetaScience pack update" /f') (LogOf)
+  Check 'ai only, RStudio stays: record still lists RStudio and the pack, not the task' (((Rec) -match '^rstudio\t').Count -eq 2 -and ((Rec) -match '^core\tpack\t').Count -eq 1 -and ((Rec) -match '^core\ttask\t').Count -eq 0 -and -not ((Rec) -match 'mingit')) ((Rec) -join ' | ')
   Check 'ai only, RStudio stays: says the pack stays' ((Out) -match 'The course pack stays until the other parts are removed') (Out)
   $code = Run-Un @('-Parts', 'all', '-Yes')
   Check 'ai only, then all: RStudio, the pack and the state folder gone' ($code -eq 0 -and -not (Test-Path (D 'rstudio')) -and -not (Test-Path $state) -and (Test-Path (D 'course\my-notes.txt'))) "exit $code $(Out)"

@@ -97,18 +97,18 @@ test("missing settings fail loudly (recorded), never a silent default recipient"
   assert.match(out, /ADMIN_NOTIFY_EMAIL is not set/);
 });
 
-test("fortnight digest counts reports since the last digest and lists open issues; quiet digest still sends", async () => {
+test("weekly digest counts reports since the last digest and lists open issues; quiet digest still sends", async () => {
   const e = env(); const sent = []; const s = async (_e, m) => sent.push(m);
-  await e.LOGS.put("2026-11-05/windows/failed/AAAAAA", REPORT);
-  await e.LOGS.put("2026-11-07/mac/failed/BBBBBB", REPORT);
+  await e.LOGS.put("2026-11-09/windows/failed/AAAAAA", REPORT);
+  await e.LOGS.put("2026-11-12/mac/failed/BBBBBB", REPORT);
   await e.LOGS.put("2026-10-01/mac/failed/OLDOLD", REPORT);   // before the period: not counted
-  await onFailedReport(e, rep("2026-11-05/windows/failed/AAAAAA"), new Date("2026-11-05T10:00:00Z"), async () => {});
+  await onFailedReport(e, rep("2026-11-09/windows/failed/AAAAAA"), new Date("2026-11-09T10:00:00Z"), async () => {});
   const r = await sendDigest(e, new Date("2026-11-15T06:00:00Z"), s);
   assert.equal(r.reports, 2);
   assert.equal(r.issues, 1);
-  assert.match(sent[0].subject, /Fortnight digest .*1 open issue .*action required/);
+  assert.match(sent[0].subject, /Weekly digest .*1 open issue .*action required/);
   assert.match(sent[0].html, /Start a session on this whole digest/);
-  const quiet = await sendDigest(e, new Date("2026-12-01T06:00:00Z"), s);
+  const quiet = await sendDigest(e, new Date("2026-11-22T06:00:00Z"), s);
   assert.equal(quiet.reports, 0);
   assert.match(sent[1].subject, /all quiet/);
 });
@@ -153,13 +153,14 @@ test("/count refuses requests without the header or with an unknown platform", a
   assert.equal(e.LOGS.m.size, 0);
 });
 
-test("the digest reports successful installs of the period by platform, production only", async () => {
+test("the digest reports successful installs counted by older setups in the week by platform, production only", async () => {
   const e = env(); const sent = [];
-  await e.LOGS.put("stats/production/2026-11-05/windows/aaaaaaaa", "");
-  await e.LOGS.put("stats/production/2026-11-06/windows/bbbbbbbb", "");
-  await e.LOGS.put("stats/production/2026-11-06/mac/cccccccc", "");
-  await e.LOGS.put("stats/local/2026-11-06/mac/dddddddd", "");          // a test: not counted
-  await e.LOGS.put("stats/production/2026-10-01/mac/eeeeeeee", "");     // before the period: not counted
+  await e.LOGS.put("stats/production/2026-11-08/windows/aaaaaaaa", "");
+  await e.LOGS.put("stats/production/2026-11-13/windows/bbbbbbbb", "");
+  await e.LOGS.put("stats/production/2026-11-14/mac/cccccccc", "");
+  await e.LOGS.put("stats/local/2026-11-13/mac/dddddddd", "");          // a test: not counted
+  await e.LOGS.put("stats/production/2026-11-07/mac/eeeeeeee", "");     // the day before the week: not counted
+  await e.LOGS.put("stats/production/2026-11-15/mac/ffffffff", "");     // today, still filling: next week
   const r = await sendDigest(e, new Date("2026-11-15T06:00:00Z"), async (_e, m) => sent.push(m));
   assert.equal(r.installs, 3);
   assert.match(sent[0].text, /windows 2, mac 1/);

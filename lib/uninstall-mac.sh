@@ -7,7 +7,7 @@
 #
 #  Start it with:  bash setup-mac.sh --uninstall     (from the pack folder ~/Library/Application Support/MetaScience/pack)
 #  or:             bash lib/uninstall-mac.sh [--components=rstudio,quarto|all] [--yes [--remove-course]] [--dry-run]   (--parts= is the same)
-#  Parts: rstudio, r, quarto, node, vscode, web, codex, claude, ai (the AI assistant, Git, uv, this pack and its daily update), all.
+#  Parts: rstudio, r, quarto, node, vscode, web, codex, claude, ai (the AI assistant, Git, uv, this pack and the daily update check of older setups), all.
 #  Written for bash 3.2 (the macOS default).
 # =============================================================================
 set -u
@@ -37,7 +37,7 @@ group_name() {
     vscode) echo "VS Code and the add-ons the setup added to it (OpenCode, Python)" ;;
     web) echo "Website tools (GitHub CLI, Vercel, Neon, Railway) and their sign-ins" ;; codex) echo "Codex and its sign-in" ;;
     claude) echo "Claude Code and its sign-in" ;;
-    core) echo "The AI assistant and the setup's own tools (OpenCode, Git, uv, this course pack and its daily update)" ;; esac
+    core) echo "The AI assistant and the setup's own tools (OpenCode, Git, uv, this course pack, and the daily update check of older setups)" ;; esac
 }
 FAILED=0
 say()  { printf '%s\n' "$*" | tee -a "$LOG_FILE"; }
@@ -65,7 +65,7 @@ say "MetaScience course setup: remove what the setup installed   (log: $LOG_FILE
 [ "$DRY_RUN" = 1 ] && say "DRY RUN: nothing will be changed."
 if [ ! -f "$RECORD" ]; then
   say "This computer has no record of the programs the setup installed (setups before November 2026 kept none)."
-  say "So only the course pack and its daily update can be removed here. Other programs: drag them from"
+  say "So only the course pack and the daily update check of older setups can be removed here. Other programs: drag them from"
   say "Applications to the Bin, or ask the teacher."
 fi
 
@@ -103,8 +103,8 @@ if [ -n "$COURSE" ] && [ -d "$COURSE" ]; then
   fi
 fi
 if [ -z "$CHOSEN" ] && [ "$REMOVE_COURSE_NOW" = 0 ]; then say "Nothing was removed."; exit 0; fi
-# The course pack holds this uninstall. If other parts the setup installed stay on this computer, the pack and its
-# daily update stay too, so the student can come back and remove those parts later.
+# The course pack holds this uninstall. If other parts the setup installed stay on this computer, the pack stays
+# too, so the student can come back and remove those parts later.
 KEEP_PACK=0
 case " $CHOSEN " in *" core "*)
   for g in $PRESENT; do [ "$g" = core ] && continue; case " $CHOSEN " in *" $g "*) ;; *) KEEP_PACK=1 ;; esac; done ;; esac
@@ -121,7 +121,10 @@ fi
 prio() { case "$1" in rpkg) echo 0 ;; uvdata) echo 1 ;; vsext|launchd|cron) echo 2 ;; brew|cask|apt) echo 3 ;; homebrew) echo 4 ;;
   dir|file|pkgdir|clt) echo 5 ;; pack) echo 6 ;; path) echo 7 ;; *) echo 8 ;; esac; }
 TODO="$(printf '%s\n' "$ITEMS" | while IFS="$TAB" read -r part kind target; do
-  [ "$KEEP_PACK" = 1 ] && case "$kind" in pack|launchd|cron) continue ;; esac
+  [ "$KEEP_PACK" = 1 ] && [ "$kind" = pack ] && continue
+  # the daily update check of setups before 2026-11-24 goes in every uninstall, even one of a single part (owner
+  # directive 2026-11-24: nothing of the setup runs on its own)
+  case "$kind" in launchd|cron) printf '%s\t%s\t%s\t%s\n' "$(prio "$kind")" "$part" "$kind" "$target"; continue ;; esac
   case " $CHOSEN " in *" $part "*) printf '%s\t%s\t%s\t%s\n' "$(prio "$kind")" "$part" "$kind" "$target" ;; esac; done | sort -s -n -k1,1 | cut -f2-)"
 [ "$REMOVE_COURSE_NOW" = 1 ] && TODO="${TODO:+$TODO
 }course${TAB}dir$TAB$COURSE"
@@ -186,6 +189,9 @@ while IFS="$TAB" read -r part kind target; do
     uvdata) if have uv || [ -n "$FAKE" ]; then run uv cache clean; run uv python uninstall --all; fi
             ok "Python and downloads kept by uv" "removed"; done_item "$part" "$kind" "$target" ;;
     launchd) if [ -f "$target" ] || [ -n "$FAKE" ]; then run launchctl unload "$target"; [ -n "$FAKE" ] || rm -f "$target"; fi
+             # still loaded without its file (a newer setup removed the file while the job ran): unload it by name
+             if [ -n "$FAKE" ]; then echo "would run: launchctl remove org.freeaisetup.update" >> "$LOG_FILE"
+             else launchctl remove org.freeaisetup.update >/dev/null 2>&1; fi
              ok "Daily update check" "removed"; done_item "$part" "$kind" "$target" ;;
     cron) if [ -n "$FAKE" ] || crontab -l 2>/dev/null | grep -q "$target"; then
             if [ -n "$FAKE" ]; then echo "would run: crontab without $target" >> "$LOG_FILE"

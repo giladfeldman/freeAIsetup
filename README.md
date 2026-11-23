@@ -72,8 +72,12 @@ https://github.com/user-attachments/assets/c0e45b3b-1174-4725-b04a-9fc2bdf258c4
 
 ## Updates
 
-The installed pack can keep itself up to date. The setup asks once; you can say no.
-- A short daily check downloads only the files that changed and installs any newly added tools.
+The installed pack updates only when you ask it to. Nothing of this setup runs on its own on your computer: no
+scheduled task, no background check, no program that starts with the computer.
+- An update downloads only the files that changed and installs any newly added tools.
+- Setups from before 24 November 2026 added a daily update check (Windows: a task in Task Scheduler; Mac: an item
+  under Login Items, shown as "bash"; Linux: a crontab line). The next run of the setup, an update or any uninstall
+  removes it; so does the check itself the next time it starts, without installing anything.
 - Every release is signed. The pack refuses any update whose signature does not match the key it carries,
   and it never touches files you changed.
 - On Windows, a program the setup downloads straight from its maker (VS Code, R, RStudio, Quarto, Git, uv,
@@ -84,8 +88,8 @@ The installed pack can keep itself up to date. The setup asks once; you can say 
 - A Codespace brings its copy of the setup up to date each time it starts (only if nothing in that copy was
   changed in the Codespace), so fixes to its start page reach Codespaces made before a release.
 - To update by hand: `install-windows.cmd -Update` (Windows) or `bash setup-mac.sh --update` (Mac).
-- To go back to the previous version: `-Rollback` / `--rollback`. To switch the daily check off:
-  `-NoAutoUpdate` / `--no-auto-update`.
+- To go back to the previous version: `-Rollback` / `--rollback`. (`-NoAutoUpdate` / `--no-auto-update` are still
+  accepted and do nothing: there is no automatic check to switch off.)
 
 ## Choosing parts, disk space, and removing the setup
 
@@ -137,12 +141,15 @@ The setup sends two kinds of messages to the teacher's private log box (a small 
 only in the EU (a Cloudflare store restricted to the EU); the alert e-mails to the teacher go through Amazon's
 e-mail service in Ireland. The small program that receives the messages runs on Cloudflare's worldwide network.
 
-- **A count of successful installs.** When a setup finishes with everything working, it sends one message
-  that says only "an install succeeded", with the platform (Windows, Mac, Linux or Codespace) and the version
-  of this pack. No name, no e-mail, no computer name, no files, no log. It is sent once per user account (a
-  small marker file on the computer remembers it), so re-running the setup is not counted twice. The log box
-  does not store the internet address the message came from. This tells us how widely the setup is used.
-  To switch it off, set the environment variable `MS_NO_COUNT=1` before running the setup.
+- **The result of each setup run.** At the end of every setup run (and when the one-line installer stops), it
+  sends one short message: the platform (Windows, Mac, Linux or Codespace), the pack version, the operating
+  system's name and version (for example "Windows 11 Home 26100"), the processor type, whether it worked, how
+  far it got, whether it was a first install, a re-run or an update, which optional parts were chosen, how many
+  minutes it took, and the name of each step that failed or warned with its short reason (the user name,
+  computer name and home folder removed from it). No name, no e-mail, no computer name, no files, no log, and no
+  number that would link two runs of the same computer. The log box stores neither the internet address nor the
+  country. These messages are kept for 400 days and tell us which parts work on which computers.
+  To switch them off, set the environment variable `MS_NO_COUNT=1` before running the setup.
 - **Error reports, only with your yes.** If the setup or the installer stops with a problem, it asks whether
   to send the setup report to the teacher. Only on yes, the report and log go to the log box, with the user
   name, computer name and home folder removed (of your VS Code add-ons, only the course's are named; your own

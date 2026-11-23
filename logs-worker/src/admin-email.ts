@@ -1,6 +1,8 @@
 /**
  * Admin-email renderer (shared reference copy, STANDARD_VERSION below). Pure functions,
  * no dependencies. index.js wires KV storage and Amazon SES around it.
+ * Local change 2026-11-24 (owner request: a WEEKLY digest for this project): DigestInput.period, .tables and
+ * .promptLines; the issue-alert footer says "the next digest" instead of "the fortnight digest".
  */
 import { createHash } from "node:crypto";
 
@@ -63,6 +65,9 @@ export interface DigestInput {
   numbers: { label: string; value: string | number }[];  // from the DB only
   alertingHealth: { label: string; value: string }[];
   adminUrl?: string;
+  period?: "weekly" | "fortnight";                         // default fortnight (the standard)
+  tables?: { title: string; rows: [string, string][] }[];  // extra sections after the headline numbers
+  promptLines?: string[];                                  // extra lines for the whole-digest session prompt
 }
 
 // ---------------------------------------------------------------- helpers
@@ -245,7 +250,7 @@ export function renderIssueAlert(i: AdminIssue, opts: { prefix?: string; folder?
     section("Priority and importance", `<div class="ink" style="color:${COLOR[i.priority]};font-weight:700;">${i.priority} ${label}</div><div class="ink" style="color:${INK};font-size:13.5px;margin-top:4px;">${esc(importanceLine(i.importance))}</div>`) +
     section("Suggested first step", `<div class="ink" style="color:${INK};">${esc(i.suggestedStep ?? "Open the session below; it will reproduce the error locally first.")}</div>${btns}`) +
     section("Error details", rows(details) + stack);
-  const footer = `${esc(i.app)} · ${esc(i.environment)} · admin email standard v${STANDARD_VERSION}<br>${i.priority} alert. This issue is muted for 24 h; further occurrences are counted and appear in the next alert or the fortnight digest.${(opts.folder ?? process.env.ADMIN_EMAIL_SESSION_FOLDER) ? "" : "<br>ADMIN_EMAIL_SESSION_FOLDER is not set, so the session button opens without a project folder."}`;
+  const footer = `${esc(i.app)} · ${esc(i.environment)} · admin email standard v${STANDARD_VERSION}<br>${i.priority} alert. This issue is muted for 24 h; further occurrences are counted and appear in the next alert or the next digest.${(opts.folder ?? process.env.ADMIN_EMAIL_SESSION_FOLDER) ? "" : "<br>ADMIN_EMAIL_SESSION_FOLDER is not set, so the session button opens without a project folder."}`;
   const html = page(subjectFor(i, prefix), COLOR[i.priority], `${i.priority} ${label} · ${i.app}`, i.summary, sections, footer, banner);
   const text = [
     banner, subjectFor(i, prefix), "", "WHAT HAPPENED", i.explanation, "",
@@ -270,24 +275,29 @@ export function renderDigest(d: DigestInput, opts: { prefix?: string; folder?: s
   const worst = open[0]?.priority;
   const verdict = !open.length ? "all quiet" : (p1 || p2) ? "action required" : "needs attention";
   const fmt = (s: string) => new Date(s).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "Europe/Vienna" });
-  const subject = `${prefix}[${d.app}] Fortnight digest ${fmt(d.periodStart)}–${fmt(d.periodEnd)}: ${open.length} open issue${open.length === 1 ? "" : "s"} (${p1} P1, ${p2} P2) · ${verdict}`;
+  const weekly = d.period === "weekly";
+  const Period = weekly ? "Weekly" : "Fortnight", period = weekly ? "weekly" : "fortnight";
+  const subject = `${prefix}[${d.app}] ${Period} digest ${fmt(d.periodStart)}–${fmt(d.periodEnd)}: ${open.length} open issue${open.length === 1 ? "" : "s"} (${p1} P1, ${p2} P2) · ${verdict}`;
   const cards = open.map((i) => `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 10px 0;border:1px solid ${LINE};"><tr><td width="5" bgcolor="${COLOR[i.priority]}" style="background:${COLOR[i.priority]};width:5px;padding:0;font-size:1px;">&nbsp;</td><td class="card" bgcolor="${CARD}" style="background:${CARD};padding:10px 14px;"><span style="color:${COLOR[i.priority]};font-weight:700;font-size:12px;">${i.priority} ${PRIORITY_LABEL[i.priority]}</span><div class="ink" style="color:${INK};font-size:14.5px;">${esc(i.summary)}</div><div class="muted" style="color:${SUB};font-size:12.5px;">${esc(i.event)} · ${i.count}× · first ${esc(i.firstSeen)} · last ${esc(i.lastSeen)} · ${esc(i.fingerprint)}</div>${button(sessionUrl(sessionPrompt(i), folder), "Start a session on this issue", true)}${clear}</td></tr></table>`).join("");
-  const wholePrompt = `Fortnight admin digest for ${d.app}, ${d.periodStart} to ${d.periodEnd}: ${open.length} open issues (${p1} P1, ${p2} P2).\n` +
+  const wholePrompt = `${Period} admin digest for ${d.app}, ${d.periodStart} to ${d.periodEnd}: ${open.length} open issues (${p1} P1, ${p2} P2).\n` +
+    (d.promptLines?.length ? d.promptLines.join("\n") + "\n" : "") +
     open.slice(0, 15).map((i) => `- ${i.priority} ${i.summary} [${i.fingerprint}] ${i.count}x`).join("\n") +
     `\nAdmin: ${d.adminUrl ?? "not recorded"}\nTriage these per the never-guess rule; reproduce locally, fix or log each to TODO.md with debt.py.`;
   const nums = d.numbers.map((n) => `<table role="presentation" cellpadding="0" cellspacing="0" align="left" style="margin:0 24px 10px 0;"><tr><td><div class="muted" style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:${SUB};">${esc(n.label)}</div><div class="ink" style="font-size:22px;font-weight:600;color:${INK};">${esc(n.value)}</div></td></tr></table>`).join("") + clear;
   const sections =
     section("Headline numbers", nums) +
+    (d.tables ?? []).map((t) => section(t.title, t.rows.length ? rows(t.rows) : `<div class="muted" style="color:${SUB};">none</div>`)).join("") +
     section(`Still open (${open.length})`, cards || `<div class="ink" style="color:${COLOR.OK};">No open issues. The alerting is alive — this digest is its proof.</div>`) +
-    section(`Resolved this fortnight (${d.resolved.length})`, d.resolved.length ? `<ul style="margin:0;padding-left:18px;">${d.resolved.map((r) => `<li class="ink" style="color:${INK};">${esc(r.summary)} <span class="muted" style="color:${SUB};font-size:12px;">${esc(r.fingerprint)} · ${esc(r.resolvedAt)}</span></li>`).join("")}</ul>` : "") +
+    section(`Resolved this ${weekly ? "week" : "fortnight"} (${d.resolved.length})`, d.resolved.length ? `<ul style="margin:0;padding-left:18px;">${d.resolved.map((r) => `<li class="ink" style="color:${INK};">${esc(r.summary)} <span class="muted" style="color:${SUB};font-size:12px;">${esc(r.fingerprint)} · ${esc(r.resolvedAt)}</span></li>`).join("")}</ul>` : "") +
     section("Low-priority noise (P4)", d.noise.length ? rows(d.noise.slice(0, 15).map((n) => [n.event, `${n.count}×`])) : "") +
     section("Health of the alerting itself", rows(d.alertingHealth.map((h) => [h.label, h.value]))) +
     section("Act on this digest", button(sessionUrl(wholePrompt, folder), "Start a session on this whole digest", true) + (d.adminUrl ? button(d.adminUrl, "Open admin") : "") + clear);
   const band = worst ? COLOR[worst] : COLOR.OK;
-  const html = page(subject, band, `${d.app} · fortnight digest`, `${fmt(d.periodStart)}–${fmt(d.periodEnd)} · ${verdict}`, sections,
-    `${esc(d.app)} · ${esc(d.environment)} · admin email standard v${STANDARD_VERSION}<br>Sent on the 1st and 15th of each month. Issues are emailed as they happen; this digest covers everything else.`,
+  const html = page(subject, band, `${d.app} · ${period} digest`, `${fmt(d.periodStart)}–${fmt(d.periodEnd)} · ${verdict}`, sections,
+    `${esc(d.app)} · ${esc(d.environment)} · admin email standard v${STANDARD_VERSION}<br>${weekly ? "Sent every Monday" : "Sent on the 1st and 15th of each month"}. Issues are emailed as they happen; this digest covers everything else.`,
     prefix ? `${prefix.trim()} — not a production digest.` : "");
   const text = [subject, "", "HEADLINE NUMBERS", ...d.numbers.map((n) => `${n.label}: ${n.value}`), "",
+    ...(d.tables ?? []).flatMap((t) => [t.title.toUpperCase(), ...(t.rows.length ? t.rows.map(([k, v]) => `${k}: ${v}`) : ["none"]), ""]),
     `STILL OPEN (${open.length})`, ...open.map((i) => `${i.priority} ${PRIORITY_LABEL[i.priority]} ${i.summary} [${i.fingerprint}] ${i.count}x`),
     "", `RESOLVED (${d.resolved.length})`, ...d.resolved.map((r) => `${r.summary} [${r.fingerprint}]`),
     "", "LOW-PRIORITY NOISE", ...d.noise.slice(0, 15).map((n) => `${n.event}: ${n.count}x`),

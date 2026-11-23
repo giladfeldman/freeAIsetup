@@ -31,7 +31,8 @@ make_state; rc="$(un '' --parts=rstudio --yes)"
 check "rstudio only: exit 0 ($rc)" '[ "$rc" = 0 ]'
 check "rstudio only: brew asked to remove the cask, app folder gone" 'logof | grep -q "would run: brew uninstall --cask rstudio" && [ ! -e "$W/RStudio.app" ]'
 check "rstudio only: other parts untouched" '[ -d "$W/quarto" ] && [ -d "$MS_STATE_DIR/pack" ] && [ -e "$W/uv" ]'
-check "rstudio only: record no longer lists it, still lists the rest" '! rec | grep -q "^rstudio" && [ "$(rec | wc -l)" = 13 ]'
+check "rstudio only: record no longer lists it, still lists the rest, without the old update check" '! rec | grep -q "^rstudio" && [ "$(rec | wc -l)" = 13 ] && ! rec | grep -q "^core${T}cron$T"'
+check "rstudio only: the old daily update check is removed too" 'logof | grep -q "would run: crontab without freeaisetup-update"'
 check "rstudio only: not reinstalled by the next update (parts.txt)" '[ "$(cat "$MS_STATE_DIR/parts.txt")" = "r quarto python node" ]'
 # a list saved as "all" (by hand; the setup saves each part): removing R takes R and RStudio out of it
 make_state; echo all > "$MS_STATE_DIR/parts.txt"; rc="$(un '' --parts=r --yes)"
@@ -82,16 +83,18 @@ export HOME="$HOME_SAVE"
 make_state norecord; un '|' >/dev/null
 check "no record: says so, offers only the AI part" 'grep -q "no record" "$W/out.txt" && grep -q "1. The AI assistant" "$W/out.txt" && ! grep -q "  2\. " "$W/out.txt"'
 
-# 9. only the AI part while RStudio stays: the pack (which holds the uninstall) and its update check stay too,
-#    so the student can remove RStudio later; a later run with all removes everything
+# 9. only the AI part while RStudio stays: the pack (which holds the uninstall) stays, so the student can remove
+#    RStudio later; the daily update check of older setups goes in EVERY uninstall (owner directive 2026-11-24);
+#    a later run with all removes everything
 make_state
 printf '%s\n' "rstudio${T}cask${T}rstudio" "rstudio${T}pkgdir${T}$W/RStudio.app" "core${T}file${T}$W/uv" "core${T}dir${T}$W/opencode-data" \
   "core${T}pack${T}$MS_STATE_DIR/pack" "core${T}cron${T}freeaisetup-update" "course${T}dir${T}$W/course" > "$MS_STATE_DIR/installed.tsv"
 rc="$(un '' --parts=ai --yes)"
 check "ai only, RStudio stays: exit 0 ($rc)" '[ "$rc" = 0 ]'
 check "ai only, RStudio stays: the rest of the AI part removed" '[ ! -e "$W/uv" ] && [ ! -e "$W/opencode-data" ]'
-check "ai only, RStudio stays: RStudio, the pack and the update check stay" '[ -d "$W/RStudio.app" ] && [ -d "$MS_STATE_DIR/pack" ] && ! logof | grep -q "crontab without"'
-check "ai only, RStudio stays: record still lists RStudio and the pack" '[ "$(rec | grep -c "^rstudio$T")" = 2 ] && rec | grep -q "^core${T}pack$T" && rec | grep -q "^core${T}cron$T" && ! rec | grep -q opencode-data'
+check "ai only, RStudio stays: RStudio and the pack stay" '[ -d "$W/RStudio.app" ] && [ -d "$MS_STATE_DIR/pack" ]'
+check "ai only, RStudio stays: the old daily update check is removed anyway" 'logof | grep -q "would run: crontab without freeaisetup-update"'
+check "ai only, RStudio stays: record still lists RStudio and the pack, not the update check" '[ "$(rec | grep -c "^rstudio$T")" = 2 ] && rec | grep -q "^core${T}pack$T" && ! rec | grep -q "^core${T}cron$T" && ! rec | grep -q opencode-data'
 check "ai only, RStudio stays: says the pack stays" 'grep -q "The course pack stays until the other parts are removed" "$W/out.txt"'
 rc="$(un '' --parts=all --yes)"
 check "ai only, then all: RStudio, the pack and the state folder gone ($rc)" '[ "$rc" = 0 ] && [ ! -e "$W/RStudio.app" ] && [ ! -e "$MS_STATE_DIR" ] && [ -f "$W/course/my-notes.txt" ]'
