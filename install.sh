@@ -52,7 +52,11 @@ fYLUKs+KlwabPzetzAsEq4vOZazV0eyeYWRWuNSATmUNAgMBAAE=
     # the anonymous result message of the setup (setup-mac.sh send_result) for a stop here: no name, no log, no ID;
     # MS_NO_COUNT=1 switches it off. Sent whatever the answer below.
     if [ -z "${MS_NO_COUNT:-}" ]; then
-      local js os r; js() { printf '%s' "$1" | sed -e "s#$HOME#~#g" -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'; }
+      # names removed like the setup's scrub (setup-mac.sh): home folder, user and computer name, a login inside an
+      # address, e-mail addresses, other accounts' folders (Sol review 2026-11-24)
+      local js os r u h; u="$(id -un)"; h="$(hostname -s 2>/dev/null)"
+      js() { local t="$1" w tl='~'; t="${t//"$HOME"/$tl}"; for w in "$u" "$h"; do [ "${#w}" -ge 4 ] && t="${t//"$w"/<name>}"; done
+        printf '%s' "$t" | sed -E -e 's#://[^/[:space:]:@]+(:[^/[:space:]@]*)?@#://<login>@#g' -e 's#[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}#<e-mail>#g' -e 's#/(Users|home)/[^/[:space:]"'"'"'<>:]+( [^/[:space:]"'"'"'<>:]+){0,3}/#/\1/<name>/#g' -e 's#/(Users|home)/[^/[:space:]"'"'"']+#/\1/<name>#g' | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037'; }
       os="$(uname -s) $(sw_vers -productVersion 2>/dev/null || uname -r)"
       r="{\"v\":1,\"platform\":\"$plat\",\"version\":\"$VER\",\"os\":\"$(js "$os")\",\"arch\":\"$(uname -m)\",\"outcome\":\"failed\",\"stage\":\"installer\",\"mode\":\"installer\",\"parts\":\"\",\"minutes\":0,\"issues\":[[\"FAIL\",\"$(js "$1")\",\"$(js "$2")\",\"installer\"]]}"
       if [ -n "${MS_LOG_ENV:-}" ]; then printf '%s' "$r" | curl -fsS --max-time 20 -X POST -H 'x-freeaisetup: 1' -H "x-freeaisetup-env: $MS_LOG_ENV" --data-binary @- "$box/result" >/dev/null 2>&1

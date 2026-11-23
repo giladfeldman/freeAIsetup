@@ -58,6 +58,12 @@ for c in "precheck|MS_TEST_FAIL_AT=precheck|Test stop|precheck" "crash before an
   check "$name: result names the failed step" '[ "$(result_is "any(i[0]==\"FAIL\" and i[1]==\"$step\" for i in r[\"issues\"])")" = yes ]'
   check "$name: result has no home folder or user name" private_free
 done
+# Nothing of the setup runs on after it (Sol review 2026-11-24: the password keep-alive slept on for up to 50 s). Run
+# outside a terminal session: closing the test's terminal takes its children along and hides a leftover; a student's
+# Terminal stays open. The grep proves the password step (and so the keep-alive) ran at all.
+env MS_TEST_CRASH=tools bash setup-mac.sh --yes </dev/null >/tmp/out-keeper.txt 2>&1; sleep 1
+check "after the setup ends: its password keep-alive is gone" 'command -v pgrep >/dev/null && grep -q "computer password" /tmp/out-keeper.txt && ! pgrep -f "^sleep 50$" >/dev/null'   # no pgrep = FAIL
+pkill -f "^sleep 50$" 2>/dev/null; : > "$REC"
 : > "$REC"; rc="$(run_tty 'n n' "env MS_TEST_FAIL_AT=precheck bash setup-mac.sh")"
 check "student says no: no report sent, one anonymous result" '[ "$(uploads)" = 0 ] && [ "$(results)" = 1 ]'
 : > "$REC"; rc="$(run_tty - "env MS_TEST_FAIL_AT=precheck bash setup-mac.sh --yes")"
@@ -66,7 +72,7 @@ check "--yes: no report, one result, exit not 0" '[ "$(uploads)" = 0 ] && [ "$(r
 check "MS_NO_COUNT=1: no result sent" '[ "$(results)" = 0 ]'
 check "no run sent the old /count" '! grep -q "\"path\": \"/count" "$REC"'
 : > "$REC"; rc="$(run_tty 'y n' "timeout -s INT 3 bash setup-mac.sh")"   # Ctrl+C while step 1 checks the network
-check "Ctrl+C: stops without asking, nothing sent ($rc)" '[ "$(uploads)" = 0 ] && grep -q "Setup stopped (Ctrl+C)" /tmp/out.txt'
+check "Ctrl+C: stops without asking, nothing sent, no result either ($rc)" '[ "$(uploads)" = 0 ] && [ "$(results)" = 0 ] && grep -q "Setup stopped (Ctrl+C)" /tmp/out.txt'
 
 # the result message itself (send_result), as at the end of a run: one FAIL row with the home folder in it, one
 # WARN row from the check's file (tab-separated, lib/course_setup.py), sent once for two calls
@@ -74,7 +80,7 @@ check "Ctrl+C: stops without asking, nothing sent ($rc)" '[ "$(uploads)" = 0 ] &
 ( SETUP_VERSION=9.9.9; PLATFORM=linux; ARCH_ID=x86_64; LOG_FILE=/tmp/res.log; DRY_RUN=0; FAILED=1; RUN_MODE=first
   PARTS="r python"; RUN_START=$(( $(date +%s) - 720 )); LOG_BOX="$MS_LOG_URL"; have() { command -v "$1" >/dev/null 2>&1; }
   RESULTS="OK|Git|fine
-FAIL|R step|not found in $HOME/R \"quoted\"
+FAIL|R step|not found in $HOME/R \"quoted\" via http://bob:s3cretpw@proxy.example:8080 jane.doe@uni.example /Users/Other Person/x
 "
   printf 'WARN\tVS Code\tnot on PATH in %s\n' "$HOME" > /tmp/res.check.tsv
   eval "$(sed -n '/^log_box_post() {/,/^}/p; /^log_platform() {/p; /^json_s() {/p; /^scrub() {/,/^}/p; /^send_result() {/,/^}/p' setup-mac.sh)"
@@ -83,7 +89,14 @@ check "result: sent once for two calls" '[ "$(results)" = 1 ]'
 check "result: fields" '[ "$(result_is "r[\"version\"]==\"9.9.9\" and r[\"outcome\"]==\"failed\" and r[\"stage\"]==\"done\" and r[\"mode\"]==\"first\" and r[\"parts\"]==\"r,python\" and r[\"minutes\"]==12 and r[\"arch\"]==\"x86_64\" and r[\"os\"]!=\"\"")" = yes ]'
 check "result: issues [status, step, reason, source], quotes kept, check row marked" '[ "$(result_is "len(r[\"issues\"])==2 and r[\"issues\"][0][:2]==[\"FAIL\",\"R step\"] and \"\\\"quoted\\\"\" in r[\"issues\"][0][2] and r[\"issues\"][0][3]==\"setup\" and r[\"issues\"][1]==[\"WARN\",\"VS Code\",r[\"issues\"][1][2],\"check\"]")" = yes ]'
 check "result: no home folder or user name" private_free
+# Sol review 2026-11-24: a proxy's password, an e-mail address and another account's folder were sent as written
+check "result: no proxy password, e-mail address or other account's folder" '[ "$(result_is "not any(b in r[\"issues\"][0][2] for b in (\"s3cretpw\",\"bob\",\"jane\",\"Other\",\"Person\")) and \"<login>@proxy\" in r[\"issues\"][0][2] and \"<e-mail> /Users/<name>/x\" in r[\"issues\"][0][2]")" = yes ]'
 check "result: the check's file is removed after reading" '[ ! -f /tmp/res.check.tsv ]'
+# Sol review 2026-11-24: with the result switched off, the check's rows file was left behind
+: > "$REC"; printf 'WARN\tVS Code\tx\n' > /tmp/res.check.tsv
+( LOG_FILE=/tmp/res.log; DRY_RUN=0; MS_NO_COUNT=1; LOG_BOX="$MS_LOG_URL"
+  eval "$(sed -n '/^send_result() {/,/^}/p' setup-mac.sh)"; send_result done )
+check "result off (MS_NO_COUNT): nothing sent, the check's rows file removed" '[ "$(results)" = 0 ] && [ ! -f /tmp/res.check.tsv ]'
 
 # install.sh: a stop at the download checks offers the report too
 command -v openssl >/dev/null || { sudo apt-get update -qq >/dev/null 2>&1; sudo apt-get install -y -qq openssl >/dev/null 2>&1; }
@@ -92,6 +105,12 @@ run_tty y "env MS_UPDATE_SOURCES='http://127.0.0.1:1/release/manifest.json|http:
 check "installer: no source reachable: report uploaded" '[ "$(uploads)" = 1 ] && last_upload | grep -q "Installer download"'
 check "installer: version 'installer' in the address" 'last_upload | grep -q "version=installer"'
 check "installer: one anonymous result, stage installer, the step named" '[ "$(results)" = 1 ] && [ "$(result_is "r[\"stage\"]==\"installer\" and r[\"outcome\"]==\"failed\" and r[\"issues\"][0][1]==\"Installer download\"")" = yes ]'
+# the installer's own result removes the same things as the setup's (Sol review 2026-11-24); setsid: no terminal, so
+# stop_report sends the result and asks nothing
+: > "$REC"
+( export MS_LOG_URL; WORK=/tmp; VER=installer; eval "$(sed -n '/^  stop_report() {/,/^  }$/p' install.sh)"
+  setsid -w bash -c "$(declare -f stop_report); stop_report 'Installer files' 'x in $HOME/a on $(id -un) via http://bob:s3cretpw@proxy.example:8080 jane.doe@uni.example /home/other person/x'" </dev/null >/dev/null 2>&1 )
+check "installer result (in-process): no names, no proxy password, e-mail address or other account's folder" '[ "$(results)" = 1 ] && private_free && [ "$(result_is "not any(b in r[\"issues\"][0][2] for b in (\"s3cretpw\",\"bob\",\"jane\",\"other\",\"person\")) and \"<e-mail> /home/<name>/x\" in r[\"issues\"][0][2]")" = yes ]'
 : > "$REC"
 run_tty y "env MS_UPDATE_SOURCES='http://127.0.0.1:$PORT/m/manifest.json|http://127.0.0.1:$PORT/bad/{P}' MS_INSTALL_DIR=/tmp/inst bash install.sh" >/dev/null
 check "installer: a file fails its checksum: report uploaded" '[ "$(uploads)" = 1 ] && last_upload | grep -q "Installer files"'

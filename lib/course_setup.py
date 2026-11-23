@@ -763,13 +763,15 @@ def check(course: pathlib.Path, skip_ai: bool, log_file: pathlib.Path, parts: tu
         for s, i, d in t.rows:
             r.write(f"{s:<5} {i:<22} {d}\n")
     # the same rows, one per line (status TAB item TAB detail), next to the log: the setup reads them for its anonymous
-    # result message (setup-windows.ps1 Send-Result, setup-mac.sh send_result); temporary, like the log
-    try:
-        with open(log_file.with_suffix(".check.tsv"), "w", encoding="utf-8") as r:
-            for s, i, d in t.rows:
-                r.write("\t".join(x.replace("\t", " ").replace("\n", " ") for x in (s, i, d)) + "\n")
-    except OSError:
-        pass
+    # result message (setup-windows.ps1 Send-Result, setup-mac.sh send_result); temporary, like the log. Only when
+    # the setup asks (MS_RESULT_ROWS, set by a full run that sends a result): a check on its own leaves no file.
+    if os.environ.get("MS_RESULT_ROWS"):
+        try:
+            with open(log_file.with_suffix(".check.tsv"), "w", encoding="utf-8") as r:
+                for s, i, d in t.rows:
+                    r.write("\t".join(x.replace("\t", " ").replace("\n", " ") for x in (s, i, d)) + "\n")
+        except OSError:
+            pass
     print()
     if t.failed == 0 and any(s == "SKIP" for s, _i, _d in t.rows):
         print("ALL CHECKS PASSED for the parts you chose. The parts marked SKIP were not installed.")

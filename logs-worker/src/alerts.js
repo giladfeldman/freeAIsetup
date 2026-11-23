@@ -50,6 +50,14 @@ const MODES = ["first", "rerun", "update", "installer"];
 const PART_IDS = ["r", "rstudio", "quarto", "python", "node", "vscode", "web", "codex", "claude"];
 const clip = (v, n) => String(v ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, n);
 
+// The setups remove these before sending (setup-windows.ps1 Scrub, setup-mac.sh scrub, the installers); the log box
+// removes them again, for a setup of an older version or a pattern a setup missed (Sol review 2026-11-24): a login
+// inside an address, an e-mail address, and any account's folder name.
+export const redact = (s) => s
+  .replace(/:\/\/[^/\s:@]+(:[^/\s@]*)?@/g, "://<login>@")
+  .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g, "<e-mail>")
+  .replace(/\b([A-Za-z]:\\Users\\)(?!<name>)(?:[^\\\s'"<>:]+(?: [^\\\s'"<>:]+){0,3}(?=\\)|[^\\\s'"]+)/gi, "$1<name>")   // "Jane Doe" too
+  .replace(/\/(Users|home)\/(?!<name>)(?:[^/\s'"<>:]+(?: [^/\s'"<>:]+){0,3}(?=\/)|[^/\s'"]+)/g, "/$1/<name>");
 // null = refused (the reason says why); otherwise the cleaned record
 export function normalizeResult(raw, platform) {
   let j; try { j = JSON.parse(raw); } catch { return { error: "not JSON" }; }
@@ -57,24 +65,29 @@ export function normalizeResult(raw, platform) {
   if (!OUTCOMES.includes(j.outcome)) return { error: "bad outcome" };
   const issues = (Array.isArray(j.issues) ? j.issues : []).slice(0, 60)
     .filter((x) => Array.isArray(x) && (x[0] === "FAIL" || x[0] === "WARN"))
-    .map((x) => [x[0], clip(x[1], 60), clip(x[2], 200), ["setup", "check", "installer"].includes(x[3]) ? x[3] : "setup"]);
+    .map((x) => [x[0], clip(x[1], 60), redact(clip(x[2], 200)), ["setup", "check", "installer"].includes(x[3]) ? x[3] : "setup"]);
   return { rec: {
     platform, version: clip(j.version, 32).replace(/[^0-9A-Za-z._-]/g, ""), os: clip(j.os, 60), arch: clip(j.arch, 16),
     outcome: j.outcome, stage: STAGES.includes(j.stage) ? j.stage : "install", mode: MODES.includes(j.mode) ? j.mode : "first",
-    parts: String(j.parts ?? "").split(/[,\s]+/).filter((x) => PART_IDS.includes(x)),
+    parts: [...new Set(String(j.parts ?? "").split(/[,\s]+/).filter((x) => PART_IDS.includes(x)))],   // each part once
     minutes: Math.max(0, Math.min(600, Math.round(Number(j.minutes) || 0))), issues,
   } };
 }
 
 // Which part of the setup a step belongs to (the step names of setup-windows.ps1, setup-mac.sh and lib/course_setup.py)
+// Every real step name is listed in test/results.test.js ("every step name of the setups"), read from the scripts
+// themselves, so a new step name without a part fails the tests (Sol review 2026-11-24: the website tools' Windows
+// names, "R in VS Code", the AI keys and the automatic AI switch were counted as "core").
 const COMPONENT_OF = [
   [/^(R step|R packages|R on PATH|Pandoc for R|Rscript|R)$/i, "r"], [/^RStudio/i, "rstudio"],
+  // the report step renders with Quarto (and R): a failure there is the Quarto part's
   [/^(Quarto|quarto|Report step)$/i, "quarto"], [/^(Python (step|environment|course packages))$/i, "python"],
-  [/^(Node\.js|node)$/i, "node"], [/^VS Code/i, "vscode"],
-  [/^(GitHub CLI|gh|Vercel|vercel|Neon|neonctl|Railway|railway|Website tools?)$/i, "web"],
+  [/^(Node\.js|node)$/i, "node"], [/^(VS Code.*|code|R in VS Code)$/i, "vscode"],
+  [/^(GitHub CLI|gh|Vercel( CLI\b.*)?|vercel|Neon( CLI\b.*)?|neonctl|Railway( CLI\b.*)?|railway|Website tools?)$/i, "web"],
   [/^(Codex|codex)$/i, "codex"], [/^(Claude Code|claude)$/i, "claude"],
+  // apt packages: the Linux system packages the setup needs (git, curl, build tools), not one optional part
   [/^(Windows version|macOS version|Free disk space|Internet access|Proxy|Blocked site|GitHub|System|Smart App Control|Administrator password|winget|Homebrew|apt|apt packages|Managed computer)$/i, "computer"],
-  [/^(Course folder|Course kit|Check|AI step|MCP tools|OpenRouter|.*key)$/i, "course"],
+  [/^(Course folder|Course kit|Check|AI step|MCP tools|OpenRouter|Automatic AI switch|Key: .+|.*key)$/i, "course"],
   [/^(Installer.*)$/i, "installer"], [/^Setup stopped$/i, "stopped"],
 ];
 export function componentOf(label) {
@@ -99,7 +112,8 @@ const LONG = { o: "ok", f: "failed", w: "warned", n: "not reached" };
 export function resultMeta(rec, now) {
   const comps = Object.entries(componentStatus(rec)).map(([c, v]) => `${c}:${SHORT[v]}`).join(",");
   // "|" separates the failed steps in the metadata, so a step name cannot carry one
-  const fails = rec.issues.filter((x) => x[0] === "FAIL").map((x) => x[1].replace(/\|/g, "/"));
+  // each failed step once: the same step failing in the setup and in the check is one failed step of this run
+  const fails = [...new Set(rec.issues.filter((x) => x[0] === "FAIL").map((x) => x[1].replace(/\|/g, "/")))];
   const m = { t: now.toISOString(), o: rec.outcome, s: rec.stage, m: rec.mode, v: rec.version, os: rec.os, a: rec.arch,
     p: rec.parts.join(","), min: rec.minutes, w: rec.issues.filter((x) => x[0] === "WARN").length, c: comps, f: "" };
   const bytes = (o) => new TextEncoder().encode(JSON.stringify(o)).length;   // the limit is in bytes, not characters
@@ -294,10 +308,13 @@ export function digestWindow(lastDigest, now) {
   const end = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   let start = lastDigest ? new Date(lastDigest) : new Date(end - 7 * DAY_MS);
   start = Date.UTC(start.getUTCFullYear(), start.getUTCMonth(), start.getUTCDate());
-  if (!(start < end)) start = end - 7 * DAY_MS;
-  start = Math.max(start, end - 35 * DAY_MS);   // never list more than 5 weeks of days
+  // already sent today (a second run of the cron, or a retry): nothing new to cover; sending would repeat the
+  // previous week (Sol review 2026-11-24)
+  if (!(start < end)) return { start: new Date(end), end: new Date(end), days: [], already: true, notCovered: 0 };
+  const wanted = start;
+  start = Math.max(start, end - 35 * DAY_MS);   // never list more than 5 weeks of days: the rest is said, not dropped
   const days = []; for (let t = start; t < end; t += DAY_MS) days.push(new Date(t).toISOString().slice(0, 10));
-  return { start: new Date(start), end: new Date(end), days };
+  return { start: new Date(start), end: new Date(end), days, already: false, notCovered: Math.round((start - wanted) / DAY_MS) };
 }
 
 const tally = (list, f) => { const m = {}; for (const x of list) for (const k of [].concat(f(x))) if (k !== undefined && k !== "") m[k] = (m[k] || 0) + 1; return m; };
@@ -324,7 +341,7 @@ export function summarizeResults(metas, env) {
     [c, ["ok", "failed", "warned", "not reached"].filter((k) => comps[c][k]).map((k) => `${k} ${comps[c][k]}`).join(", ")]);
   const chosen = by((m) => String(m.p || "").split(",").filter(Boolean));
   const fails = {};
-  for (const m of metas) for (const f of String(m.f || "").split("|").filter(Boolean)) {
+  for (const m of metas) for (const f of new Set(String(m.f || "").split("|").filter(Boolean))) {   // a step once per run
     const g = (fails[f] ||= { label: f, count: 0, platforms: {}, versions: {}, first: m.t, last: m.t, key: m.key });
     g.count++; g.platforms[m.platform] = (g.platforms[m.platform] || 0) + 1; g.versions[m.v] = 1;
     if (m.t < g.first) g.first = m.t; if (m.t > g.last) { g.last = m.t; g.key = m.key; }
@@ -347,14 +364,15 @@ export function summarizeResults(metas, env) {
     { title: "Each part: how it went", rows: compRows },
     { title: "Steps that failed", rows: groups.slice(0, 15).map((g) => [g.label, `${g.count}× (${componentOf(g.label)}; ${line(g.platforms)})`]) },
   ];
-  return { runs, ok: outcome.ok || 0, failed: outcome.failed || 0, stopped: outcome.stopped || 0, tables, cards };
+  return { runs, ok: outcome.ok || 0, failed: outcome.failed || 0, stopped: outcome.stopped || 0, tables, cards, failedSteps: groups.length };
 }
 
 // Weekly digest: every report, issue and install result of the window. Sent even when quiet (it proves the alerting is alive).
 export async function sendDigest(env, now = new Date(), send = sendEmail) {
   const kv = env.LOGS;
   const meta = (await getJson(kv, "alerts/meta")) || {};
-  const { start, end, days } = digestWindow(meta.lastDigest, now);
+  const { start, end, days, already, notCovered } = digestWindow(meta.lastDigest, now);
+  if (already) return { skipped: `already sent today (${meta.lastDigest})` };   // never the same week twice
   const reports = [];
   for (const day of days) for (const k of await listAll(kv, day + "/")) reports.push(k);
   const states = [];
@@ -391,7 +409,8 @@ export async function sendDigest(env, now = new Date(), send = sendEmail) {
       { label: "Successful", value: R.ok },
       { label: "Failed", value: R.failed },
       { label: "Reports sent by students", value: reports.length },
-      { label: "Distinct issues", value: open.length },
+      // every issue, not only the cards shown (the cards stop at 10 failed steps)
+      { label: "Distinct issues", value: states.length + R.failedSteps },
     ],
     tables: R.tables,
     promptLines: [
@@ -409,7 +428,7 @@ export async function sendDigest(env, now = new Date(), send = sendEmail) {
       { label: "Last alert error", value: meta.lastError || "none" },
       { label: "Digest cron last run", value: meta.lastCron || "none (first digest)" },
       { label: "Previous digest", value: meta.lastDigest || "none (first digest)" },
-      { label: "Days covered", value: `${firstDay} to ${lastDay} (UTC, whole days)` },
+      { label: "Days covered", value: `${firstDay} to ${lastDay} (UTC, whole days)${notCovered ? `; ${notCovered} earlier day(s) since the previous digest NOT covered (more than 5 weeks)` : ""}` },
       { label: "Resolved issues", value: "not tracked by the log box; fixes are tracked in TODO.md" },
     ],
     adminUrl: env.ADMIN_LOG_URL || undefined,
@@ -417,5 +436,5 @@ export async function sendDigest(env, now = new Date(), send = sendEmail) {
   await send(env, digest);
   meta.lastDigest = now.toISOString(); meta.lastCron = now.toISOString();
   await kv.put("alerts/meta", JSON.stringify(meta));
-  return { reports: reports.length, issues: open.length, installs: installTotal, runs: R.runs, ok: R.ok, failed: R.failed, subject: digest.subject };
+  return { reports: reports.length, issues: states.length + R.failedSteps, installs: installTotal, runs: R.runs, ok: R.ok, failed: R.failed, subject: digest.subject };
 }

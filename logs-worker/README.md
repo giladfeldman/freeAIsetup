@@ -36,7 +36,8 @@ one at its end, whatever the outcome, and so does a stop in the one-line install
 off. It carries: platform, pack version, a coarse OS ("Windows 11 Home 26100", "Darwin 15.1"), processor type,
 outcome (`ok`, `failed`, `stopped`), how far the run got, first install / re-run / update, the optional parts
 chosen, minutes taken, and the FAIL and WARN step lines of the setup and of its final check, with the home folder,
-user name and computer name removed. No log, no install ID, no country, no address is stored.
+user name and computer name removed, and also a login inside an address (`user:password@`), e-mail addresses and
+other accounts' folder names (removed by the setup, and again here by `redact` in `src/alerts.js`). No log, no install ID, no country, no address is stored.
 
 Each run is one key, `results/<environment>/<day>/<platform>/<outcome>/<random 8 letters>`, its numbers also in
 the key's metadata (so the digest needs one listing, not one read per run), deleted after 400 days. At most 400
@@ -44,7 +45,9 @@ runs are stored per day for each environment and platform; the counter lives in 
 so two runs at once cannot both pass it. Past the cap the answer is `capped` and nothing is written.
 The weekly digest shows the runs of the week: successful and failed by platform and OS, the parts chosen,
 each part's result (ok, warned, failed, not reached), and the failures as cards with a Claude Code session button.
-Read them by hand:
+A step that failed twice in one run counts as one run; "Distinct issues" counts every failed step, also those past
+the 10 cards shown. A second digest run on the same day sends nothing, and after more than 5 weeks without a digest
+the email says how many earlier days it did not cover. Read them by hand:
 
 ```powershell
 npx wrangler kv key list --binding LOGS --remote --prefix results/production/2026-11-

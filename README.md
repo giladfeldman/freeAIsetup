@@ -146,7 +146,8 @@ e-mail service in Ireland. The small program that receives the messages runs on 
   system's name and version (for example "Windows 11 Home 26100"), the processor type, whether it worked, how
   far it got, whether it was a first install, a re-run or an update, which optional parts were chosen, how many
   minutes it took, and the name of each step that failed or warned with its short reason (the user name,
-  computer name and home folder removed from it). No name, no e-mail, no computer name, no files, no log, and no
+  computer name and home folder removed from it, and so are a login inside an address, e-mail addresses and the
+  folder names of other accounts; the log box removes those once more when the result arrives). No name, no e-mail, no computer name, no files, no log, and no
   number that would link two runs of the same computer. The log box stores neither the internet address nor the
   country. These messages are kept for 400 days and tell us which parts work on which computers.
   To switch them off, set the environment variable `MS_NO_COUNT=1` before running the setup.

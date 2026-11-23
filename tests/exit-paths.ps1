@@ -121,7 +121,9 @@ try {
     $setup = "`$script:ResultSent = `$false; `$LogBox = '$($env:MS_LOG_URL)'; `$SetupVersion = '9.9.9'; `$LogFile = '$lf'; `$DryRun = `$false; `$script:Failed = 1; " +
              "`$script:RunStart = (Get-Date).AddMinutes(-12); `$script:RunMode = 'first'; `$script:Parts = @('r', 'python'); " +
              "`$script:Rows = New-Object System.Collections.ArrayList; [void]`$script:Rows.Add(@('OK', 'Git', 'fine')); " +
-             "[void]`$script:Rows.Add(@('FAIL', 'R step', 'not found in ' + `$env:USERPROFILE + ' on ' + `$env:COMPUTERNAME)); Send-Result 'done'; Send-Result 'done'"
+             "[void]`$script:Rows.Add(@('FAIL', 'R step', ('not found in ' + `$env:USERPROFILE + ' on ' + `$env:COMPUTERNAME + ' via http://bob:s3cretpw@proxy.example:8080 jane.doe@uni.example C:\Users\Other Person\x'))); Send-Result 'done'; Send-Result 'done'"
+    # (the parentheses matter: PowerShell's comma binds tighter than +, so without them the row's detail was only
+    #  'not found in ' and the privacy checks below passed without any name in the text: found 2026-11-24)
     & ([scriptblock]::Create(($defs -join "`n") + "`n" + $setup))
     $res = @(Results)
     Check "result ($($k.n)): sent once" ($res.Count -eq 1) "got $($res.Count)"
@@ -131,9 +133,26 @@ try {
       $want = if ($k.check) { 2 } else { 1 }
       Check "result ($($k.n)): issues is a list of $want [status, step, reason, source]" (@($x.issues).Count -eq $want -and $x.issues[0][0] -eq 'FAIL' -and $x.issues[0][1] -eq 'R step' -and $x.issues[0][3] -eq 'setup') "$($x.issues | ConvertTo-Json -Compress)"
       if ($k.check) { Check "result ($($k.n)): the check's WARN row, marked as from the check" ($x.issues[1][0] -eq 'WARN' -and $x.issues[1][1] -eq 'VS Code' -and $x.issues[1][3] -eq 'check'); Check "result ($($k.n)): the check's file is removed after reading" (-not (Test-Path (Join-Path $work 'res.check.tsv'))) }
-      Check "result ($($k.n)): no home folder, user or computer name" (Private-Free ((Records | Where-Object { $_.path -eq '/result' })[0].body))
+      $rb = (Records | Where-Object { $_.path -eq '/result' })[0].body
+      Check "result ($($k.n)): the failed step's reason arrived (with the names replaced)" ($x.issues[0][2] -match '^not found in ~ on \S+ via ') "$rb"
+      Check "result ($($k.n)): no home folder, user or computer name" (Private-Free $rb)
+      # Sol review 2026-11-24: a proxy's password, an e-mail address and another account's folder were sent as written
+      Check "result ($($k.n)): no proxy password, e-mail address or other account's folder" (-not ($rb -match 's3cretpw|bob:|jane\.doe|Other|Person') -and $x.issues[0][2] -match '<login>@proxy' -and $x.issues[0][2] -match '<e-mail> C:\\Users\\<name>\\x') "$rb"
     }
   }
+  # the installer's own result (install.ps1 Send-InstallerResult) removes the same things (Sol review 2026-11-24)
+  Clear-Content -LiteralPath $rec
+  $iast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'install.ps1'), [ref]$tokens, [ref]$errs)
+  $idef = $iast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -eq 'Send-InstallerResult' }, $true) | ForEach-Object { $_.Extent.Text }
+  & ([scriptblock]::Create("$idef`n`$manifest = `$null; Send-InstallerResult 'Installer files' ('could not write ' + `$env:USERPROFILE + '\x on ' + `$env:COMPUTERNAME + ' via http://bob:s3cretpw@proxy.example:8080 jane.doe@uni.example C:\Users\Other Person\x')"))
+  $ib = @(Records | Where-Object { $_.path -eq '/result' })
+  Check 'installer result (in-process): sent, no names, no proxy password, e-mail address or other account''s folder' ($ib.Count -eq 1 -and (Private-Free $ib[0].body) -and -not ($ib[0].body -match 's3cretpw|bob:|jane\.doe|Other|Person')) "$($ib | ConvertTo-Json -Compress)"
+  # Sol review 2026-11-24: with the result switched off, the check's rows file was left behind
+  Clear-Content -LiteralPath $rec; $ctf = Join-Path $work 'res.check.tsv'
+  Set-Content -LiteralPath $ctf -Value "WARN`tVS Code`tx" -Encoding UTF8; $env:MS_NO_COUNT = '1'
+  & ([scriptblock]::Create(($defs -join "`n") + "`n" + "`$script:ResultSent = `$false; `$LogBox = '$($env:MS_LOG_URL)'; `$LogFile = '$(Join-Path $work 'res.log')'; `$DryRun = `$false; Send-Result 'done'"))
+  Remove-Item Env:\MS_NO_COUNT
+  Check 'result off (MS_NO_COUNT): nothing sent, the check''s rows file removed' (@(Results).Count -eq 0 -and -not (Test-Path -LiteralPath $ctf))
 
   # ---- install.ps1: a stop at the download checks offers the report too
   $env:MS_SETUP_ARGS = ''

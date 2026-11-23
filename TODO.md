@@ -90,6 +90,9 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 - [x] [MED · soon · val:med · S · sonnet-medium] Uninstall of the AI/core part deletes the pack, so the other parts can no longer be uninstalled (src: lib/uninstall-windows.ps1:228, lib/uninstall-mac.sh:189) ^d-068c02 (fixed 2026-11-12: tests/uninstall.ps1 section 9 + tests/uninstall.sh section 9 ('ai only, RStudio stays', 6 checks each): FAIL before fix (Win 3, Mac 3), PASS after; uninstall.ps1 pass=46 fail=0, Docker uninstall.sh pass=39 fail=0, 2026-11-12)
 - [x] [LOW · later · val:low · S · sonnet-medium] install-windows.cmd handles -Uninstall only as the FIRST argument; with other arguments first the cmd runs from the pack folder while it is deleted (src: install-windows.cmd:24) ^d-775563 (fixed 2026-11-12: tests/uninstall.ps1 section 8 route 'cmd, -Uninstall not first' (-Yes -Uninstall -Components ai): 2 FAIL before fix, PASS after; uninstall.ps1 pass=46 fail=0, 2026-11-12)
 - [x] [LOW · later · val:low · S · sonnet-medium] Record whether the setup created a PATH folder, so the uninstall removes only folders it made (now: any empty recorded PATH folder, which may be an empty one the student already had) (src: review of ca4451a, lib/uninstall-windows.ps1 + lib/uninstall-mac.sh (2026-11-15)) ^d-c97c73 (fixed 2026-11-17: 2026-11-17: setups record 'pathdir' for a PATH folder created in this run; both uninstallers remove only those (and drop the record once gone); uninstall.ps1 76/0 incl. the student's own empty folder staying and Add-UserPath recording; Linux stat bug found and fixed (stat -c %W first))
+- [ ] [MED · soon · val:med · M · opus-medium] Uninstall: remove the kit's OpenCode plugin from a kept course folder (free-ai-switch.js) when OpenCode was the kit's (src: tmp/consult-2026-11-23-background/round2/01-sol.md finding 6) ^d-eaab8c
+- [ ] [MED · soon · val:med · S · sonnet-medium] Uninstall: remove the kit's PATH line from ~/.Renviron (lib/fix_pandoc.R writes it; neither uninstaller removes it) (src: tmp/consult-2026-11-23-background/round2/01-sol.md finding 6) ^d-3c7627
+- [ ] [MED · soon · val:med · S · sonnet-medium] Measure the Windows uninstall helper (detached, hidden, up to 60 min): no visible window, exits when done (process ancestry after uninstall) (src: tmp/consult-2026-11-23-background/round2/01-sol.md finding 6) ^d-35f4c8
 
 ## Log worker
 
@@ -161,3 +164,13 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 ## Privacy
 
 - [ ] [MED · soon · val:med · S · sonnet-medium] Remove user and computer names with any letters (also ü, é, Chinese) from the report upload on Mac/Linux: upload_log and install.sh stop_report skip a name with non-English letters, so such a name stays in an uploaded log (the result message's scrub was fixed 2026-11-24 with a quoted bash substitution) (src: setup-mac.sh upload_log; install.sh stop_report (Docker test account jürgen, 2026-11-24)) ^d-0a67b9
+
+## Log box
+
+- [ ] [MED · later · val:med · M · opus-medium] Digest: a chosen part counts ok at stage done without an OK row of its own; send per-part OK evidence or mark not reached (src: tmp/consult-2026-11-23-background/round2/01-sol.md finding 3) ^d-c6d7f3
+- [ ] [LOW · later · val:low · S · sonnet-medium] Two setup runs in the same second share a log name, so one can read or delete the other's .check.tsv; add a random part to the log name (src: tmp/consult-2026-11-23-background/round2/01-sol.md finding 7) ^d-623861
+- [ ] [LOW · later · val:low · S · sonnet-medium] Windows: a ZIP policy refusal stops before the instrumented wrappers, so no result reaches the digest (src: tmp/consult-2026-11-23-background/round2/01-sol.md finding 7) ^d-adbed1
+
+## Updates
+
+- [ ] [LOW · later · val:low · S · sonnet-medium] Updater catch-up: runs only when a source is reachable, and the setup's failed exit code is discarded (update.ps1/update.sh Run-Setup) (src: tmp/consult-2026-11-23-background/round2/01-sol.md finding 7) ^d-4de127

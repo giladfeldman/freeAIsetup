@@ -87,6 +87,9 @@ for arg in "$@"; do
     *) echo "Unknown option: $arg (try --help)"; exit 2 ;;
   esac
 done
+# The check writes its rows for the result message only in a run that sends one (lib/course_setup.py); any other
+# run (--check, --keys, a dry run, MS_NO_COUNT) leaves no such file behind (Sol review 2026-11-24).
+if [ "$MODE" = full ] && [ "$DRY_RUN" = 0 ] && [ -z "${MS_NO_COUNT:-}" ]; then export MS_RESULT_ROWS=1; else unset MS_RESULT_ROWS; fi
 
 # ---------- output helpers ---------------------------------------------------
 if [ -t 1 ]; then G=$'\033[32m'; R=$'\033[31m'; Y=$'\033[33m'; B=$'\033[1m'; N=$'\033[0m'; else G=""; R=""; Y=""; B=""; N=""; fi
@@ -439,6 +442,7 @@ precheck() {
     say "  Some steps need your computer password (the one you use to log in). Typing shows no characters."
     sudo -v || { fail "Administrator password" "needed to install R and other tools"; return 1; }
     ( while true; do sudo -n true; sleep 50; kill -0 "$$" 2>/dev/null || exit; done ) 2>/dev/null &
+    SUDO_KEEPER=$!   # stopped when the setup ends, however it ends (on_exit): nothing of ours keeps running after it
   fi
 }
 
@@ -1073,8 +1077,10 @@ remove_background_jobs() { # owner directive 2026-11-24: nothing of this setup r
     # Started by that job (an old updater running this setup hidden): unloading it now would stop this very run. With
     # its file gone it does not come back after the next login, and the new update.sh removes it if it fires before.
     if [ "$loaded" = 1 ] && [ "$IN_OLD_JOB" = 0 ]; then launchctl remove "$label" >/dev/null 2>&1; fi
-    if [ ! -f "$plist" ]; then ok "Old daily update check" "removed (nothing of this setup runs on its own any more)"
-    else warn "Old daily update check" "could not remove $plist; delete that file by hand"; fi
+    if [ -f "$plist" ]; then warn "Old daily update check" "could not remove $plist; delete that file by hand"
+    elif [ "$IN_OLD_JOB" = 0 ] && launchctl list "$label" >/dev/null 2>&1; then   # Sol review 2026-11-24
+      warn "Old daily update check" "its file is gone but it is still loaded until you log out; or run: launchctl remove $label"
+    else ok "Old daily update check" "removed (nothing of this setup runs on its own any more)"; fi
   elif have crontab; then
     local cur
     cur="$(crontab -l 2>/dev/null)" || return 0          # no crontab (or it cannot be read): nothing to change
@@ -1126,14 +1132,17 @@ scrub() { # the same removal of names as the report upload (upload_log)
     # quoted: the name is matched as plain text, so any name works, also one with letters like ü (upload_log's sed
     # skips those: d-0a67b9)
     [ "${#w}" -ge 4 ] && t="${t//"$w"/<name>}"
-  done; printf '%s' "$t"
+  done
+  # also a login inside an address (a proxy's user:password@), any e-mail address, and another account's folder
+  # (Sol review 2026-11-24; the same in install.sh)
+  printf '%s' "$t" | sed -E -e 's#://[^/[:space:]:@]+(:[^/[:space:]@]*)?@#://<login>@#g' -e 's#[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}#<e-mail>#g' -e 's#/(Users|home)/[^/[:space:]"'"'"'<>:]+( [^/[:space:]"'"'"'<>:]+){0,3}/#/\1/<name>/#g' -e 's#/(Users|home)/[^/[:space:]"'"'"']+#/\1/<name>#g'
 }
 send_result() { # $1 = stage (done | precheck | install | crash | stopped)
   # Owner request 2026-11-23/24: one anonymous message at the end of every full setup run, success or not, for the
   # weekly digest: platform, OS version, processor type, pack version, the parts chosen, how long it took, and the
   # name and short reason of each step that failed or warned (user name, computer name and home folder removed). No
   # name, no e-mail, no files, no log, no ID that links two runs. MS_NO_COUNT=1 switches it off (README, Privacy).
-  [ -n "${MS_NO_COUNT:-}" ] || [ "$DRY_RUN" = 1 ] || [ "${RESULT_SENT:-0}" = 1 ] && return 0
+  if [ -n "${MS_NO_COUNT:-}" ] || [ "$DRY_RUN" = 1 ] || [ "${RESULT_SENT:-0}" = 1 ]; then rm -f "${LOG_FILE%.log}.check.tsv"; return 0; fi
   RESULT_SENT=1; have curl || return 0
   local os outcome issues="" n=0 st it de where line ct
   if [ "$PLATFORM" = mac ]; then os="macOS $(sw_vers -productVersion 2>/dev/null)"
@@ -1148,7 +1157,7 @@ EOF
     rm -f "$ct"
   fi
   if [ "$1" = stopped ]; then outcome=stopped; elif [ "$FAILED" = 0 ]; then outcome=ok; else outcome=failed; fi
-  line="{\"v\":1,\"platform\":\"$(log_platform)\",\"version\":\"$(json_s "$SETUP_VERSION")\",\"os\":\"$(json_s "$os")\",\"arch\":\"$ARCH_ID\",\"outcome\":\"$outcome\",\"stage\":\"$1\",\"mode\":\"${RUN_MODE:-first}\",\"parts\":\"$(printf '%s' "${PARTS:-}" | tr ' ' ',')\",\"minutes\":$(( ($(date +%s) - RUN_START) / 60 )),\"issues\":[${issues}]}"
+  line="{\"v\":1,\"platform\":\"$(log_platform)\",\"version\":\"$(json_s "$SETUP_VERSION")\",\"os\":\"$(json_s "$os")\",\"arch\":\"$ARCH_ID\",\"outcome\":\"$outcome\",\"stage\":\"$1\",\"mode\":\"${RUN_MODE:-first}\",\"parts\":\"$(printf '%s' "${PARTS:-}" | tr ' ' ',')\",\"minutes\":$(( ($(date +%s) - RUN_START + 30) / 60 )),\"issues\":[${issues}]}"
   if printf '%s' "$line" | log_box_post "result" >/dev/null 2>&1; then echo "result sent (anonymous): $line" >> "$LOG_FILE"
   else echo "result not sent" >> "$LOG_FILE"; fi
 }
@@ -1165,6 +1174,8 @@ FINISHED=0; INTERRUPTED=0
 on_exit() {
   local rc=$?
   trap - EXIT
+  # the password keep-alive (step 1) used to live on for up to 50 seconds after the setup (Sol review 2026-11-24)
+  if [ -n "${SUDO_KEEPER:-}" ]; then pkill -P "$SUDO_KEEPER" 2>/dev/null; kill "$SUDO_KEEPER" 2>/dev/null; fi
   [ "$FINISHED" = 1 ] && exit "$rc"
   if [ "$INTERRUPTED" = 1 ]; then exit "$rc"; fi
   if [ "$rc" != 0 ]; then fail "Setup stopped" "an unexpected error (exit code $rc); the log has the details"; summary

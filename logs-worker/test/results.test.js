@@ -11,7 +11,10 @@ function fakeKv() {   // like KV: list returns each key's metadata
   return {
     m,
     async get(k) { return m.has(k) ? m.get(k).v : null; },
-    async put(k, v, opts = {}) { m.set(k, { v, metadata: opts.metadata }); },
+    async put(k, v, opts = {}) {   // KV refuses metadata over 1,024 bytes (serialized), so does this fake
+      if (opts.metadata && new TextEncoder().encode(JSON.stringify(opts.metadata)).length > 1024) throw new Error("KV metadata over 1024 bytes");
+      m.set(k, { v, metadata: opts.metadata });
+    },
     async list({ prefix = "" } = {}) {
       return { keys: [...m.keys()].filter((k) => k.startsWith(prefix)).map((name) => ({ name, metadata: m.get(name).metadata })), list_complete: true };
     },
@@ -138,7 +141,12 @@ test("digestWindow: whole UTC days before today, next window starts where the la
   assert.equal(w2.days.at(-1), "2026-11-22");
   assert.ok(!w2.days.includes("2026-11-23"));       // today is still filling: next week's digest
   assert.equal(digestWindow("2025-01-01T00:00:00Z", new Date("2026-11-23T06:00:00Z")).days.length, 35);
-  assert.equal(digestWindow("2026-11-23T05:00:00Z", new Date("2026-11-23T06:00:00Z")).days.length, 7);   // a re-run the same day
+  // a re-run the same day covers nothing (it used to repeat the previous week: Sol review 2026-11-24)
+  const again = digestWindow("2026-11-23T05:00:00Z", new Date("2026-11-23T06:00:00Z"));
+  assert.equal(again.already, true); assert.equal(again.days.length, 0);
+  // more than 5 weeks since the previous digest: the days left out are counted, not dropped silently
+  assert.equal(digestWindow("2025-01-01T00:00:00Z", new Date("2026-11-23T06:00:00Z")).notCovered, 691 - 35);
+  assert.equal(w2.notCovered, 0);
 });
 
 test("the weekly digest: runs by outcome and platform, parts chosen, each part's result, failure cards with the run key", async () => {
@@ -175,4 +183,55 @@ test("summarizeResults on an empty week says so instead of inventing numbers", (
   assert.equal(R.runs, 0); assert.equal(R.cards.length, 0);
   assert.match(R.tables[0].rows[0][1], /^0: 0 ok/);
   assert.equal(R.tables[0].rows.at(-1)[1], "no successful run");
+});
+
+// Sol review 2026-11-24 (findings 4 and 5): each test below failed on the code of 7299bba
+test("POST /result: an error page from the gate is 'not stored' (503), never 'stored'", async () => {
+  const env = gatedEnv();
+  env.ALERTS.get = () => ({ fetch: async () => new Response("Internal Server Error", { status: 500 }) });
+  const r = await worker.fetch(post(RUN()), env, {});
+  assert.equal(r.status, 503);
+  assert.equal(await r.text(), "not stored\n");
+  assert.match(JSON.parse(await env.LOGS.get("alerts/meta")).lastError, /result gate: gate answered 500/);
+});
+
+test("a part named many times counts once, and the largest allowed result still fits KV's metadata limit", async () => {
+  const env = gatedEnv();
+  const big = RUN({ parts: Array(1500).fill("r,rstudio,quarto,python,node,vscode,web,codex,claude").join(",").slice(0, 3000),
+    os: "漢".repeat(60), version: "9".repeat(32), arch: "ü".repeat(16),
+    issues: Array.from({ length: 60 }, (_, i) => ["FAIL", `${i} ${"€".repeat(57)}`, "d"]) });
+  assert.deepEqual(normalizeResult(JSON.stringify(RUN({ parts: "r,r,r,python" })), "windows").rec.parts, ["r", "python"]);
+  const r = await worker.fetch(post(big), env, {});
+  assert.equal(await r.text(), "stored\n");                 // the fake KV throws past 1,024 bytes, like KV
+  const md = env.LOGS.m.get(results(env)[0]).metadata;
+  assert.equal(md.p, "r,rstudio,quarto,python,node,vscode,web,codex,claude");
+});
+
+test("the same step failing twice in one run is one failed run of that step", () => {
+  const rec = normalizeResult(JSON.stringify(RUN({ issues: [["FAIL", "R packages", "a", "setup"], ["FAIL", "R packages", "b", "check"]] })), "windows").rec;
+  const m = resultMeta(rec, new Date("2026-11-24T10:00:00Z"));
+  assert.equal(m.f, "R packages");
+  const R = summarizeResults([{ ...m, platform: "windows", key: "k1" }, { ...m, f: "R packages|R packages", platform: "mac", key: "k2" }], {});
+  assert.match(R.tables.at(-1).rows[0][1], /^2×/);           // two runs, not three or four
+});
+
+test("the digest counts every distinct failed step, not only the 10 cards shown, and a second run the same day sends nothing", async () => {
+  const env = gatedEnv(); const sent = []; const send = async (_e, m) => sent.push(m);
+  for (let i = 0; i < 12; i++) {
+    await storeResult(env.LOGS, env.gate.state.storage, { environment: "production", platform: "windows",
+      rec: normalizeResult(JSON.stringify(RUN({ issues: [["FAIL", `Step ${i}`, "x"]] })), "windows").rec }, new Date("2026-11-18T10:00:00Z"));
+  }
+  const r = await sendDigest(env, new Date("2026-11-23T06:00:00Z"), send);
+  assert.equal(r.issues, 12);
+  assert.match(sent[0].text, /Distinct issues\W+12/);
+  const again = await sendDigest(env, new Date("2026-11-23T09:00:00Z"), send);
+  assert.match(again.skipped, /already sent today/);
+  assert.equal(sent.length, 1);
+});
+
+test("a digest after more than 5 weeks says which days it did not cover", async () => {
+  const env = gatedEnv(); const sent = []; const send = async (_e, m) => sent.push(m);
+  await env.LOGS.put("alerts/meta", JSON.stringify({ lastDigest: "2026-09-01T06:00:00Z" }));
+  await sendDigest(env, new Date("2026-11-23T06:00:00Z"), send);
+  assert.match(sent[0].text, /48 earlier day\(s\) since the previous digest NOT covered/);
 });

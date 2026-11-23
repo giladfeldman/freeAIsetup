@@ -61,6 +61,12 @@
       $build = [Environment]::OSVersion.Version.Build
       $w = "$why" -replace [regex]::Escape($env:USERPROFILE), '~'
       foreach ($n in @($env:USERNAME, $env:COMPUTERNAME)) { if ($n -and $n.Length -ge 4) { $w = $w -replace [regex]::Escape($n), '<name>' } }
+      # also a login inside an address (a proxy's user:password@), any e-mail address, and another account's
+      # folder (Sol review 2026-11-24; the same in setup-windows.ps1 Scrub and install.ps1)
+      $w = $w -replace '://[^/\s:@]+(:[^/\s@]*)?@', '://<login>@'
+      $w = $w -replace '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '<e-mail>'
+      $w = $w -replace '(?i)\b([A-Z]:\\Users\\)(?:[^\\\s''"<>:]+(?: [^\\\s''"<>:]+){0,3}(?=\\)|[^\\\s''"]+)', '$1<name>'
+      $w = $w -replace '/(Users|home)/(?:[^/\s''"<>:]+(?: [^/\s''"<>:]+){0,3}(?=/)|[^/\s''"]+)', '/$1/<name>'
       $body = @{ v = 1; platform = 'windows'; version = $(if ($manifest) { "$($manifest.version)" } else { 'installer' }); os = "Windows $(if ($build -ge 22000) { '11' } else { '10' }) $build"
                  arch = "$env:PROCESSOR_ARCHITECTURE"; outcome = 'failed'; stage = 'installer'; mode = 'installer'; parts = ''; minutes = 0
                  issues = @(, @('FAIL', "$step", $w, 'installer')) } | ConvertTo-Json -Depth 4 -Compress

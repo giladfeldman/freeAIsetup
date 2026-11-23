@@ -69,10 +69,15 @@ def serve(root: pathlib.Path) -> tuple[socketserver.TCPServer, int]:
     return httpd, httpd.server_address[1]
 
 
-def run_updater(pack: pathlib.Path, home: pathlib.Path, sources: str, shell: bool, *args: str) -> subprocess.CompletedProcess:
+def run_updater(pack: pathlib.Path, home: pathlib.Path, sources: str, shell: bool, *args: str, env_extra: dict | None = None) -> subprocess.CompletedProcess:
     env = dict(os.environ, MS_UPDATE_SOURCES=sources, MS_UPDATE_NO_SETUP="1", METASCIENCE_DIR=str(home / "MetaScience"),
                MS_TEST_NO_JOBS="1")                       # never this computer's scheduled tasks
     env.pop("CODESPACES", None)
+    for k, v in (env_extra or {}).items():
+        if v is None:
+            env.pop(k, None)
+        else:
+            env[k] = v
     if shell:
         cmd = [os.environ.get("FAS_BASH", "bash"), (pack / "update" / "update.sh").as_posix(), *args]
     else:
@@ -148,6 +153,15 @@ def main() -> int:
     # the old updater, with OpenCode open, also contacted nothing: it wrote "waits: OpenCode or RStudio is open"
     check("old background call (-Auto): goes to the removal of the old daily check (test mode)",
           "old daily update" in log.splitlines()[-1] and "not touched" in log.splitlines()[-1], log[-400:].encode("ascii", "replace").decode())
+    if not shell:
+        # Sol 2026-11-24 (finding 7): with the task already gone, schtasks' stderr under 'Stop' ended the script with
+        # an error. A task name that cannot exist is deleted for real here (nothing of this computer is touched).
+        r = run_updater(pack, home, sources, shell, "-Auto",
+                        env_extra={"MS_TEST_NO_JOBS": None, "MS_TEST_TASK_NAME": "freeaisetup-test-no-such-task-7f3c"})
+        log = (home / "MetaScience" / "update-log.txt").read_text(encoding="utf-8-sig", errors="replace")
+        check("old background call (-Auto), task already gone: no error, says so",
+              r.returncode == 0 and "not found or could not be removed" in log.splitlines()[-1],
+              (r.stdout + r.stderr + log[-300:]).encode("ascii", "replace").decode())
     r = run_updater(pack, home, sources, shell)
     out = r.stdout + r.stderr
     check("update v1 -> v2 applied", (pack / "VERSION").read_text().strip() == "2026.1.2.1", out)
@@ -184,6 +198,20 @@ def main() -> int:
     # no network
     r = run_updater(pack, home, "http://127.0.0.1:9/main/release/manifest.json|http://127.0.0.1:9/v{V}/{P}", shell)
     check("no network = quiet no-op", r.returncode == 0 and (pack / "VERSION").read_text().strip() == "2026.1.2.1", r.stdout + r.stderr)
+
+    # Sol review 2026-11-24: a rollback to a version from before 2026-11-24 brought back the setup that adds the daily
+    # background update job. Each of the three markers of that old code is refused on its own.
+    prev = home / "MetaScience" / "pack-previous"
+    for f, marker in (("setup-windows.ps1", "  $code = Run-Native 'schtasks.exe' @('/create', '/tn', \"`\"$UpdateTask`\"\", '/xml')\n"),
+                      ("setup-mac.sh", '    launchctl unload "$plist"; launchctl load "$plist"\n'),
+                      ("setup-mac.sh", "( crontab -l; echo \"30 12 * * * bash '$upd' --auto # freeaisetup-update\" ) | crontab -\n")):
+        keep = (prev / f).read_bytes()
+        (prev / f).write_bytes(keep + marker.encode())
+        r = run_updater(pack, home, sources, shell, "--rollback" if shell else "-Rollback")
+        (prev / f).write_bytes(keep)
+        check(f"rollback to a version that adds the daily job ({f}: {marker.strip()[:30]}) is refused",
+              r.returncode != 0 and (pack / "VERSION").read_text().strip() == "2026.1.2.1"
+              and "would add the daily background update" in (r.stdout + r.stderr), r.stdout + r.stderr)
 
     # rollback
     r = run_updater(pack, home, sources, shell, "--rollback" if shell else "-Rollback")

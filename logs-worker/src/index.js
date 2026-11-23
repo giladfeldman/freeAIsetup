@@ -93,7 +93,9 @@ export default {
       try {
         const r = await toGate(env, { kind: "result", now: new Date().toISOString(), args: { environment: environmentOf(req), platform, rec } });
         const out = (await r.text()).trim();
-        return new Response((out === "capped" ? "capped" : "stored") + "\n", { headers: { "content-type": "text/plain" } });
+        // "stored" only when the gate says so: an error page from the gate is a failure, never a success (Sol 2026-11-24)
+        if (!r.ok || (out !== "stored" && out !== "capped")) throw new Error(`gate answered ${r.status}: ${out.slice(0, 80)}`);
+        return new Response(out + "\n", { headers: { "content-type": "text/plain" } });
       } catch (e) {
         await gateFailed(env, "result gate", e);
         return new Response("not stored\n", { status: 503 });

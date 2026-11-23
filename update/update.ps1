@@ -47,12 +47,19 @@ function Test-Signature([byte[]]$data, [byte[]]$sig) {
 }
 function Version-Of($s) { try { return [version]($s.Trim()) } catch { return [version]'0.0' } }
 $TaskName = 'MetaScience pack update'   # the daily task of setups before 2026-11-24
+if ($env:MS_TEST_TASK_NAME) { $TaskName = $env:MS_TEST_TASK_NAME }   # tests: a task name that does not exist
 if ($Auto) {
   # Started by that old task: remove it and stop. Nothing is downloaded or installed in the background (owner
   # directive 2026-11-24). A running task may delete itself (measured 2026-11-23).
   if ($env:MS_TEST_NO_JOBS) { Note 'test mode: the old daily update task was not touched'; exit 0 }   # tests: never this computer's tasks
+  # schtasks writes its error to stderr; redirected under 'Stop', Windows PowerShell 5.1 turns that into a script-
+  # ending error (measured 2026-11-24), so this one call runs under 'Continue'.
+  $ErrorActionPreference = 'Continue'
   $null = & schtasks.exe /delete /tn $TaskName /f 2>&1
-  Note "the old daily update task was removed (exit $LASTEXITCODE); updates now run only by hand: install-windows.cmd -Update"
+  $rc = $LASTEXITCODE
+  $ErrorActionPreference = 'Stop'
+  if ($rc -eq 0) { Note 'the old daily update task was removed; updates now run only by hand: install-windows.cmd -Update' }
+  else { Note "the old daily update task was not found or could not be removed (schtasks exit $rc); updates now run only by hand: install-windows.cmd -Update" }
   exit 0
 }
 function Applied-Version { $f = Join-Path (Split-Path -Parent $Pack) 'applied-version.txt'; if (Test-Path -LiteralPath $f) { return Version-Of (Get-Content -Raw -LiteralPath $f) }; return [version]'0.0' }
@@ -79,6 +86,16 @@ function Sync-Folder($from, $to) {
 }
 if ($Rollback) {
   if (-not (Test-Path -LiteralPath (Join-Path $Prev 'VERSION'))) { Write-Host 'No previous version is stored.'; exit 1 }
+  # A version from before 2026-11-24 adds the daily background update job again (Sol review 2026-11-24): never restored.
+  $adds = @(@{ f = 'setup-windows.ps1'; t = "@('/create', '/tn'" }, @{ f = 'setup-mac.sh'; t = 'launchctl load "$plist"' },
+            @{ f = 'setup-mac.sh'; t = '--auto # freeaisetup-update' })
+  foreach ($a in $adds) {
+    $pf = Join-Path $Prev $a.f
+    if ((Test-Path -LiteralPath $pf) -and (Select-String -LiteralPath $pf -SimpleMatch -Pattern $a.t -Quiet)) {
+      Note "rollback refused: the previous version ($((Get-Content -LiteralPath (Join-Path $Prev 'VERSION') -TotalCount 1).Trim())) would add the daily background update task again"
+      Write-Host 'The previous version is not restored: it would add the daily background update task again.'; exit 1
+    }
+  }
   Sync-Folder $Prev $Pack
   Note "rolled back to $((Get-Content -LiteralPath (Join-Path $Pack 'VERSION')).Trim())"
   exit 0

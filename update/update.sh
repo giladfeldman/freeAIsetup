@@ -66,6 +66,12 @@ applied_behind() { # an update an older updater copied in unseen, whose setup di
 
 if [ "$ROLLBACK" = 1 ]; then
   [ -f "$PREV/VERSION" ] || { echo "No previous version is stored."; exit 1; }
+  # A version from before 2026-11-24 adds the daily background update job again (Sol review 2026-11-24): never restored.
+  if grep -qF "@('/create', '/tn'" "$PREV/setup-windows.ps1" 2>/dev/null || grep -qF 'launchctl load "$plist"' "$PREV/setup-mac.sh" 2>/dev/null \
+     || grep -qF -- '--auto # freeaisetup-update' "$PREV/setup-mac.sh" 2>/dev/null; then
+    note "rollback refused: the previous version ($(head -1 "$PREV/VERSION")) would add the daily background update check again"
+    echo "The previous version is not restored: it would add the daily background update check again."; exit 1
+  fi
   sync_dir "$PREV" "$PACK"; note "rolled back to $(head -1 "$PACK/VERSION")"; exit 0
 fi
 

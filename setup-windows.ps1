@@ -53,6 +53,9 @@ $LogFile   = Join-Path $env:TEMP ("metascience-setup-{0}.log" -f (Get-Date -Form
 $RPackages = 'rmarkdown knitr readr dplyr tidyr ggplot2 metafor statcheck irr here mcptools'
 $script:Failed = 0
 if ($FromUpdate) { $Yes = $true }
+# The check writes its rows for the result message only in a run that sends one (lib/course_setup.py); any other
+# run (-Check, -Keys, a dry run, MS_NO_COUNT) leaves no such file behind (Sol review 2026-11-24).
+if (-not ($Check -or $Keys -or $DryRun -or $env:MS_NO_COUNT)) { $env:MS_RESULT_ROWS = '1' } else { Remove-Item Env:\MS_RESULT_ROWS -ErrorAction SilentlyContinue }
 
 # ---------- output helpers ---------------------------------------------------
 # another program reading the log (antivirus, an editor) can lock it for a moment: retry, never stop the setup
@@ -1323,12 +1326,14 @@ function Remove-BackgroundJobs {
   if ($env:MS_TEST_NO_JOBS) { Log 'background jobs: not touched (MS_TEST_NO_JOBS)'; return }
   function Task-There { $null = & schtasks.exe /query /tn $UpdateTask 2>&1; return ($LASTEXITCODE -eq 0) }   # also in a dry run
   $q = Task-There
-  if ($q) {
-    if ($DryRun) { Say "  [dry-run] remove the old daily update task '$UpdateTask'"; return }
-    $code = Run-Native 'schtasks.exe' @('/delete', '/tn', "`"$UpdateTask`"", '/f') 120
-    if ($code -eq 0 -and -not (Task-There)) { Ok 'Old daily update task' 'removed (nothing of this setup runs on its own any more)' }
-    else { Warn 'Old daily update task' "could not remove it (schtasks exit $code). Remove it by hand: Start > Task Scheduler > '$UpdateTask' > Delete" }
-  } else { Log 'no daily update task' }
+  if ($DryRun) { if ($q) { Say "  [dry-run] remove the old daily update task '$UpdateTask'" }; return }
+  # the removal runs even when the query found nothing: a query that failed (no permission, a busy Task Scheduler) is
+  # no proof that there is no task (Sol review 2026-11-24). An old updater the task already started is left to finish:
+  # stopping it halfway through copying files would break the pack; the setup it starts now only removes the task.
+  $code = Run-Native 'schtasks.exe' @('/delete', '/tn', "`"$UpdateTask`"", '/f') 120
+  if (Task-There) { Warn 'Old daily update task' "could not remove it (schtasks exit $code). Remove it by hand: Start > Task Scheduler > '$UpdateTask' > Delete" }
+  elseif ($q -or $code -eq 0) { Ok 'Old daily update task' 'removed (nothing of this setup runs on its own any more)' }
+  else { Log 'no daily update task' }
   if ($DryRun) { return }
   foreach ($f in @((Join-Path $env:TEMP 'metascience-update-task.xml'))) { Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue }
   # a staging copy left by an update that was cut off (never while an updater is working on it)
@@ -1398,6 +1403,12 @@ function Send-Log {
 function Scrub($t) {   # the same removal of names as the report upload (Send-Log)
   $t = "$t" -replace [regex]::Escape($env:USERPROFILE), '~'
   foreach ($w in @($env:USERNAME, $env:COMPUTERNAME)) { if ($w -and $w.Length -ge 4) { $t = $t -replace [regex]::Escape($w), '<name>' } }
+  # also a login inside an address (a proxy's user:password@), any e-mail address, and another account's
+  # folder (Sol review 2026-11-24; the same in setup-windows.ps1 Scrub and install.ps1)
+  $t = $t -replace '://[^/\s:@]+(:[^/\s@]*)?@', '://<login>@'
+  $t = $t -replace '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', '<e-mail>'
+  $t = $t -replace '(?i)\b([A-Z]:\\Users\\)(?:[^\\\s''"<>:]+(?: [^\\\s''"<>:]+){0,3}(?=\\)|[^\\\s''"]+)', '$1<name>'
+  $t = $t -replace '/(Users|home)/(?:[^/\s''"<>:]+(?: [^/\s''"<>:]+){0,3}(?=/)|[^/\s''"]+)', '/$1/<name>'
   if ($t.Length -gt 200) { $t = $t.Substring(0, 200) }
   return $t
 }
@@ -1406,7 +1417,7 @@ function Send-Result($stage) {
   # weekly digest: platform, Windows version and edition, processor type, pack version, the parts chosen, how long
   # it took, and the name and short reason of each step that failed or warned (user name, computer name and home
   # folder removed). No name, no e-mail, no files, no log, no ID that links two runs. MS_NO_COUNT=1 switches it off.
-  if ($env:MS_NO_COUNT -or $DryRun -or $script:ResultSent) { return }
+  if ($env:MS_NO_COUNT -or $DryRun -or $script:ResultSent) { Remove-Item -LiteralPath ([IO.Path]::ChangeExtension($LogFile, '.check.tsv')) -Force -ErrorAction SilentlyContinue; return }
   $script:ResultSent = $true
   try {
     $nt = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
