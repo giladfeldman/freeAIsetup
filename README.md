@@ -88,7 +88,8 @@ scheduled task, no background check, no program that starts with the computer.
 - A Codespace brings its copy of the setup up to date each time it starts (only if nothing in that copy was
   changed in the Codespace), so fixes to its start page reach Codespaces made before a release.
 - To update by hand: `install-windows.cmd -Update` (Windows) or `bash setup-mac.sh --update` (Mac).
-- To go back to the previous version: `-Rollback` / `--rollback`. (`-NoAutoUpdate` / `--no-auto-update` are still
+- To go back to the previous version: `-Rollback` / `--rollback`. A previous version from before 24 November 2026 is
+  not restored, because it would add the daily update check again; the updater says so and changes nothing. (`-NoAutoUpdate` / `--no-auto-update` are still
   accepted and do nothing: there is no automatic check to switch off.)
 
 ## Choosing parts, disk space, and removing the setup

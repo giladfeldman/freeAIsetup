@@ -1511,16 +1511,16 @@ try {
       if (-not $DryRun -and $script:Failed -eq 0) {   # the pack's tools match this version (the updater reads it)
         try { New-Item -ItemType Directory -Force -Path $StateDir | Out-Null; Set-Content -LiteralPath (Join-Path $StateDir 'applied-version.txt') -Value $SetupVersion -Encoding ASCII } catch { Log "applied-version not saved: $_" }
       }
-      $script:Stage = 'done'
-    } else { $script:Stage = 'precheck' }
+      $script:Reached = 'done'
+    } else { $script:Reached = 'precheck' }
     Summary
   }
 } catch {
   # an unexpected error: record it like a failed step, so the student is offered the report and the helper
-  Fail 'Setup stopped' "an unexpected error: $($_.Exception.Message)"; $script:Stage = 'crash'
+  Fail 'Setup stopped' "an unexpected error: $($_.Exception.Message)"; $script:Reached = 'crash'
   Log ($_ | Out-String); Log $_.ScriptStackTrace
   try { Summary } catch {}
 }
-if (-not ($Check -or $Keys)) { Send-Result $(if ($script:Stage) { $script:Stage } else { 'install' }) }
+if (-not ($Check -or $Keys)) { Send-Result $(if ($script:Reached) { $script:Reached } else { 'install' }) }
 Offer-Help
 if ($script:Failed -eq 0) { exit 0 } else { exit 1 }

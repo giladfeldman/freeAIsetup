@@ -14,7 +14,7 @@ param(
   [string]$Locale = '',             # e.g. de-AT or zh-HK: system locale (non-Unicode programs) + the user's formats
   [string]$UserPrep = '',           # PowerShell run as the test user (non-interactive) just before the setup
   [string]$Zip = 'metascience-setup.zip',   # which zip (course folder, or next to this script) the student downloads
-  [switch]$UpdateTest                # after the setup: fire the daily update task, check update + rollback
+  [switch]$UpdateTest                # after the setup: no scheduled task left; update by hand, check update + rollback
 )
 . "$PSScriptRoot\vmlib.ps1"
 $res = Join-Path $Results $Tag

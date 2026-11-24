@@ -9,8 +9,10 @@ function Check($name, [bool]$ok, $detail = '') { if ($ok) { "PASS $name"; $scrip
 
 $tokens = $null; $errs = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)
-$want = 'R-Version', 'Find-CurrentR', 'Put-PathFirst', 'Split-PathList', 'Record-Install', 'Log', 'Say', 'Warn'
+$want = 'R-Version', 'Find-CurrentR', 'Put-PathFirst', 'Split-PathList', 'Record-Install', 'Log', 'Say', 'Warn', 'Row'
 $def = ($ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -in $want }, $true) | ForEach-Object { $_.Extent.Text }) -join "`n"
+# Ok/Warn/Fail also keep each step's result for the anonymous result message (Row, $script:Rows; 2026-11-24)
+$def += "`n`$script:Rows = New-Object System.Collections.ArrayList"
 # stand-ins: no command on PATH, no registry, the user PATH is a variable
 $stubs = @'
 $RMin = [version]'4.5'

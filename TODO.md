@@ -111,6 +111,8 @@ Open work for this project, one line per item: severity, urgency, value, size, t
 
 - [x] [MED · soon · val:med · S · sonnet-medium] tests/run-tests.ps1 must exit non-zero when a docker test container fails (src: tests/run-tests.ps1:7-11 (docker run result never checked; uninstall.sh fail=1 returned exit 0 on 2026-11-12)) ^d-0a2aff (fixed 2026-11-12: 2026-11-12: tests/run-tests.ps1 exits 1 when docker build or any test container fails; control: mac-stub.sh with 'exit 7' appended -> runner exit 1; real test -> exit 0)
 - [ ] [MED · soon · val:med · M · sonnet-medium] Rewrite the VM update test for by-hand updates: tests/vm/runner.ps1 and run-case.ps1 -UpdateTest still fire the daily task 'MetaScience pack update', which setups no longer create (2026-11-24); test instead that a fresh setup leaves no task and that install-windows.cmd -Update updates and rolls back (src: tests/vm/runner.ps1:26-41, tests/vm/run-case.ps1:17) ^d-3fc385
+- [ ] [LOW · later · val:med · S · sonnet-medium] free-ai-switch test: when the machine is busy every case times out and prints as an add-on FAIL; detect a slow server and report TIMEOUT/INCONCLUSIVE instead (src: tests/free-ai-switch/run.sh (ship 2026-11-24: all FAIL under load, ALL PASS alone)) ^d-c4d18c
+- [ ] [LOW · later · val:low · S · sonnet-medium] QA 3b Linux run: build a small test image with python3+curl once instead of apt-get in ubuntu:24.04 each run (hung 15 min on a slow network) (src: .claude/skills/freeaisetup-qa/SKILL.md Phase 2 step 3b (ship 2026-11-24)) ^d-a907cb
 
 ## Windows install
 

@@ -250,6 +250,11 @@ To switch one on, open `opencode.json` in the MetaScience folder. Find the tool'
 
 # Part 5 — Change what is installed, or remove it
 
+**Get the newest course pack:** the setup never runs on its own, so nothing updates by itself. When your teacher
+says there is a new version, run the same one line from Part 1 again. It keeps what you installed and your choices.
+(Setups from before 24 November 2026 added a daily update check, which could open a window by itself; running the
+line again removes it.)
+
 **Choose the parts again** (to add one you left out):
 
 - **Windows:** in PowerShell, paste: `& "$env:LOCALAPPDATA\MetaScience\pack\install-windows.cmd" -Choose`
@@ -317,10 +322,15 @@ These use your plan's own limits. Never choose "extra usage", "buy credits" or a
 
 **What the setup sends to the teacher, and nothing else:**
 
-- **A count of successful installs:** when the setup finishes with everything working, it sends one message that
-  says only that an install succeeded, with the kind of computer (Windows, Mac, Linux or Codespace) and the version
-  of the setup. No name, no e-mail, no computer name, no files, no log, and no internet address is kept. It is sent
-  once per computer account. This tells the teacher how widely the setup is used.
+- **The result of each setup run:** at the end of every run, the setup sends one short message: the kind of
+  computer (Windows, Mac, Linux or Codespace), the setup's version, the system's name and version (for example
+  "Windows 11 Home 26100"), the processor type, whether it worked and how far it got, whether it was a first
+  install, a re-run or an update, which optional parts you chose, how many minutes it took, and the name of each
+  step that failed or warned with its short reason. Your user name, computer name, home folder, e-mail addresses
+  and other accounts' folder names are removed from those reasons. No name, no files, no log, no internet address
+  or country, and nothing that links two runs of the same computer is kept. These messages are kept for 400 days
+  and tell the teacher which parts work on which computers. To switch them off, set `MS_NO_COUNT=1` before running
+  the setup (ask your teacher how).
 - **Error reports, only if you say yes:** when something fails, the setup asks before sending its report. Your user
   name, computer name and home folder are removed first. Of your VS Code add-ons, only the course's are named. The reports are used only to fix setup problems and are
   deleted after 180 days.

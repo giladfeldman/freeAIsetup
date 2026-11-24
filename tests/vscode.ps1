@@ -19,12 +19,14 @@ function Check($name, [bool]$ok, $detail = '') { if ($ok) { "PASS $name"; $scrip
 $tokens = $null; $errs = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)
 $names = 'Log', 'Say', 'Ok', 'Warn', 'Fail', 'Record-Install', 'Run-Native', 'Has-Part', 'Code-Iso', 'Code-Extensions',
-         'Older-Than', 'Code-Cli', 'Is-VSCodeCli', 'Recorded-Exts', 'Code-Wanted', 'Install-CodeExtensions'
+         'Older-Than', 'Code-Cli', 'Is-VSCodeCli', 'Recorded-Exts', 'Code-Wanted', 'Install-CodeExtensions', 'Row'
 $vars = '$CodeExtensions', '$CodeMinVersions', '$CodeNames'
 $defs = @($ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $names -contains $a.Name }, $true))
 $assign = @($ast.FindAll({ param($a) $a -is [Management.Automation.Language.AssignmentStatementAst] -and $vars -contains $a.Left.Extent.Text -and $a.Parent.Parent -is [Management.Automation.Language.ScriptBlockAst] }, $true))
 Check 'setup has every function and list the add-on step uses' ($defs.Count -eq $names.Count -and $assign.Count -eq $vars.Count) "found $($defs.Name -join ', ') / $($assign.Count) lists"
 $lib = (($defs | ForEach-Object { $_.Extent.Text }) + ($assign | ForEach-Object { $_.Extent.Text })) -join "`n"
+# Ok/Warn/Fail also keep each step's result for the anonymous result message (Row, $script:Rows; 2026-11-24)
+$lib += "`n`$script:Rows = New-Object System.Collections.ArrayList"
 
 $fakeLocal = Join-Path $work 'local'; $fakePF = Join-Path $work 'pf'
 function Run-Step($codeDir, $state, $parts = @('r', 'vscode'), [switch]$Dry, [switch]$RealFolders) {

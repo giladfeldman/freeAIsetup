@@ -9,8 +9,10 @@ function Check($name, [bool]$ok, $detail = '') { if ($ok) { "PASS $name"; $scrip
 
 $tokens = $null; $errs = $null
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $root 'setup-windows.ps1'), [ref]$tokens, [ref]$errs)
-$want = 'Install-QuartoDirect', 'Install-QuartoFromRStudio', 'RStudio-ZipUrls', 'Find-Tool', 'Tool-Defs', 'Tool-Def', 'Run-Native', 'Log', 'Say', 'Warn', 'Signed-By', 'Not-Signed'
+$want = 'Install-QuartoDirect', 'Install-QuartoFromRStudio', 'RStudio-ZipUrls', 'Find-Tool', 'Tool-Defs', 'Tool-Def', 'Run-Native', 'Log', 'Say', 'Warn', 'Signed-By', 'Not-Signed', 'Row', 'Is-VSCodeCli'
 $def = ($ast.FindAll({ param($a) $a -is [Management.Automation.Language.FunctionDefinitionAst] -and $a.Name -in $want }, $true) | ForEach-Object { $_.Extent.Text }) -join "`n"
+# Ok/Warn/Fail also keep each step's result for the anonymous result message (Row, $script:Rows; 2026-11-24)
+$def += "`n`$script:Rows = New-Object System.Collections.ArrayList"
 # the list of who signs each download (d-4e90ed)
 $def += "`n" + (@($ast.FindAll({ param($a) $a -is [Management.Automation.Language.AssignmentStatementAst] -and $a.Left.Extent.Text -eq '$Signers' }, $true))[0].Extent.Text)
 $saveLa = $env:LOCALAPPDATA; $savePf = $env:ProgramFiles; $savePf86 = ${env:ProgramFiles(x86)}; $saveTemp = $env:TEMP
