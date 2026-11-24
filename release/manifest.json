@@ -1,9 +1,9 @@
 {
- "version": "2026.11.19.1",
- "published": "2026-11-19T13:44:56Z",
- "notes": "VS Code is recognised only by its own name (another editor's code command no longer counts); start page server waiting line holds 128 connections",
+ "version": "2026.11.25.1",
+ "published": "2026-11-24T16:02:29Z",
+ "notes": "Nothing of the setup runs in the background any more (the old daily update task is removed by every setup run, update and uninstall); anonymous result of each setup run for a weekly digest; updates by hand",
  "files": {
-  "VERSION": "a3a60cfe3a3d17b597c9aa4862d305cdfb88b2a203ef4909b68e1a2d556691b6",
+  "VERSION": "97b0744f54e53fc124d6c04a2e4ac420145fc5a1f73027c7c553cd1b48822096",
   "course-kit/.opencode/plugins/free-ai-switch.js": "df81a21afa77418374839479ed9be2f22a02da789ad9e6d167ab8233582c1137",
   "course-kit/AGENTS.md": "a4ed569a4464c4fe9427aab8b464cf4eac8116ae066defa6a077a06423d4629e",
   "course-kit/analysis/README.txt": "cbe12f2958efd7a8f3793f6fb77b058546b5a1264b92cc39c79f2c606ebf0a0d",
@@ -17,19 +17,19 @@
   "course-kit/log/ai-log.md": "2235fbc681069590f46b84884378a7eb04731499f3d8ddd5c296691327fefa5e",
   "course-kit/pyproject.toml": "6128a99c9e37b9cc452701e188c3a04e34214d4eb15335a5abe9b0f3b5521e30",
   "doctor/AGENTS.md": "6a05b0386517179014c257501fc7b693bada1da1b9c0545dbbe501241dd820ad",
-  "guide/walkthrough.docx": "06e4352bacd2e3f275413c0b27597fc100197acde4fc929d5b7fda3c3cf57019",
-  "guide/walkthrough.md": "2a1efc29c9baa0abb844d566a887594d71b8682e656ca78ebd337c5527cd2060",
+  "guide/walkthrough.docx": "151fc27edbe71f7164818aaa232b6c03122322a5932f44f07d51a23b681e1872",
+  "guide/walkthrough.md": "39ecb21680f6bd3c5abb6a073e78dbdd7f8e6ee8e5896c6133ff3111774c13aa",
   "install-windows.cmd": "09eaf266eb0c46a6a0882c91dc6aa0b466aa9eed55963639d13c619e702c1ea4",
-  "lib/course_setup.py": "b92b261a4682e34fa593c81c59b7747be12f9e2ab3956fe1cd386fb5ea04a066",
+  "lib/course_setup.py": "968f072b7ea462748df962df8c1863d8f28793706a9fcb35d6b92f0cda4f3f13",
   "lib/fix_pandoc.R": "50a974630f74f4fdbd4de2418b96f94348f2bbc15cfd46b0e71309e14371769d",
   "lib/free-ai.json": "dc154395e1c3db627f06a5cef0aa71b3dd1498842092d531d21712e9cd339f49",
-  "lib/uninstall-mac.sh": "06a4119751af70a825677867ea44630628786bf4791d18a058caff8886df2a2b",
-  "lib/uninstall-windows.ps1": "968b2dde9a7b91097250790df8e06e6bea5808fb1b647a8102ea36a0eac8a8f5",
-  "setup-mac.sh": "d270f846b10bae0fbc7bf7c6499c47cc773b94e2fbf4b46fa8f2b837392565b5",
-  "setup-windows.ps1": "6e9a534cf5b50455fc97c15f5d8c3c080a85115f975c7c388e1da08f30498640",
+  "lib/uninstall-mac.sh": "fd0a4190106f28c34059a0c5a43817e5eb71053baddd4f80139b5115628df8eb",
+  "lib/uninstall-windows.ps1": "a78a0422dfc97d83012da42bd554ffca5be90aa996f5988480fe3cfafdabf4e6",
+  "setup-mac.sh": "bd90d38628fd9bd57ca3e506c8c085514aa4935d73b1905b10dbb421788fc338",
+  "setup-windows.ps1": "201d8346217f41f42ef3b88ff913d998093bc818242a5e57480c10f9260b0bbe",
   "update/pubkey.pem": "3a1d217e36a632b71ffbe84419bb12263c194e92dd16176296c496971ed69f61",
   "update/pubkey.xml": "b57c5144ff8b88bfde76bbf7b58e85423b7c9ba2cf2426a9863fbc2bd54a5f80",
-  "update/update.ps1": "c6c4a0c862ab34057f45924fad3d5d8647abaab74e108d966524eea07087e1e1",
-  "update/update.sh": "08739bf88d348ddbc2b89ff452b8854c2689adf92e7400ca8b8790b1e19d7e5e"
+  "update/update.ps1": "b56755e159f591180923d3b899707f2bf1c1348b37f09ca4ffc85a73cb5c41a8",
+  "update/update.sh": "a472a227c1a3f6bad6f148368a29603d9c5b2fb2edc9af6b183d2101d0399be2"
  }
 }
